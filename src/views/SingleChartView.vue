@@ -207,7 +207,7 @@ const starListOpen = ref(false)
           </div>
         </section>
 
-        <template v-else>
+        <div v-else class="side-col">
           <section class="card section">
             <h2 class="t-title">星体数据</h2>
             <StarList :personality="chart.personality" :design="chart.design" :filter="filter" />
@@ -215,7 +215,7 @@ const starListOpen = ref(false)
           <section class="card section">
             <BoardMeta :chart="chart" />
           </section>
-        </template>
+        </div>
       </div>
 
       <GateChannelPanel
@@ -285,12 +285,25 @@ const starListOpen = ref(false)
   padding: var(--sp-3) var(--sp-3) 96px;
 }
 
+.layout.mobile .main-col {
+  display: flex;
+  flex-direction: column;
+}
+
 .main-col {
   flex: 1;
   min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(340px, 430px) minmax(380px, 1fr);
+  gap: var(--sp-3);
+  align-items: start;
+}
+
+.side-col {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
+  min-width: 0;
 }
 
 .chart-card {
@@ -321,9 +334,8 @@ const starListOpen = ref(false)
 }
 
 .graph-wrap :deep(svg) {
-  max-height: 660px;
+  max-height: 640px;
   width: 100%;
-  max-width: 520px;
 }
 
 .section {

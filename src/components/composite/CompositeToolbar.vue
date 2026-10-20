@@ -71,4 +71,26 @@ const emit = defineEmits<{
 .hint {
   white-space: nowrap;
 }
+
+@media (max-width: 768px) {
+  .bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sp-2);
+  }
+  .toggles {
+    gap: var(--sp-3);
+  }
+  .right {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sp-2);
+  }
+  .right :deep(.hd-btn) {
+    width: 100%;
+  }
+  .hint {
+    white-space: normal;
+  }
+}
 </style>

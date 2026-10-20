@@ -246,6 +246,13 @@ function goSettings() {
             <button type="button" :class="{ on: mobileTab === 'merged' }" @click="mobileTab = 'merged'">合盘</button>
           </div>
 
+          <HdToggle
+            compact
+            label="仅展示共享通道"
+            :model-value="filters.sharedOnly"
+            @update:model-value="setFilter('sharedOnly', $event)"
+          />
+
           <div class="card graph-card">
             <HumanDesignBodyGraph
               v-if="mobileChart"
@@ -256,12 +263,6 @@ function goSettings() {
               :filter="filters"
               @gate-click="ui.openGate($event, mobileTab)"
               @channel-click="ui.openChannel($event, mobileTab)"
-            />
-            <HdToggle
-              compact
-              label="仅展示共享通道"
-              :model-value="filters.sharedOnly"
-              @update:model-value="setFilter('sharedOnly', $event)"
             />
           </div>
 

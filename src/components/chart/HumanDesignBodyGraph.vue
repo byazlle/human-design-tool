@@ -7,7 +7,7 @@
  */
 import { computed } from 'vue'
 import type { BodyGraph, CenterId, Ownership, UiFilter } from '../../types/hd'
-import { CENTER_SHAPES, CHANNEL_LINES, GATE_POINTS, VIEW_H, VIEW_W, GATE_R } from './bodyGraphLayout'
+import { CENTER_SHAPES, CHANNEL_LINES, GATE_POINTS, VIEW_BOX, GATE_R } from './bodyGraphLayout'
 
 const props = withDefaults(
   defineProps<{
@@ -78,10 +78,6 @@ function gateFill(gate: number): string {
   return 'var(--hd-single-accent)'
 }
 
-function gateTextColor(gate: number): string {
-  return gateVisible(gate) ? '#ffffff' : 'var(--text-primary)'
-}
-
 function channelStroke(key: string): string {
   const isDefined = definedChannels.value.has(key)
   if (!isDefined) return 'var(--hd-channel)'
@@ -97,7 +93,7 @@ function channelWidth(key: string): number {
 
 function channelOpacity(key: string): number {
   if (highlightChannels.value.size && !highlightChannels.value.has(key)) return 0.35
-  return definedChannels.value.has(key) ? 1 : 0.28
+  return definedChannels.value.has(key) ? 1 : 0.22
 }
 
 function onGate(gate: number) {
@@ -124,7 +120,7 @@ function pointsOf(id: CenterId): string {
   <svg
     class="hd-graph"
     :class="{ compact }"
-    :viewBox="`0 0 ${VIEW_W} ${VIEW_H}`"
+    :viewBox="VIEW_BOX.str"
     role="img"
     aria-label="人类图人体图"
     preserveAspectRatio="xMidYMid meet"
@@ -167,45 +163,62 @@ function pointsOf(id: CenterId): string {
       />
     </g>
 
-    <!-- 闸门 -->
+    <!-- 闸门：激活画圆点，未激活只留编号（传统人体图惯例，避免 64 个白点糊成一片） -->
     <g class="gates">
       <g
         v-for="point in GATE_POINTS"
         :key="point.gate"
-        :class="{ hidden: !gateVisible(point.gate) && !activated.has(point.gate) }"
       >
-        <circle
-          :cx="point.x"
-          :cy="point.y"
-          :r="GATE_R"
-          :fill="gateFill(point.gate)"
-          stroke="var(--hd-gate-stroke)"
-          :stroke-width="gateVisible(point.gate) ? 1.6 : 1.2"
-          :class="{
-            'is-active': gateVisible(point.gate),
-            'is-clickable': interactive,
-            'is-highlight': highlightGates.has(point.gate),
-          }"
-          @click="onGate(point.gate)"
-        />
+        <template v-if="gateVisible(point.gate)">
+          <circle
+            :cx="point.x"
+            :cy="point.y"
+            :r="GATE_R"
+            :fill="gateFill(point.gate)"
+            :stroke="
+              definedCenters.has(point.center) ? 'rgba(255,255,255,0.85)' : 'var(--hd-gate-stroke)'
+            "
+            stroke-width="1.6"
+            class="is-active"
+            :class="{ 'is-clickable': interactive, 'is-highlight': highlightGates.has(point.gate) }"
+            @click="onGate(point.gate)"
+          />
+          <text
+            v-if="!compact"
+            :x="point.x"
+            :y="point.y + 4.6"
+            text-anchor="middle"
+            fill="#ffffff"
+            font-size="14"
+            font-weight="600"
+            font-family="var(--font-mono)"
+            pointer-events="none"
+          >
+            {{ point.gate }}
+          </text>
+        </template>
         <text
-          v-if="!compact"
+          v-else-if="!compact"
           :x="point.x"
-          :y="point.y + 3.6"
+          :y="point.y + 4"
           text-anchor="middle"
-          :fill="gateTextColor(point.gate)"
-          font-size="10"
+          :fill="
+            definedCenters.has(point.center)
+              ? 'rgba(255,255,255,0.78)'
+              : 'var(--text-muted)'
+          "
+          font-size="12"
           font-family="var(--font-mono)"
           pointer-events="none"
         >
           {{ point.gate }}
         </text>
-        <!-- 触摸命中区（独立于可视半径） -->
+        <!-- 触摸/点击命中区（独立于可视半径） -->
         <circle
           v-if="interactive"
           :cx="point.x"
           :cy="point.y"
-          r="19"
+          r="18"
           fill="transparent"
           class="hit"
           @click="onGate(point.gate)"
@@ -262,7 +275,7 @@ function pointsOf(id: CenterId): string {
   stroke-width: 6;
 }
 
-.hidden {
-  display: none;
+.gates text {
+  user-select: none;
 }
 </style>

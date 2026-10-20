@@ -196,7 +196,7 @@ function goSettings() {
 
     <main class="content" :class="{ mobile: isMobile }">
       <div class="form-col">
-        <div v-if="isMobile" class="mode-switch">
+        <div class="mode-switch">
           <button type="button" :class="{ on: mode === 'id' }" @click="mode = 'id'">身份证快捷</button>
           <button type="button" :class="{ on: mode === 'manual' }" @click="mode = 'manual'">手动录入</button>
         </div>
