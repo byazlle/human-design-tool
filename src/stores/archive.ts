@@ -135,5 +135,52 @@ export const useArchiveStore = defineStore('archive', {
       this.selectedIds = []
       this.persist()
     },
+
+    /** 载入示例档案：用于首次体验与功能自检，不覆盖已有数据 */
+    seedSamples(): number {
+      const samples: ArchiveDraft[] = [
+        {
+          name: '示例 · 林奕辰',
+          gender: 'male',
+          birth: { year: 1990, month: 5, day: 21, hour: 14, minute: 30, second: 0 },
+          timezone: 'Asia/Shanghai',
+          location: { lat: 31.23, lng: 121.47, place: '上海' },
+        },
+        {
+          name: '示例 · 苏晚',
+          gender: 'female',
+          birth: { year: 1992, month: 11, day: 8, hour: 7, minute: 15, second: 0 },
+          timezone: 'Asia/Shanghai',
+          location: { lat: 30.57, lng: 104.07, place: '成都' },
+        },
+        {
+          name: '示例 · 陈默',
+          gender: 'male',
+          birth: { year: 1985, month: 3, day: 17, hour: 22, minute: 40, second: 0 },
+          timezone: 'Asia/Shanghai',
+          location: { lat: 39.9, lng: 116.41, place: '北京' },
+        },
+      ]
+
+      const existing = new Set(this.archives.map((a) => a.name))
+      let added = 0
+      for (const draft of samples) {
+        if (existing.has(draft.name)) continue
+        const chart = computeChart(draftToInput(draft))
+        this.archives.push({
+          id: createId(),
+          name: draft.name,
+          gender: draft.gender,
+          birth: draft.birth,
+          timezone: draft.timezone,
+          location: draft.location,
+          createdAt: new Date().toISOString(),
+          chart,
+        })
+        added += 1
+      }
+      if (added) this.persist()
+      return added
+    },
   },
 })

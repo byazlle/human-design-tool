@@ -1,10 +1,19 @@
 <script setup lang="ts">
-/** 合盘顶部操作条：三大开关 + 生成整套 AI 爱情解读（DESIGN.md §5.3） */
+/** 合盘顶部操作条：三大开关 + 按所选维度生成合盘解读 */
 import type { UiFilter } from '../../types/hd'
 import HdToggle from '../base/HdToggle.vue'
 import HdButton from '../base/HdButton.vue'
 
-defineProps<{ filters: UiFilter; aiLoading?: boolean; sharedCount: number }>()
+withDefaults(
+  defineProps<{
+    filters: UiFilter
+    aiLoading?: boolean
+    sharedCount: number
+    /** 按钮文案随维度变化 */
+    aiLabel?: string
+  }>(),
+  { aiLoading: false, aiLabel: '生成合盘解读' },
+)
 
 const emit = defineEmits<{
   'update:filter': [key: keyof UiFilter, value: boolean]
@@ -39,7 +48,7 @@ const emit = defineEmits<{
       <span class="t-sm t-muted hint">
         共享通道 {{ sharedCount }} 条{{ filters.sharedOnly ? '（当前仅显示共享）' : '' }}
       </span>
-      <HdButton :loading="aiLoading" @click="emit('request-ai')">生成整套合盘 AI 爱情解读</HdButton>
+      <HdButton :loading="aiLoading" @click="emit('request-ai')">{{ aiLabel }}</HdButton>
     </div>
   </div>
 </template>

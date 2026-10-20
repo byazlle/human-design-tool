@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** 盘面基础信息：类型 / 策略 / 权威 / 人生角色 / 轮回交叉 / 定义型 / 九中心状态 */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { BodyGraph, CenterId } from '../../types/hd'
 import {
   AUTHORITY_LABELS,
@@ -9,18 +9,37 @@ import {
   TYPE_LABELS,
 } from '../../types/hd'
 import { AUTHORITY_TEXT, TYPE_TEXT } from '../../services/interpretations'
+import { TYPE_DETAIL } from '../../services/typeDetail'
 
 const props = defineProps<{ chart: BodyGraph; dense?: boolean }>()
 
 const typeText = computed(() => TYPE_TEXT[props.chart.type])
+const typeDetail = computed(() => TYPE_DETAIL[props.chart.type])
+const detailOpen = ref(false)
 const authorityText = computed(() => AUTHORITY_TEXT[props.chart.authority])
 const definedCenters = computed(() =>
   props.chart.centers.filter((c) => c.defined).map((c) => c.id),
 )
 const openCenters = computed(() => props.chart.centers.filter((c) => !c.defined).map((c) => c.id))
 
+const SHORT_CENTER: Record<CenterId, string> = {
+  head: '头顶',
+  ajna: '眉心',
+  throat: '喉咙',
+  g: 'G',
+  heart: '心',
+  spleen: '脾',
+  sacral: '骶骨',
+  solar: '情绪',
+  root: '根',
+}
+
 function centerLabel(id: CenterId) {
-  return CENTER_LABELS[id].replace('中心', '')
+  return SHORT_CENTER[id]
+}
+
+function centerFull(id: CenterId) {
+  return CENTER_LABELS[id]
 }
 </script>
 
@@ -63,6 +82,48 @@ function centerLabel(id: CenterId) {
       <span class="dot" />{{ authorityText.desc }}
     </p>
 
+    <div v-if="!dense" class="type-detail">
+      <button type="button" class="detail-toggle" @click="detailOpen = !detailOpen">
+        <span class="tag">{{ typeDetail.tagline }}</span>
+        <span class="chev" :class="{ on: detailOpen }" aria-hidden="true">▾</span>
+      </button>
+
+      <div v-if="detailOpen" class="detail-body">
+        <section>
+          <h4>能量机制</h4>
+          <p>{{ typeDetail.mechanism }}</p>
+        </section>
+        <section>
+          <h4>策略 · {{ chart.strategy || typeText.strategy }}</h4>
+          <p>{{ typeDetail.strategyDetail }}</p>
+        </section>
+        <section>
+          <h4>签名 · {{ typeText.signature }}</h4>
+          <p>{{ typeDetail.signatureDetail }}</p>
+        </section>
+        <section>
+          <h4>非自我主题 · {{ typeText.notSelf }}</h4>
+          <p>{{ typeDetail.notSelfDetail }}</p>
+        </section>
+        <section>
+          <h4>权威提示</h4>
+          <p>{{ typeDetail.authorityNote }}</p>
+        </section>
+        <section>
+          <h4>常见误区</h4>
+          <ul class="list warn">
+            <li v-for="(item, i) in typeDetail.misconceptions" :key="`m-${i}`">{{ item }}</li>
+          </ul>
+        </section>
+        <section>
+          <h4>落地建议</h4>
+          <ul class="list">
+            <li v-for="(item, i) in typeDetail.practice" :key="`p-${i}`">{{ item }}</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+
     <div class="centers">
       <p class="t-xs">九中心</p>
       <ul class="chips">
@@ -71,7 +132,7 @@ function centerLabel(id: CenterId) {
           :key="c.id"
           class="chip"
           :class="c.defined ? 'on' : 'off'"
-          :title="c.defined ? '已定义' : '开放'"
+          :title="`${centerFull(c.id)} · ${c.defined ? '已定义' : '开放'}`"
         >
           {{ centerLabel(c.id) }}
         </li>
@@ -198,7 +259,91 @@ function centerLabel(id: CenterId) {
 }
 
 .dense .desc,
-.dense .authority-desc {
+.dense .authority-desc,
+.dense .type-detail {
   display: none;
+}
+
+/* 类型详解 */
+.type-detail {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.detail-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  text-align: left;
+}
+
+.detail-toggle:hover {
+  background: rgba(124, 58, 237, 0.06);
+}
+
+.tag {
+  font-size: calc(var(--fs-sm) * var(--font-scale));
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.chev {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+.chev.on {
+  transform: rotate(180deg);
+}
+
+.detail-body {
+  padding: 0 var(--sp-3) var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  animation: rise-in var(--dur-base) var(--ease-out) both;
+}
+
+.detail-body h4 {
+  margin: 0 0 4px;
+  font-size: calc(var(--fs-xs) * var(--font-scale));
+  font-weight: 600;
+  color: var(--owner-shared);
+  letter-spacing: 0.02em;
+}
+
+.detail-body p {
+  margin: 0;
+  font-size: calc(var(--fs-sm) * var(--font-scale));
+  line-height: 1.65;
+  color: var(--text-secondary);
+}
+
+.list {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.list li {
+  font-size: calc(var(--fs-sm) * var(--font-scale));
+  line-height: 1.6;
+  color: var(--text-secondary);
+  list-style: disc;
+}
+
+.list.warn li {
+  color: var(--text-secondary);
+}
+
+.list.warn li::marker {
+  color: var(--status-warning);
 }
 </style>

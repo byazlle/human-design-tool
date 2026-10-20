@@ -64,13 +64,16 @@ const settings = useSettingsStore()
   top: 0;
   z-index: var(--z-toolbar);
   height: 56px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5), 0 6px 24px -18px rgba(16, 24, 40, 0.4);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-3);
   padding: 0 var(--sp-4);
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-bottom: 1px solid var(--glass-border);
 }
 
 .left {
@@ -97,7 +100,7 @@ const settings = useSettingsStore()
   font-size: calc(var(--fs-sm) * var(--font-scale));
 }
 .back:hover {
-  background: var(--surface-2);
+  background: rgba(124, 58, 237, 0.1);
   color: var(--text-primary);
 }
 

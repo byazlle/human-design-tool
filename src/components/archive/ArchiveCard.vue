@@ -84,19 +84,27 @@ const definedCount = computed(
   height: 340px;
   display: flex;
   flex-direction: column;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(var(--glass-blur)) saturate(175%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(175%);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--elev-card);
+  box-shadow: var(--glass-shadow);
   overflow: hidden;
   transition:
-    border-color 120ms ease,
-    box-shadow 120ms ease;
+    border-color var(--dur-base) ease,
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.card-wrap:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--glass-shadow-float);
 }
 
 .card-wrap.selected {
-  border-color: var(--action-primary);
-  box-shadow: 0 0 0 1px var(--action-primary), var(--elev-card);
+  border-color: rgba(124, 58, 237, 0.65);
+  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.5), var(--glass-shadow-float);
 }
 
 .check {
@@ -107,7 +115,9 @@ const definedCount = computed(
   height: 24px;
   border-radius: 6px;
   border: 1px solid var(--border-strong);
-  background: var(--surface);
+  background: var(--glass-bg-float);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   color: var(--surface);
   display: inline-flex;
   align-items: center;
@@ -169,7 +179,8 @@ const definedCount = computed(
   flex: 1;
   min-height: 30px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-soft);
   font-size: calc(var(--fs-xs) * var(--font-scale));
   color: var(--text-secondary);
   white-space: nowrap;

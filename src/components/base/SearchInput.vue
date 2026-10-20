@@ -33,17 +33,23 @@ function onInput(e: Event) {
   gap: var(--sp-2);
   height: 36px;
   padding: 0 var(--sp-3);
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--glass-bg-soft);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
   color: var(--text-muted);
   min-width: 180px;
+  transition:
+    box-shadow var(--dur-base) var(--ease-out),
+    background var(--dur-base) ease;
 }
 
 .search:focus-within {
-  border-color: var(--border-strong);
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+  background: var(--glass-bg-float);
+  border-color: rgba(124, 58, 237, 0.4);
+  outline: 2px solid rgba(124, 58, 237, 0.28);
+  outline-offset: 1px;
 }
 
 input {

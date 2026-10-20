@@ -1,0 +1,60 @@
+{
+  "name": "human-design-tool-desktop",
+  "version": "0.2.0",
+  "private": true,
+  "description": "人类图排盘工具 桌面版",
+  "author": "byazlle",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "cn.byazlle.humandesign",
+    "productName": "人类图排盘",
+    "copyright": "MIT Licensed",
+    "directories": {
+      "output": "../release/desktop",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../dist",
+        "to": "app"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "HumanDesign-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "人类图排盘",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

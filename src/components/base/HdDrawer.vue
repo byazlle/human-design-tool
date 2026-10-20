@@ -37,7 +37,9 @@ const emit = defineEmits<{ close: [] }>()
 .mask {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(10, 12, 20, 0.28);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   z-index: var(--z-drawer-mask);
 }
 
@@ -48,9 +50,12 @@ const emit = defineEmits<{ close: [] }>()
   bottom: 0;
   display: flex;
   flex-direction: column;
-  background: var(--surface);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  box-shadow: var(--elev-dialog);
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(190%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(190%);
+  border-top: 1px solid var(--glass-border);
+  border-radius: 22px 22px 0 0;
+  box-shadow: var(--glass-shadow-float);
   z-index: var(--z-drawer);
   padding-top: var(--sp-2);
 }
@@ -60,6 +65,7 @@ const emit = defineEmits<{ close: [] }>()
   height: 4px;
   border-radius: var(--radius-pill);
   background: var(--border-strong);
+  opacity: 0.7;
   margin: 0 auto var(--sp-2);
 }
 
@@ -100,9 +106,11 @@ const emit = defineEmits<{ close: [] }>()
   opacity: 0;
 }
 
-.up-enter-active,
+.up-enter-active {
+  transition: transform 380ms var(--ease-spring);
+}
 .up-leave-active {
-  transition: transform 180ms ease;
+  transition: transform 200ms ease;
 }
 .up-enter-from,
 .up-leave-to {

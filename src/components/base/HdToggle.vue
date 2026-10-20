@@ -46,13 +46,19 @@ function toggle(current: boolean) {
   width: 44px;
   height: 24px;
   border-radius: var(--radius-pill);
-  background: var(--border-strong);
-  transition: background-color 140ms ease;
+  background: rgba(88, 100, 122, 0.4);
+  border: 1px solid transparent;
+  box-shadow: inset 0 1px 3px rgba(16, 24, 40, 0.22);
+  transition:
+    background-color var(--dur-base) ease,
+    box-shadow var(--dur-base) var(--ease-out);
   flex: none;
 }
 
 .track.on {
   background: var(--action-primary);
+  box-shadow: 0 2px 10px -4px rgba(16, 24, 40, 0.6);
+  border-color: transparent;
 }
 
 .dot {
@@ -63,8 +69,8 @@ function toggle(current: boolean) {
   height: 20px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-  transition: transform 140ms ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 260ms var(--ease-spring);
 }
 
 :root[data-theme='dark'] .dot {

@@ -16,6 +16,7 @@ const emit = defineEmits<{ action: [] }>()
     <button v-if="actionLabel" type="button" class="action" @click="emit('action')">
       {{ actionLabel }}
     </button>
+    <slot name="extra" />
   </div>
 </template>
 

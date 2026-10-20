@@ -1,13 +1,25 @@
 <script setup lang="ts">
 /**
- * 人体图 SVG 渲染组件（DESIGN.md §4.5）
+ * 人体图 SVG 渲染组件（正统排布 + 卡通化描边）
  * - 只负责渲染，不做任何计算
  * - 单盘：激活闸门/通道用 --hd-single-accent
  * - 合盘：按 gateOwners / channelOwners 上色（A 蓝 / B 橙 / 共享紫）
+ *
+ * 状态约定（关键）：
+ * - 已激活闸门：内部填实色（深色或归属色），数字为白色 —— 表示"点亮"
+ * - 未激活闸门：内部保持底色，外侧套一圈描边圈，数字为次级色 —— 只做存在标识
+ * - highlight 只改变描边颜色，绝不把未激活闸门伪装成已激活（修复误亮问题）
  */
 import { computed } from 'vue'
 import type { BodyGraph, CenterId, Ownership, UiFilter } from '../../types/hd'
-import { CENTER_SHAPES, CHANNEL_LINES, GATE_POINTS, VIEW_BOX, GATE_R } from './bodyGraphLayout'
+import {
+  CENTER_SHAPES,
+  CHANNEL_LINES,
+  GATE_POINTS,
+  VIEW_BOX,
+  GATE_R,
+  polygonPoints,
+} from './bodyGraphLayout'
 
 const props = withDefaults(
   defineProps<{
@@ -16,9 +28,11 @@ const props = withDefaults(
     gateOwners?: Record<number, Ownership>
     channelOwners?: Record<string, Ownership>
     filter?: UiFilter
-    highlight?: { gates?: number[]; channels?: string[] }
+    highlight?: { gates?: number[]; channels?: string[]; centers?: CenterId[] }
     interactive?: boolean
     compact?: boolean
+    /** 是否显示中心名称 */
+    showCenterLabels?: boolean
   }>(),
   {
     mode: 'single',
@@ -28,6 +42,7 @@ const props = withDefaults(
     highlight: () => ({}),
     interactive: true,
     compact: false,
+    showCenterLabels: true,
   },
 )
 
@@ -39,10 +54,7 @@ const emit = defineEmits<{
 
 type Source = 'a' | 'b' | 'merged' | 'single'
 
-const sourceOf = (): Source => {
-  if (props.mode === 'single') return 'single'
-  return 'merged'
-}
+const sourceOf = (): Source => (props.mode === 'single' ? 'single' : 'merged')
 
 const activated = computed(() => new Set(props.chart.gates.map((g) => g.gate)))
 const definedChannels = computed(() => new Set(props.chart.channels.map((c) => c.key)))
@@ -51,13 +63,21 @@ const definedCenters = computed(
 )
 const highlightGates = computed(() => new Set(props.highlight?.gates ?? []))
 const highlightChannels = computed(() => new Set(props.highlight?.channels ?? []))
+const highlightCenters = computed(() => new Set(props.highlight?.centers ?? []))
 
 const sharedOnly = computed(() => props.mode === 'composite' && props.filter.sharedOnly)
 
-function gateVisible(gate: number): boolean {
-  if (!activated.value.has(gate) && !highlightGates.value.has(gate)) return false
+/** 是否"点亮"：只由真实激活决定，高亮不参与 */
+function gateLit(gate: number): boolean {
+  if (!activated.value.has(gate)) return false
   if (sharedOnly.value) return props.gateOwners[gate] === 'shared'
   return true
+}
+
+/** 是否在"仅共享"视图下被隐藏 */
+function gateHidden(gate: number): boolean {
+  if (!sharedOnly.value) return false
+  return props.gateOwners[gate] !== 'shared'
 }
 
 function channelVisible(key: string): boolean {
@@ -73,9 +93,24 @@ function ownerVar(o: Ownership | undefined): string {
 }
 
 function gateFill(gate: number): string {
-  if (!gateVisible(gate)) return 'var(--hd-gate-bg)'
-  if (props.mode === 'composite') return ownerVar(props.gateOwners[gate])
-  return 'var(--hd-single-accent)'
+  if (props.mode === 'composite' && gateLit(gate)) return ownerVar(props.gateOwners[gate])
+  // 单盘：用比中心更亮一档的颜色，保证圆点在深色中心上仍能看出边界
+  return 'var(--hd-gate-lit-fill)'
+}
+
+function gateTextFill(gate: number): string {
+  return gateLit(gate) ? '#ffffff' : 'var(--text-secondary)'
+}
+
+function gateStroke(gate: number): string {
+  // 高亮只对「已激活」的闸门生效：未激活闸门被点开时仅有释义，不产生点亮错觉
+  if (highlightGates.value.has(gate) && gateLit(gate)) return 'var(--status-warning)'
+  return gateLit(gate) ? 'rgba(255,255,255,0.9)' : 'var(--hd-gate-ring)'
+}
+
+function gateStrokeWidth(gate: number): number {
+  if (highlightGates.value.has(gate) && gateLit(gate)) return 3.4
+  return gateLit(gate) ? 2 : 1.5
 }
 
 function channelStroke(key: string): string {
@@ -85,15 +120,20 @@ function channelStroke(key: string): string {
   return 'var(--hd-single-accent)'
 }
 
+/** 线条加粗：已定义 7，未定义 3.2，高亮 9 */
 function channelWidth(key: string): number {
-  const isDefined = definedChannels.value.has(key)
-  if (highlightChannels.value.has(key)) return 5
-  return isDefined ? 4 : 2
+  if (highlightChannels.value.has(key)) return 9
+  return definedChannels.value.has(key) ? 7 : 2.4
 }
 
 function channelOpacity(key: string): number {
-  if (highlightChannels.value.size && !highlightChannels.value.has(key)) return 0.35
-  return definedChannels.value.has(key) ? 1 : 0.22
+  const defined = definedChannels.value.has(key)
+  if (highlightChannels.value.size && !highlightChannels.value.has(key)) return defined ? 0.34 : 0.16
+  return defined ? 1 : 0.42
+}
+
+function channelDash(key: string): string {
+  return definedChannels.value.has(key) ? 'none' : '7 7'
 }
 
 function onGate(gate: number) {
@@ -111,8 +151,9 @@ function onCenter(id: CenterId) {
   emit('center-click', id, sourceOf())
 }
 
-function pointsOf(id: CenterId): string {
-  return CENTER_SHAPES[id].polygon.map(([x, y]) => `${x},${y}`).join(' ')
+/** 已定义中心：可点击（用于 AI 解读）；未定义中心不响应点击，避免误导 */
+function centerClickable(id: CenterId): boolean {
+  return props.interactive && definedCenters.value.has(id)
 }
 </script>
 
@@ -125,11 +166,55 @@ function pointsOf(id: CenterId): string {
     aria-label="人类图人体图"
     preserveAspectRatio="xMidYMid meet"
   >
-    <!-- 通道 -->
+    <defs>
+      <!-- 卡通化：中心填充用极轻的斜向渐变，避免纯色死板 -->
+      <linearGradient id="hd-defined-fill" x1="0" y1="0" x2="0.3" y2="1">
+        <stop offset="0%" stop-color="var(--hd-center-defined-top)" />
+        <stop offset="100%" stop-color="var(--hd-center-defined-bottom)" />
+      </linearGradient>
+      <linearGradient id="hd-undef-fill" x1="0" y1="0" x2="0.3" y2="1">
+        <stop offset="0%" stop-color="var(--hd-center-undef-top)" />
+        <stop offset="100%" stop-color="var(--hd-center-undef-bottom)" />
+      </linearGradient>
+      <!-- 中心投影：让图形"立起来"，卡通感更强 -->
+      <filter id="hd-center-shadow" x="-30%" y="-30%" width="160%" height="170%">
+        <feDropShadow dx="0" dy="3" stdDeviation="3.2" flood-color="#101828" flood-opacity="0.2" />
+      </filter>
+      <filter id="hd-gate-shadow" x="-60%" y="-60%" width="220%" height="220%">
+        <feDropShadow dx="0" dy="1.6" stdDeviation="1.6" flood-color="#101828" flood-opacity="0.34" />
+      </filter>
+    </defs>
+
+    <!-- 通道：先画未定义（底噪），再画已定义（主体），保证已定义永远在上层 -->
     <g class="channels">
       <line
-        v-for="line in CHANNEL_LINES"
-        :key="line.key"
+        v-for="line in CHANNEL_LINES.filter((l) => !definedChannels.has(l.key))"
+        :key="`u-${line.key}`"
+        :x1="line.x1"
+        :y1="line.y1"
+        :x2="line.x2"
+        :y2="line.y2"
+        :stroke="'var(--hd-channel)'"
+        :stroke-width="2.6"
+        :stroke-dasharray="'8 8'"
+        :opacity="channelVisible(line.key) ? 0.42 : 0"
+        stroke-linecap="round"
+      />
+      <line
+        v-for="line in CHANNEL_LINES.filter((l) => definedChannels.has(l.key))"
+        :key="`o-${line.key}`"
+        :x1="line.x1"
+        :y1="line.y1"
+        :x2="line.x2"
+        :y2="line.y2"
+        stroke="var(--hd-channel-halo)"
+        :stroke-width="channelWidth(line.key) + 3.4"
+        :opacity="channelVisible(line.key) ? 0.95 : 0"
+        stroke-linecap="round"
+      />
+      <line
+        v-for="line in CHANNEL_LINES.filter((l) => definedChannels.has(l.key))"
+        :key="`d-${line.key}`"
         :x1="line.x1"
         :y1="line.y1"
         :x2="line.x2"
@@ -138,8 +223,9 @@ function pointsOf(id: CenterId): string {
         :stroke-width="channelWidth(line.key)"
         :opacity="channelVisible(line.key) ? channelOpacity(line.key) : 0"
         :class="{
-          'is-defined': definedChannels.has(line.key),
-          'is-clickable': interactive && definedChannels.has(line.key),
+          'is-defined': true,
+          'is-clickable': interactive,
+          'is-dim': highlightChannels.size > 0 && !highlightChannels.has(line.key),
         }"
         stroke-linecap="round"
         @click="onChannel(line.key)"
@@ -151,74 +237,84 @@ function pointsOf(id: CenterId): string {
       <polygon
         v-for="shape in CENTER_SHAPES"
         :key="shape.id"
-        :points="pointsOf(shape.id)"
+        :points="polygonPoints(shape.id)"
         :fill="
           definedCenters.has(shape.id) ? 'var(--hd-center-defined)' : 'var(--hd-center-undef)'
         "
-        :stroke="definedCenters.has(shape.id) ? 'var(--hd-center-defined)' : 'var(--border-strong)'"
-        stroke-width="2"
+        :stroke="
+          highlightCenters.has(shape.id)
+            ? 'var(--status-warning)'
+            : definedCenters.has(shape.id)
+              ? 'var(--hd-center-defined)'
+              : 'var(--border-strong)'
+        "
+        :stroke-width="highlightCenters.has(shape.id) ? 3.4 : definedCenters.has(shape.id) ? 2.6 : 2.2"
+        :stroke-dasharray="definedCenters.has(shape.id) ? 'none' : '0'"
         stroke-linejoin="round"
-        :class="{ 'is-clickable': interactive }"
+        filter="url(#hd-center-shadow)"
+        :class="{
+          'is-clickable': centerClickable(shape.id),
+          'is-lit': definedCenters.has(shape.id),
+        }"
         @click="onCenter(shape.id)"
       />
     </g>
 
-    <!-- 闸门：激活画圆点，未激活只留编号（传统人体图惯例，避免 64 个白点糊成一片） -->
+    <!-- 闸门：激活=实心深色，未激活=底色 + 外圈标识 -->
     <g class="gates">
       <g
         v-for="point in GATE_POINTS"
         :key="point.gate"
+        :opacity="gateHidden(point.gate) ? 0.18 : 1"
       >
-        <template v-if="gateVisible(point.gate)">
-          <circle
-            :cx="point.x"
-            :cy="point.y"
-            :r="GATE_R"
-            :fill="gateFill(point.gate)"
-            :stroke="
-              definedCenters.has(point.center) ? 'rgba(255,255,255,0.85)' : 'var(--hd-gate-stroke)'
-            "
-            stroke-width="1.6"
-            class="is-active"
-            :class="{ 'is-clickable': interactive, 'is-highlight': highlightGates.has(point.gate) }"
-            @click="onGate(point.gate)"
-          />
-          <text
-            v-if="!compact"
-            :x="point.x"
-            :y="point.y + 4.6"
-            text-anchor="middle"
-            fill="#ffffff"
-            font-size="14"
-            font-weight="600"
-            font-family="var(--font-mono)"
-            pointer-events="none"
-          >
-            {{ point.gate }}
-          </text>
-        </template>
+        <!-- 未激活：外侧描边圈 + 内部保持底色（不填黑） -->
+        <circle
+          v-if="!gateLit(point.gate)"
+          :cx="point.x"
+          :cy="point.y"
+          :r="GATE_R"
+          fill="var(--hd-gate-idle-bg)"
+          :stroke="gateStroke(point.gate)"
+          :stroke-width="gateStrokeWidth(point.gate)"
+          :stroke-dasharray="highlightGates.has(point.gate) ? 'none' : '0'"
+          :class="{ 'is-clickable': interactive, 'is-idle': true }"
+          @click="onGate(point.gate)"
+        />
+        <!-- 激活：实心点亮 -->
+        <circle
+          v-else
+          :cx="point.x"
+          :cy="point.y"
+          :r="GATE_R"
+          :fill="gateFill(point.gate)"
+          :stroke="gateStroke(point.gate)"
+          :stroke-width="gateStrokeWidth(point.gate)"
+          filter="url(#hd-gate-shadow)"
+          class="is-active"
+          :class="{ 'is-clickable': interactive, 'is-highlight': highlightGates.has(point.gate) }"
+          @click="onGate(point.gate)"
+        />
+
         <text
-          v-else-if="!compact"
+          v-if="!compact"
           :x="point.x"
-          :y="point.y + 4"
+          :y="point.y + 3.9"
           text-anchor="middle"
-          :fill="
-            definedCenters.has(point.center)
-              ? 'rgba(255,255,255,0.78)'
-              : 'var(--text-muted)'
-          "
-          font-size="12"
+          :fill="gateTextFill(point.gate)"
+          :font-size="gateLit(point.gate) ? 12 : 11"
+          :font-weight="gateLit(point.gate) ? 700 : 500"
           font-family="var(--font-mono)"
           pointer-events="none"
         >
           {{ point.gate }}
         </text>
-        <!-- 触摸/点击命中区（独立于可视半径） -->
+
+        <!-- 命中区：比可视圆更大，方便触屏与鼠标 -->
         <circle
           v-if="interactive"
           :cx="point.x"
           :cy="point.y"
-          r="18"
+          :r="GATE_R + 8"
           fill="transparent"
           class="hit"
           @click="onGate(point.gate)"
@@ -237,45 +333,64 @@ function pointsOf(id: CenterId): string {
 }
 
 .centers polygon {
-  transition: fill 120ms ease;
+  transition:
+    fill var(--dur-base) ease,
+    stroke var(--dur-base) ease,
+    stroke-width var(--dur-base) ease;
 }
 
 .is-clickable {
   cursor: pointer;
 }
 
-.gates circle.is-active {
-  transition:
-    fill 120ms ease,
-    stroke-width 120ms ease;
+.centers polygon.is-clickable:hover {
+  stroke: var(--owner-shared);
+  stroke-width: 3.4;
 }
 
-.gates g:hover circle.is-clickable,
-.gates g:focus-within circle.is-clickable {
-  stroke-width: 3;
+.gates circle.is-active {
+  transition:
+    fill var(--dur-fast) ease,
+    stroke-width var(--dur-fast) ease,
+    transform var(--dur-fast) var(--ease-spring);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.gates circle.is-idle {
+  transition:
+    fill var(--dur-fast) ease,
+    stroke var(--dur-fast) ease,
+    stroke-width var(--dur-fast) ease;
+}
+
+.gates g:hover circle.is-clickable {
+  stroke-width: 3.2;
+  transform: scale(1.08);
 }
 
 .gates circle.is-highlight {
   stroke: var(--status-warning);
-  stroke-width: 3;
-}
-
-.hit:hover + * {
-  opacity: 0.9;
+  stroke-width: 3.4;
 }
 
 .channels line {
   transition:
-    opacity 120ms ease,
-    stroke-width 120ms ease;
+    opacity var(--dur-fast) ease,
+    stroke-width var(--dur-fast) ease;
 }
 
 .channels line.is-clickable:hover {
   opacity: 1;
-  stroke-width: 6;
+  stroke-width: 10;
 }
 
-.gates text {
+.channels line.is-dim {
+  opacity: 0.26 !important;
+}
+
+.gates text,
+.center-labels text {
   user-select: none;
 }
 </style>

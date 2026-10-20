@@ -13,6 +13,7 @@ import AppToolbar from '../components/base/AppToolbar.vue'
 import HumanDesignBodyGraph from '../components/chart/HumanDesignBodyGraph.vue'
 import StarList from '../components/chart/StarList.vue'
 import BoardMeta from '../components/chart/BoardMeta.vue'
+import ActivationPanels from '../components/chart/ActivationPanels.vue'
 import GateChannelPanel from '../components/panel/GateChannelPanel.vue'
 import AiReadingPanel from '../components/panel/AiReadingPanel.vue'
 import HdButton from '../components/base/HdButton.vue'
@@ -69,6 +70,31 @@ async function requestAiForSelection() {
     ref: String(sel.ref),
     title: `${title} · AI 深度解读`,
     offline: offlineText.value,
+    chart: chart.value,
+  })
+}
+
+interface BulkPayload {
+  gates: number[]
+  channels: string[]
+  centers: CenterId[]
+  offline: string
+  title: string
+}
+
+/** 选中多个闸门/通道/中心后一次性解读：缓存键由选择内容决定，选择相同即复用 */
+async function onBulkAi(payload: BulkPayload) {
+  if (!chart.value) return
+  const ref = [
+    ...payload.channels,
+    ...payload.gates.map((g) => `g${g}`),
+    ...payload.centers.map((c) => `c-${c}`),
+  ].join('|')
+  await runAi({
+    scope: 'selection',
+    ref,
+    title: `${archive.value?.name ?? ''} · ${payload.title}`,
+    offline: payload.offline,
     chart: chart.value,
   })
 }
@@ -138,7 +164,13 @@ const starListOpen = ref(false)
       @new="goNew"
       @settings="goSettings"
       @help="ui.notify('点击人体图上的闸门或通道圆点，即可查看离线释义；右侧面板底部可按需调用 AI。')"
-    />
+    >
+      <template #right>
+        <HdButton size="sm" :loading="aiState.loading" @click="requestFullReading">
+          全盘 AI 解读
+        </HdButton>
+      </template>
+    </AppToolbar>
 
     <EmptyState
       v-if="!archive || !chart"
@@ -203,17 +235,35 @@ const starListOpen = ref(false)
           </button>
           <div v-if="starListOpen" class="fold-body">
             <BoardMeta :chart="chart" dense />
+            <ActivationPanels
+              :chart="chart"
+              compact
+              @ai-read="onBulkAi"
+              @gate-click="ui.openGate($event, 'single')"
+              @channel-click="ui.openChannel($event, 'single')"
+              @center-click="ui.openCenter($event, 'single')"
+            />
             <StarList :personality="chart.personality" :design="chart.design" :filter="filter" :collapsible="false" compact />
           </div>
         </section>
 
         <div v-else class="side-col">
           <section class="card section">
+            <BoardMeta :chart="chart" />
+          </section>
+
+          <!-- 完整盘直接展示已激活通道 / 闸门 / 中心，支持多选批量解读 -->
+          <ActivationPanels
+            :chart="chart"
+            @ai-read="onBulkAi"
+            @gate-click="ui.openGate($event, 'single')"
+            @channel-click="ui.openChannel($event, 'single')"
+            @center-click="ui.openCenter($event, 'single')"
+          />
+
+          <section class="card section">
             <h2 class="t-title">星体数据</h2>
             <StarList :personality="chart.personality" :design="chart.design" :filter="filter" />
-          </section>
-          <section class="card section">
-            <BoardMeta :chart="chart" />
           </section>
         </div>
       </div>
@@ -294,7 +344,7 @@ const starListOpen = ref(false)
   flex: 1;
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(340px, 430px) minmax(380px, 1fr);
+  grid-template-columns: minmax(440px, 1.05fr) minmax(360px, 1fr);
   gap: var(--sp-3);
   align-items: start;
 }
@@ -310,6 +360,8 @@ const starListOpen = ref(false)
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* 人体图区域提高玻璃不透明度，保证浅色背景上的对比度 */
+  background: var(--glass-bg-strong);
 }
 
 .chart-head {
@@ -334,7 +386,7 @@ const starListOpen = ref(false)
 }
 
 .graph-wrap :deep(svg) {
-  max-height: 640px;
+  max-height: 760px;
   width: 100%;
 }
 

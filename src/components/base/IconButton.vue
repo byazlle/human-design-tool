@@ -107,8 +107,9 @@ const emit = defineEmits<{ click: [] }>()
   border-radius: var(--radius-md);
   color: var(--text-secondary);
   transition:
-    background-color 120ms ease,
-    color 120ms ease;
+    background-color var(--dur-fast) ease,
+    color var(--dur-fast) ease,
+    transform var(--dur-base) var(--ease-out);
 }
 
 .icon-btn.sm {
@@ -117,13 +118,17 @@ const emit = defineEmits<{ click: [] }>()
 }
 
 .icon-btn:hover {
-  background: var(--surface-2);
+  background: rgba(16, 24, 40, 0.06);
   color: var(--text-primary);
+  transform: translateY(-1px);
+}
+:root[data-theme='dark'] .icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .icon-btn.active {
-  background: var(--surface-2);
-  color: var(--text-primary);
+  background: rgba(124, 58, 237, 0.14);
+  color: var(--owner-shared);
 }
 
 @media (max-width: 768px) {

@@ -14,7 +14,13 @@ body,
 
 body {
   margin: 0;
-  background: var(--bg-base);
+  background-color: var(--bg-base);
+  /* 兜底氛围底色：即使 backdrop 光斑层未加载，也不会是死白 */
+  background-image:
+    radial-gradient(1100px 620px at 6% -12%, var(--glow-1), transparent 52%),
+    radial-gradient(900px 560px at 96% 2%, var(--glow-2), transparent 50%),
+    radial-gradient(820px 560px at 46% 112%, var(--glow-3), transparent 52%);
+  background-attachment: fixed;
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: calc(var(--fs-body) * var(--font-scale));
@@ -22,6 +28,16 @@ body {
   letter-spacing: 0;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* 桌面壳：顶部让出自绘标题栏 */
+body.shell-desktop {
+  --chrome-h: 34px;
+  padding-top: var(--chrome-h);
+}
+
+body.shell-desktop header.toolbar {
+  top: var(--chrome-h);
 }
 
 h1,
@@ -163,11 +179,101 @@ svg {
   min-width: 0;
 }
 
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
+/* ---- 液态玻璃表面 ----
+   统一使用：半透明底 + 背景模糊 + 饱和度提升 + 外侧细描边 + 内侧顶部高光。
+   inset 高光是玻璃质感的关键，不要省。 */
+.card,
+.glass {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--elev-card);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  /* 内侧 1px 高光 + 外侧 1px 暗边，制造"玻璃厚度" */
+  outline: 1px solid var(--glass-edge);
+  outline-offset: -1px;
+  position: relative;
+}
+
+/* 顶部高光线：沿圆角内侧走一道渐变反光 */
+.card::before,
+.glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    165deg,
+    var(--glass-highlight) 0%,
+    transparent 28%,
+    transparent 72%,
+    rgba(255, 255, 255, 0.18) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+.glass-soft {
+  background: var(--glass-bg-soft);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.glass-strong {
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-sat));
+  box-shadow: var(--glass-shadow);
+}
+
+/* 悬浮层：更高对比的投影 + 轻微上浮 */
+.glass-float {
+  background: var(--glass-bg-float);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-sat));
+  box-shadow: var(--glass-shadow-float);
+  outline: 1px solid var(--glass-edge);
+  outline-offset: -1px;
+}
+
+/* 可交互玻璃：悬停时轻微抬起 + 投影加深 */
+.lift {
+  transition:
+    transform var(--dur-base) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+  will-change: transform;
+}
+.lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--glass-shadow-float);
+}
+.lift:active {
+  transform: translateY(0) scale(0.995);
+}
+
+/* 不支持 backdrop-filter 时退回不透明表面，保证可读 */
+@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  .card,
+  .glass,
+  .glass-soft,
+  .glass-strong,
+  .glass-float {
+    background: var(--surface);
+  }
 }
 
 .divider {
@@ -175,6 +281,72 @@ svg {
   background: var(--border);
   border: 0;
   margin: 0;
+}
+
+/* ---- 入场 / 悬浮动画 ---- */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes float-y {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes sheen {
+  0% {
+    transform: translateX(-120%) skewX(-14deg);
+  }
+  100% {
+    transform: translateX(320%) skewX(-14deg);
+  }
+}
+
+.animate-rise {
+  animation: rise-in var(--dur-slow) var(--ease-out) both;
+}
+
+/* 路由切换过渡 */
+.page-enter-active {
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+.page-leave-active {
+  transition:
+    opacity var(--dur-fast) ease,
+    transform var(--dur-fast) ease;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(10px) scale(0.995);
+}
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.995);
 }
 
 /* 危险/警告文案 */

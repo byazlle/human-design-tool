@@ -75,6 +75,11 @@ function goNew() {
 function goSettings() {
   router.push('/settings')
 }
+
+function loadSamples() {
+  const added = archiveStore.seedSamples()
+  ui.notify(added ? `已载入 ${added} 份示例档案` : '示例档案已存在', added ? 'success' : undefined)
+}
 </script>
 
 <template>
@@ -104,7 +109,11 @@ function goSettings() {
         desc="填写出生日期与出生时间，即可在本机生成完整人体图。所有计算与数据都留在这台设备上。"
         action-label="新建档案"
         @action="goNew"
-      />
+      >
+        <template #extra>
+          <HdButton variant="ghost" size="sm" @click="loadSamples">载入示例档案</HdButton>
+        </template>
+      </EmptyState>
 
       <template v-else>
         <ArchiveCanvas
@@ -165,8 +174,11 @@ function goSettings() {
   display: inline-flex;
   gap: 2px;
   padding: 2px;
-  background: var(--surface-2);
+  background: var(--glass-bg-soft);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-sm);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
 }
 
 .zoom button {
@@ -179,9 +191,9 @@ function goSettings() {
 }
 
 .zoom button.on {
-  background: var(--surface);
+  background: var(--glass-bg-float);
   color: var(--text-primary);
-  box-shadow: var(--elev-card);
+  box-shadow: 0 2px 8px -4px rgba(16, 24, 40, 0.4);
 }
 
 .bulk-dock {

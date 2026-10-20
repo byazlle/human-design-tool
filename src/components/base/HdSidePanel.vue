@@ -28,16 +28,19 @@ const emit = defineEmits<{ close: [] }>()
   flex-direction: column;
   flex: none;
   height: 100%;
-  background: var(--surface);
-  border-left: 1px solid var(--border);
+  background: var(--glass-bg);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border-left: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
   z-index: var(--z-panel);
-  animation: slide-in 160ms ease;
+  animation: slide-in 320ms var(--ease-out);
 }
 
 @keyframes slide-in {
   from {
-    transform: translateX(12px);
-    opacity: 0.6;
+    transform: translateX(26px);
+    opacity: 0;
   }
   to {
     transform: none;
@@ -65,7 +68,7 @@ const emit = defineEmits<{ close: [] }>()
   color: var(--text-muted);
 }
 .close:hover {
-  background: var(--surface-2);
+  background: rgba(124, 58, 237, 0.1);
   color: var(--text-primary);
 }
 

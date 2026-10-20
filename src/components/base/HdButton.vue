@@ -36,10 +36,39 @@ withDefaults(
   font-size: calc(var(--fs-body) * var(--font-scale));
   font-weight: 500;
   white-space: nowrap;
+  position: relative;
+  overflow: hidden;
   transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    opacity 120ms ease;
+    background-color var(--dur-fast) ease,
+    border-color var(--dur-fast) ease,
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out),
+    opacity var(--dur-fast) ease;
+}
+
+.hd-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* 主按钮的液态高光：悬停时一道斜向反光扫过 */
+.v-primary::after {
+  content: '';
+  position: absolute;
+  top: -30%;
+  bottom: -30%;
+  left: 0;
+  width: 42%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.34), transparent);
+  transform: translateX(-140%) skewX(-16deg);
+  pointer-events: none;
+}
+.v-primary:hover:not(:disabled)::after {
+  animation: btn-sheen 720ms var(--ease-out);
+}
+@keyframes btn-sheen {
+  to {
+    transform: translateX(360%) skewX(-16deg);
+  }
 }
 
 .s-sm {
@@ -64,12 +93,17 @@ withDefaults(
 }
 
 .v-ghost {
-  background: var(--action-ghost-bg);
-  border: 1px solid var(--border-strong);
+  background: var(--glass-bg-soft);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(14px) saturate(160%);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
   color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
 .v-ghost:hover:not(:disabled) {
-  background: var(--surface-2);
+  background: var(--glass-bg-float);
+  box-shadow: 0 6px 18px -10px rgba(16, 24, 40, 0.35);
+  transform: translateY(-1px);
 }
 
 .v-danger {
@@ -79,7 +113,8 @@ withDefaults(
 }
 .v-danger:hover:not(:disabled) {
   border-color: var(--action-danger);
-  background: rgba(217, 45, 32, 0.06);
+  background: rgba(217, 45, 32, 0.08);
+  transform: translateY(-1px);
 }
 
 .hd-btn:disabled {

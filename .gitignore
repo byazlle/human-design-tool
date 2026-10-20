@@ -7,7 +7,31 @@ dist-ssr/
 # 构建产物
 src-tauri/target/
 src-tauri/gen/
-# src-tauri/icons/ 需提交（Tauri 构建依赖仓库内图标）
+# src-tauri/icons/ 需提交（图标同时被桌面与安卓打包使用）
+
+# 桌面 / 安卓打包产物
+release/
+build/
+desktop/node_modules/
+android/assets/www/
+
+# 签名私钥：绝不提交
+*.keystore
+*.jks
+
+# 本地工具链（JDK / Android SDK），体积大且可重新下载
+.toolchain/
+
+# 打包失败残留（output/ 下的文档保留）
+output/desktop/
+
+# 打包失败残留（output/ 下的文档保留）
+output/desktop/
+
+# 验证截图与临时产物
+.shots/
+.test-install/
+*.idsig
 
 # 编辑器
 .vscode/*
