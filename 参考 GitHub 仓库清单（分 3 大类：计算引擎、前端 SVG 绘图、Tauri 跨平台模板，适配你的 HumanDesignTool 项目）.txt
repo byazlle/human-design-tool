@@ -1,0 +1,63 @@
+# 参考 GitHub 仓库清单（分 3 大类：计算引擎、前端 SVG 绘图、Tauri 跨平台模板，适配你的 HumanDesignTool 项目）
+
+> 
+> 你新建的仓库地址示例（你自己创建仓库后，替换用户名即可）
+> `https://github.com/你的Github用户名/human-design-tool`
+
+## 一、人类图核心计算引擎（最重要，排盘算法参考）
+
+### 1. rave-engine（free-human-design 底层核心，推荐首选）
+
+🔗 [https://github.com/adamblvck/rave-engine](https://github.com/adamblvck/rave-engine)
+
+- 特点：JS 引擎，**完整人类图计算**，星体黄道度数（带小数）、闸门、爻、color/tone/base、轮回交叉、星盘四轴（上升 / 中天）、宫位全部支持；支持合盘计算，MIT 协议，可以直接拿来参考计算逻辑GitHub。
+- 适合你：用来参考星体计算、闸门激活、合盘合并逻辑。npm 包`free-human-design`就是这个项目。
+
+### 2. swisseph（瑞士星历，高精度星历计算备选）
+
+🔗 [https://github.com/mivion/swisseph](https://github.com/mivion/swisseph)
+
+- 专业占星星历库，高精度行星经度计算，带小数度数；很多专业人类图软件底层依赖这个，AGPL 协议，注意许可证。
+
+## 二、前端 BodyGraph 人体图 SVG 绘图参考（画布、闸门 / 通道点击交互参考）
+
+### 1. humandesignchart 网页排盘（无单独 github 仓库，但是配套开源组件参考）
+
+配套前端绘图思路参考：绘制 9 大中心、激活闸门连线，点击闸门弹窗详情。
+
+> 
+> 备选小型 web 人体图 demo：
+> [https://github.com/joebalch/human-design-bodygraph](https://github.com/joebalch/human-design-bodygraph)
+
+- 极简 BodyGraph SVG 绘制，可点击闸门，适合参考前端画布渲染逻辑。
+
+## 三、Tauri + Vue3 跨平台模板仓库（你的项目技术栈：Tauri v2 + Vue3，电脑 + 安卓打包，GitHub Actions CI 参考）
+
+> 
+> 这几个仓库参考**项目目录结构、GitHub Actions 自动编译 Windows+Android、github.dev 网页开发**，和你的架构完全匹配。
+
+### 1. tauri-vue-template
+
+🔗 [https://github.com/tauri-apps/tauri-template-vue](https://github.com/tauri-apps/tauri-template-vue)
+官方 Tauri+Vue3 模板，基础工程结构参考。
+
+### 2. tauri-android-ci-example（重点！云端编译安卓 APK 的 CI 参考）
+
+🔗 [https://github.com/tauri-apps/example-android-workflow](https://github.com/tauri-apps/example-android-workflow)
+自带 GitHub Actions workflow，**云端直接编译 Android APK**，就是你想要的：本地不用装 SDK，push 代码到 github 自动打包 Windows+Android，直接复制里面 yml 到你的`.github/workflows/build.yml`。
+
+### 3. tauri-action（Tauri 官方打包 Action）
+
+🔗 [https://github.com/tauri-apps/tauri-action](https://github.com/tauri-apps/tauri-action)
+官方打包工具，在 CI 里构建 Windows 安装包、Android APK。
+
+## 四、辅助参考仓库（UI、本地存储、API 接口模板）
+
+### 1. shadcn-vue（前端 UI 组件库，电脑 / 移动端响应式组件）
+
+🔗 [https://github.com/unovue/shadcn-vue](https://github.com/unovue/shadcn-vue)
+弹窗、抽屉、卡片、多栏布局，适合实现：电脑侧边详情面板，手机底部抽屉。
+
+### 2. localforage（前端本地档案持久化存储，保存多个人类图档案、AI 缓存）
+
+🔗 [https://github.com/localForage/localForage](https://github.com/localForage/localForage)

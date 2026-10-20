@@ -1,0 +1,14 @@
+{
+  "genre": "general",
+  "theme": "modern-minimal",
+  "page_furniture": {
+    "cover": true,
+    "toc": true,
+    "page_number": "current"
+  },
+  "typography": {
+    "body_font": "SimSun",
+    "body_size_pt": 12,
+    "first_line_indent_em": 2
+  }
+}

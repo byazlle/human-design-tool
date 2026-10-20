@@ -1,0 +1,122 @@
+/* 设计令牌：严格对应 DESIGN.md §2 / §3 / §5 / §6，不得另立配色 */
+
+:root {
+  /* 表面与文字 */
+  --bg-base: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #e2e5ea;
+  --border-strong: #c9ced6;
+  --text-primary: #1a1d23;
+  --text-secondary: #5b616e;
+  --text-muted: #8a909c;
+
+  /* 操作 */
+  --action-primary: #1a1d23;
+  --action-primary-hover: #2b2f36;
+  --action-ghost-bg: #ffffff;
+  --action-danger: #d92d20;
+  --focus-ring: #1a1d23;
+
+  /* 状态 */
+  --status-success: #1f9d55;
+  --status-error: #d92d20;
+  --status-warning: #d97706;
+  --status-loading: #8a909c;
+
+  /* 数据语义三色（仅用于 A 独有 / B 独有 / 共享） */
+  --owner-a: #2563eb;
+  --owner-b: #ea7317;
+  --owner-shared: #7c3aed;
+
+  /* 人体图 */
+  --hd-center-defined: #2b2f36;
+  --hd-center-undef: #ffffff;
+  --hd-gate-bg: #ffffff;
+  --hd-gate-stroke: #1a1d23;
+  --hd-channel: #9aa1ad;
+  --hd-single-accent: #1a1d23;
+
+  /* 字体 */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI',
+    Roboto, sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+
+  --fs-display: 20px;
+  --fs-title: 16px;
+  --fs-body: 14px;
+  --fs-data: 13px;
+  --fs-sm: 12px;
+  --fs-xs: 11px;
+
+  /* 间距 4 基准 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-8: 48px;
+
+  /* 圆角 */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* 阴影 */
+  --elev-card: 0 1px 3px rgba(16, 18, 23, 0.08), 0 1px 2px rgba(16, 18, 23, 0.06);
+  --elev-panel: 0 4px 16px rgba(16, 18, 23, 0.12);
+  --elev-dialog: 0 8px 32px rgba(16, 18, 23, 0.2);
+
+  /* 层级 */
+  --z-canvas: 10;
+  --z-toolbar: 20;
+  --z-panel: 30;
+  --z-drawer-mask: 40;
+  --z-drawer: 41;
+  --z-dialog: 50;
+  --z-toast: 60;
+
+  /* 用户可调字号（设置页） */
+  --font-scale: 1;
+}
+
+:root[data-theme='dark'] {
+  --bg-base: #111317;
+  --surface: #1b1e24;
+  --surface-2: #23272f;
+  --border: #2e333c;
+  --border-strong: #3d434e;
+  --text-primary: #f2f4f7;
+  --text-secondary: #aeb4bf;
+  --text-muted: #767d89;
+  --action-primary: #f2f4f7;
+  --action-primary-hover: #ffffff;
+  --action-ghost-bg: transparent;
+  --focus-ring: #f2f4f7;
+  --hd-center-defined: #f2f4f7;
+  --hd-center-undef: transparent;
+  --hd-gate-bg: #1b1e24;
+  --hd-gate-stroke: #c9ced6;
+  --hd-channel: #5b616e;
+  --hd-single-accent: #f2f4f7;
+  --elev-card: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --elev-panel: 0 4px 16px rgba(0, 0, 0, 0.55);
+  --elev-dialog: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+/* 人体图高对比配色：中心用边框强调而非填充 */
+:root[data-palette='high-contrast'] {
+  --hd-center-defined: #1a1d23;
+  --hd-gate-stroke: #000000;
+  --hd-channel: #4a5160;
+  --hd-single-accent: #1a1d23;
+}
+
+:root[data-palette='high-contrast'][data-theme='dark'] {
+  --hd-center-defined: #ffffff;
+  --hd-gate-stroke: #ffffff;
+  --hd-channel: #8a909c;
+  --hd-single-accent: #ffffff;
+}

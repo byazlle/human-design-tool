@@ -1,0 +1,29 @@
+# 依赖
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# 构建产物
+src-tauri/target/
+src-tauri/gen/
+src-tauri/icons/
+
+# 编辑器
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+
+# 环境变量与密钥（绝不提交）
+.env
+.env.*
+!.env.example
+
+# 日志
+*.log
+npm-debug.log*
+
+# 测试与缓存
+coverage/
+.vite/
