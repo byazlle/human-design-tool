@@ -18,6 +18,7 @@
     "vue-router": "^4.4.5"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0",
     "@types/node": "^26.6.5",
     "@vitejs/plugin-vue": "^5.2.1",
     "astronomia": "^4.2.0",

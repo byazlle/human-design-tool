@@ -52,6 +52,11 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: 安装 Linux 主机依赖（Tauri 编译所需）
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -60,10 +65,11 @@ jobs:
       - name: 安装 Android SDK 组件
         uses: android-actions/setup-android@v3
 
-      - name: 安装 NDK
+      - name: 安装 NDK 并接受许可协议
         run: |
+          yes | sdkmanager --licenses || true
           sdkmanager "ndk;26.1.10909125" "platforms;android-34" "build-tools;34.0.0"
-          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> $GITHUB_ENV
+          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> "$GITHUB_ENV"
 
       - uses: dtolnay/rust-toolchain@stable
         with:

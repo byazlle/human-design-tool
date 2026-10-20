@@ -7,7 +7,7 @@ dist-ssr/
 # 构建产物
 src-tauri/target/
 src-tauri/gen/
-src-tauri/icons/
+# src-tauri/icons/ 需提交（Tauri 构建依赖仓库内图标）
 
 # 编辑器
 .vscode/*
