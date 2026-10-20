@@ -17,10 +17,24 @@ import zipfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 TOOLCHAIN = os.path.join(ROOT, '.toolchain')
-SDK = os.path.join(TOOLCHAIN, 'android-sdk')
-JDK = os.path.join(TOOLCHAIN, 'jdk17', 'jdk-17.0.2')
+
+# 优先使用系统提供的 JDK / Android SDK（CI 与已配置的机器），
+# 没有时回退到仓库本地的 .toolchain（离线自举）。
+SDK = os.environ.get('ANDROID_HOME') or os.environ.get('ANDROID_SDK_ROOT') or os.path.join(TOOLCHAIN, 'android-sdk')
+JDK = os.environ.get('JAVA_HOME') or os.path.join(TOOLCHAIN, 'jdk17', 'jdk-17.0.2')
 BUILD_TOOLS = os.path.join(SDK, 'build-tools', '34.0.0')
-PLATFORM = os.path.join(SDK, 'platforms', 'android-34', 'android.jar')
+
+# android.jar 的平台目录可能随镜像不同，做一次探测
+_platform = os.path.join(SDK, 'platforms', 'android-34', 'android.jar')
+if not os.path.exists(_platform):
+    platforms_dir = os.path.join(SDK, 'platforms')
+    if os.path.isdir(platforms_dir):
+        for name in sorted(os.listdir(platforms_dir), reverse=True):
+            candidate = os.path.join(platforms_dir, name, 'android.jar')
+            if os.path.exists(candidate):
+                _platform = candidate
+                break
+PLATFORM = _platform
 
 ANDROID_DIR = os.path.join(ROOT, 'android')
 BUILD_DIR = os.path.join(ROOT, 'build', 'android')
@@ -68,14 +82,31 @@ def run(cmd, cwd=None, env=None, allow_fail=False):
     return proc
 
 
+def tool(name):
+    """按平台解析可执行文件路径。"""
+    base = os.path.join(BUILD_TOOLS, name)
+    for ext in ('', '.exe', '.bat'):
+        if os.path.exists(base + ext):
+            return base + ext
+    return base
+
+
+def jdk_tool(name):
+    base = os.path.join(JDK, 'bin', name)
+    for ext in ('', '.exe'):
+        if os.path.exists(base + ext):
+            return base + ext
+    return base
+
+
 def check_tools():
     required = {
-        'aapt2': os.path.join(BUILD_TOOLS, 'aapt2.exe'),
-        'zipalign': os.path.join(BUILD_TOOLS, 'zipalign.exe'),
-        'apksigner': os.path.join(BUILD_TOOLS, 'apksigner.bat'),
-        'd8': os.path.join(BUILD_TOOLS, 'd8.bat'),
-        'javac': os.path.join(JDK, 'bin', 'javac.exe'),
-        'keytool': os.path.join(JDK, 'bin', 'keytool.exe'),
+        'aapt2': tool('aapt2'),
+        'zipalign': tool('zipalign'),
+        'apksigner': tool('apksigner'),
+        'd8': tool('d8'),
+        'javac': jdk_tool('javac'),
+        'keytool': jdk_tool('keytool'),
         'android.jar': PLATFORM,
     }
     missing = [f'{k}: {v}' for k, v in required.items() if not os.path.exists(v)]
@@ -127,7 +158,7 @@ def ensure_keystore():
         print('复用已有签名密钥')
         return
     run([
-        os.path.join(JDK, 'bin', 'keytool.exe'), '-genkeypair',
+        jdk_tool('keytool'), '-genkeypair',
         '-keystore', KEYSTORE,
         '-alias', 'humandesign',
         '-keyalg', 'RSA',
@@ -155,7 +186,7 @@ def build():
     prepare_assets()
     prepare_res()
 
-    aapt2 = os.path.join(BUILD_TOOLS, 'aapt2.exe')
+    aapt2 = tool('aapt2')
     manifest = os.path.join(ANDROID_DIR, 'AndroidManifest.xml')
     res_dir = os.path.join(ANDROID_DIR, 'res')
 
@@ -197,7 +228,7 @@ def build():
             fh.write(src.replace(os.sep, '/') + '\n')
 
     run([
-        os.path.join(JDK, 'bin', 'javac.exe'),
+        jdk_tool('javac'),
         '-source', '11', '-target', '11',
         '-encoding', 'UTF-8',
         '-nowarn',
@@ -214,7 +245,7 @@ def build():
     dex_dir = os.path.join(BUILD_DIR, 'dex')
     os.makedirs(dex_dir, exist_ok=True)
     run([
-        os.path.join(BUILD_TOOLS, 'd8.bat'),
+        tool('d8'),
         '--lib', PLATFORM,
         '--min-api', '24',
         '--output', dex_dir,
@@ -233,7 +264,7 @@ def build():
 
     # 6) 对齐
     aligned = os.path.join(BUILD_DIR, 'aligned.apk')
-    run([os.path.join(BUILD_TOOLS, 'zipalign.exe'), '-f', '-p', '4', merged, aligned])
+    run([tool('zipalign'), '-f', '-p', '4', merged, aligned])
 
     # 7) 签名
     ensure_keystore()
@@ -241,7 +272,7 @@ def build():
     if os.path.exists(final):
         os.remove(final)
     run([
-        os.path.join(BUILD_TOOLS, 'apksigner.bat'),
+        tool('apksigner'),
         'sign',
         '--ks', KEYSTORE,
         '--ks-key-alias', 'humandesign',
@@ -253,7 +284,7 @@ def build():
         aligned,
     ])
 
-    run([os.path.join(BUILD_TOOLS, 'apksigner.bat'), 'verify', '--verbose', final])
+    run([tool('apksigner'), 'verify', '--verbose', final])
 
     size_mb = os.path.getsize(final) / 1048576
     print(f'\n构建完成：{final}')

@@ -1,97 +1,154 @@
-name: build
+name: Build Installers
 
 on:
   push:
     branches: [main]
     tags: ['v*']
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  # ---------- Windows 安装包 ----------
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: 安装前端依赖
-        run: npm ci
-
-      - name: 单元测试（排盘内核）
-        run: npm test
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - name: 构建 Windows 安装包
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          releaseName: ${{ github.ref_type == 'tag' && format('HumanDesignTool {0}', github.ref_name) || '' }}
-          releaseDraft: true
-          prerelease: false
-          args: --target x86_64-pc-windows-msvc
-
-  # ---------- Android APK（云端构建，本地无需 Android SDK） ----------
-  build-android:
+  test:
+    name: 内核测试
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '22'
           cache: npm
 
-      - name: 安装 Linux 主机依赖（Tauri 编译所需）
+      - run: npm ci
+      - run: npx vue-tsc --noEmit
+      - run: npm test
+
+  windows:
+    name: Windows 安装包
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 构建前端
+        run: npm run build
+
+      - name: 安装桌面打包依赖
+        working-directory: desktop
+        run: npm ci
+
+      - name: 生成 NSIS 安装包
+        run: python scripts/build-exe.py
+
+      - name: 冒烟自检（打包后的运行时）
+        shell: pwsh
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev
+          $env:HD_SMOKE = '1'
+          $env:HD_SMOKE_DIR = Join-Path $env:GITHUB_WORKSPACE '.shots'
+          $exe = Get-ChildItem -Path 'release\desktop\win-unpacked\*.exe' |
+                 Where-Object { $_.Name -notmatch 'Setup|uninstall' } | Select-Object -First 1
+          Write-Host "运行 $($exe.FullName)"
+          & $exe.FullName
+          if (-not (Test-Path '.shots\smoke-result.json')) { throw '冒烟自检未产出结果文件' }
+          $result = Get-Content '.shots\smoke-result.json' -Raw | ConvertFrom-Json
+          Write-Host "自检 $($result.passed)/$($result.total) 通过"
+          if (-not $result.ok) { throw "冒烟自检未通过：$($result.failed -join ', ')" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: release/desktop/*.exe
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-smoke-shots
+          path: .shots/
+          if-no-files-found: ignore
+
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: 安装 Android SDK 组件
-        uses: android-actions/setup-android@v3
-
-      - name: 安装 NDK 并接受许可协议
+      - name: 安装前端依赖并构建
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "ndk;26.1.10909125" "platforms;android-34" "build-tools;34.0.0"
-          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> "$GITHUB_ENV"
+          npm ci
+          npm run build
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
-
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - name: 安装前端依赖
-        run: npm ci
-
-      - name: 初始化 Android 工程（首次运行会生成 src-tauri/gen/android）
-        run: npx tauri android init --ci
+      - name: 准备 Android SDK 组件
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager)"
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platform-tools" "build-tools;34.0.0" "platforms;android-34"
 
       - name: 构建 APK
-        env:
-          NDK_HOME: ${{ env.NDK_HOME }}
-        run: npx tauri android build --apk
+        run: python3 scripts/build-apk.py
+
+      - name: 校验 APK 签名与内容
+        run: |
+          SDK="${ANDROID_HOME}"
+          APK="release/android/HumanDesign-0.2.0.apk"
+          "$SDK/build-tools/34.0.0/apksigner" verify --verbose "$APK"
+          unzip -l "$APK" | grep -E "classes.dex|assets/www/index.html"
 
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
-          if-no-files-found: warn
+          path: release/android/*.apk
+          if-no-files-found: error
+
+  release:
+    name: 附加产物到 Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: [windows, android]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 列出产物
+        run: find artifacts -type f \( -name '*.exe' -o -name '*.apk' \) -exec ls -lh {} \;
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/**/*.exe
+            artifacts/**/*.apk
+          fail_on_unmatched_files: true

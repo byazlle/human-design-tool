@@ -16,7 +16,10 @@ DESKTOP = os.path.join(ROOT, 'desktop')
 DIST = os.path.join(ROOT, 'dist')
 STAGE = os.path.join(ROOT, 'release', 'desktop', 'win-unpacked')
 APP_DIR = os.path.join(STAGE, 'resources', 'app')
-NODE = r'C:\Users\cat\.workbuddy\binaries\node\versions\22.22.2-6'
+# 优先使用 PATH 中的 node（CI / 常规安装），回退到本机托管版本
+NODE = os.path.dirname(shutil.which('node') or '')
+if not NODE:
+    NODE = r'C:\Users\cat\.workbuddy\binaries\node\versions\22.22.2-6'
 
 
 def clean_dir(path):
@@ -35,13 +38,38 @@ def clean_dir(path):
                 pass
 
 
+def ensure_stage():
+    """首次构建时自举：把 electron 自带的运行时复制成 win-unpacked 目录。"""
+    if os.path.isdir(os.path.join(STAGE, 'resources')):
+        return
+    electron_dist = os.path.join(DESKTOP, 'node_modules', 'electron', 'dist')
+    if not os.path.isdir(electron_dist):
+        print('缺少 electron 运行时，请先在 desktop/ 执行 npm install')
+        sys.exit(1)
+
+    os.makedirs(STAGE, exist_ok=True)
+    for name in os.listdir(electron_dist):
+        src = os.path.join(electron_dist, name)
+        dst = os.path.join(STAGE, name)
+        if os.path.isdir(src):
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+        else:
+            shutil.copy2(src, dst)
+
+    # Electron 主程序改名为产品名
+    for candidate in ('electron.exe', 'electron'):
+        old = os.path.join(STAGE, candidate)
+        if os.path.exists(old):
+            os.rename(old, os.path.join(STAGE, 'HumanDesign.exe'))
+            break
+    print('已从 electron 运行时自举 win-unpacked')
+
+
 def stage_app():
     if not os.path.isdir(DIST):
         print('缺少 dist，请先执行 npm run build')
         sys.exit(1)
-    if not os.path.isdir(STAGE):
-        print('缺少 Electron 运行时目录，请先运行 desktop 首次打包以生成 win-unpacked')
-        sys.exit(1)
+    ensure_stage()
 
     os.makedirs(APP_DIR, exist_ok=True)
 
@@ -83,8 +111,9 @@ def build():
     )
     env['ELECTRON_MIRROR'] = 'https://registry.npmmirror.com/-/binary/electron/'
 
+    npx = shutil.which('npx') or os.path.join(NODE, 'npx.cmd')
     cmd = [
-        os.path.join(NODE, 'npx.cmd'),
+        npx,
         'electron-builder',
         '--win', 'nsis', '--x64',
         '--prepackaged', STAGE,
