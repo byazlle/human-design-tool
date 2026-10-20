@@ -110,7 +110,7 @@ function gateStroke(gate: number): string {
 
 function gateStrokeWidth(gate: number): number {
   if (highlightGates.value.has(gate) && gateLit(gate)) return 3.4
-  return gateLit(gate) ? 2 : 1.5
+  return gateLit(gate) ? 2.2 : 1.6
 }
 
 function channelStroke(key: string): string {
@@ -122,8 +122,8 @@ function channelStroke(key: string): string {
 
 /** 线条加粗：已定义 7，未定义 3.2，高亮 9 */
 function channelWidth(key: string): number {
-  if (highlightChannels.value.has(key)) return 9
-  return definedChannels.value.has(key) ? 7 : 2.4
+  if (highlightChannels.value.has(key)) return 13
+  return definedChannels.value.has(key) ? 10 : 2.8
 }
 
 function channelOpacity(key: string): number {
@@ -195,9 +195,9 @@ function centerClickable(id: CenterId): boolean {
         :x2="line.x2"
         :y2="line.y2"
         :stroke="'var(--hd-channel)'"
-        :stroke-width="2.6"
-        :stroke-dasharray="'8 8'"
-        :opacity="channelVisible(line.key) ? 0.42 : 0"
+        :stroke-width="3.2"
+        :stroke-dasharray="'9 9'"
+        :opacity="channelVisible(line.key) ? 0.32 : 0"
         stroke-linecap="round"
       />
       <line
@@ -208,7 +208,7 @@ function centerClickable(id: CenterId): boolean {
         :x2="line.x2"
         :y2="line.y2"
         stroke="var(--hd-channel-halo)"
-        :stroke-width="channelWidth(line.key) + 3.4"
+        :stroke-width="channelWidth(line.key) + 4.5"
         :opacity="channelVisible(line.key) ? 0.95 : 0"
         stroke-linecap="round"
       />
@@ -244,11 +244,9 @@ function centerClickable(id: CenterId): boolean {
         :stroke="
           highlightCenters.has(shape.id)
             ? 'var(--status-warning)'
-            : definedCenters.has(shape.id)
-              ? 'var(--hd-center-defined)'
-              : 'var(--border-strong)'
+            : 'var(--hd-center-defined)'
         "
-        :stroke-width="highlightCenters.has(shape.id) ? 3.4 : definedCenters.has(shape.id) ? 2.6 : 2.2"
+        :stroke-width="highlightCenters.has(shape.id) ? 4 : 3.2"
         :stroke-dasharray="definedCenters.has(shape.id) ? 'none' : '0'"
         stroke-linejoin="round"
         filter="url(#hd-center-shadow)"
@@ -298,10 +296,10 @@ function centerClickable(id: CenterId): boolean {
         <text
           v-if="!compact"
           :x="point.x"
-          :y="point.y + 3.9"
+          :y="point.y + 4.2"
           text-anchor="middle"
           :fill="gateTextFill(point.gate)"
-          :font-size="gateLit(point.gate) ? 12 : 11"
+          :font-size="gateLit(point.gate) ? 13 : 12"
           :font-weight="gateLit(point.gate) ? 700 : 500"
           font-family="var(--font-mono)"
           pointer-events="none"

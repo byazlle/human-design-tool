@@ -31,7 +31,7 @@
 
   /* 人体图 */
   --hd-center-defined: #2b2f36;
-  --hd-center-undef: #ffffff;
+  --hd-center-undef: #f7f9fc;
   --hd-gate-bg: #ffffff;
   --hd-gate-stroke: #1a1d23;
   --hd-channel: #9aa1ad;
@@ -43,7 +43,7 @@
   --hd-center-undef-bottom: #eef1f6;
   --hd-gate-lit-fill: #3d4456;
   --hd-gate-idle-bg: #f6f8fc;
-  --hd-gate-ring: #98a2b3;
+  --hd-gate-ring: #788292;
   --hd-channel-halo: rgba(255, 255, 255, 0.92);
 
   /* 字体 */
@@ -141,7 +141,7 @@
   --action-ghost-bg: transparent;
   --focus-ring: #f2f4f7;
   --hd-center-defined: #f2f4f7;
-  --hd-center-undef: #1a1f28;
+  --hd-center-undef: #232a35;
   --hd-gate-bg: #1b1e24;
   --hd-gate-stroke: #c9ced6;
   --hd-channel: #5b616e;
@@ -152,7 +152,7 @@
   --hd-center-undef-bottom: #151a21;
   --hd-gate-lit-fill: #232834;
   --hd-gate-idle-bg: #1c222c;
-  --hd-gate-ring: #8791a1;
+  --hd-gate-ring: #9aa4b3;
   --hd-channel-halo: rgba(24, 28, 36, 0.92);
   --elev-card: 0 1px 3px rgba(0, 0, 0, 0.5);
   --elev-panel: 0 4px 16px rgba(0, 0, 0, 0.55);
