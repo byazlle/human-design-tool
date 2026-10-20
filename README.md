@@ -42,8 +42,24 @@ npm run build      # 产出 dist/（可直接静态托管或双击 index.html）
 
 - ✅ 4 个跨时区样本（含 1990 中国夏令时、1972 北美、1964 欧洲跨年）的 **26 个激活点（闸门+爻）、类型、权威、人生角色、通道集合、中心集合** 与 `free-human-design`（rave-engine 血统，已对齐 Swiss Ephemeris）**完全一致**；
 - ✅ 1950–2035 随机 200 个时刻 × 13 天体 = 2600 个位置比对：无闸门/爻分歧（唯一 1 例为参照实现月球截断级数残差 0.011°）；
-- ✅ 64 闸门盘序边界、通道路由、合盘归属划分、时区换算均有单元测试；
+- ✅ 64 闸门盘序边界、通道路由、合盘归属划分、时区换算均有单元测试（`npm test`，15 项全绿）；
+- ✅ 几何自检：64 个闸门锚点不重叠、不越界，36 条通道端点归属正确；
+- ✅ 浏览器实测（Chrome）1440px 与 500px 两档：档案库、单人盘、多盘并排、合盘三栏、录入、设置均正常渲染；
+- ⚠️ **未**在真实 390px 视口下截图验证（当前 headless Chrome 有最小窗口宽度限制），手机端仅验证了 ≤768 分支的渲染；
 - ⚠️ 尚未与 Jovian Archive / Genetic Matrix 等商业软件逐例比对（需授权样本），也**未做** 192 个轮回交叉专有名称的映射（本项目只给结构，不臆造名称）。
+
+## 推送到 GitHub
+
+仓库已在本地初始化并提交（`.env`、`node_modules`、`dist` 均已忽略）。当前环境无法访问 `api.github.com`（SSL 连接被阻断），需在可访问 GitHub 的终端执行：
+
+```bash
+gh repo create human-design-tool --private --source=. --remote=origin --push
+# 或已有仓库：
+git remote add origin https://github.com/<用户名>/human-design-tool.git
+git push -u origin main
+```
+
+推送后 `.github/workflows/build.yml` 会自动构建 Windows 安装包与 Android APK。
 
 ## 目录结构
 
