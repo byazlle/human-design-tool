@@ -209,6 +209,7 @@ function gateCenterLabel(gate: number): string {
 .table-wrap {
   max-height: 340px;
   overflow-y: auto;
+  overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }

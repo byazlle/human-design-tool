@@ -166,9 +166,12 @@ const starListOpen = ref(false)
       @help="ui.notify('点击人体图上的闸门或通道圆点，即可查看离线释义；右侧面板底部可按需调用 AI。')"
     >
       <template #right>
-        <HdButton size="sm" :loading="aiState.loading" @click="requestFullReading">
-          全盘 AI 解读
-        </HdButton>
+        <span class="tb-actions">
+          <HdButton size="sm" @click="router.push(`/compare/${id}`)"> 双盘对比 </HdButton>
+          <HdButton size="sm" :loading="aiState.loading" @click="requestFullReading">
+            全盘 AI 解读
+          </HdButton>
+        </span>
       </template>
     </AppToolbar>
 
@@ -283,7 +286,8 @@ const starListOpen = ref(false)
 
     <!-- 手机：底部固定操作 -->
     <div v-if="isMobile && chart" class="mobile-bar safe-bottom">
-      <HdButton block :loading="aiState.loading" @click="requestFullReading">全盘 AI 解读</HdButton>
+      <HdButton @click="router.push(`/compare/${id}`)">双盘对比</HdButton>
+      <HdButton :loading="aiState.loading" @click="requestFullReading">全盘 AI 解读</HdButton>
     </div>
 
     <GateChannelPanel
@@ -416,15 +420,32 @@ const starListOpen = ref(false)
   gap: var(--sp-3);
 }
 
+.tb-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+@media (max-width: 768px) {
+  .tb-actions {
+    display: none;
+  }
+}
+
 .mobile-bar {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
+  display: flex;
+  gap: var(--sp-2);
   padding: var(--sp-3);
   background: var(--surface);
   border-top: 1px solid var(--border);
   z-index: var(--z-toolbar);
+}
+
+.mobile-bar > * {
+  flex: 1;
 }
 
 @media (max-width: 768px) {

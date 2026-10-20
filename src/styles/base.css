@@ -30,6 +30,18 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* 手机端：全局预留系统状态栏安全区（含刘海屏），所有页面生效 */
+body {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* 移动端自适应兜底：任何内容过宽时在页面层截断，绝不出现横向滚动 */
+html,
+body {
+  overflow-x: clip;
+  max-width: 100vw;
+}
+
 /* 桌面壳：顶部让出自绘标题栏 */
 body.shell-desktop {
   --chrome-h: 34px;
@@ -389,4 +401,8 @@ svg {
 /* 移动端安全区 */
 .safe-bottom {
   padding-bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px));
+}
+
+.safe-top {
+  padding-top: calc(var(--sp-2) + env(safe-area-inset-top, 0px));
 }

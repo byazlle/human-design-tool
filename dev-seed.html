@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>dev-seed</title>
+  </head>
+  <body>
+    <script type="module">
+      // 开发用种子页：写入示例档案后跳到单人盘/合盘。
+      // 用法：/dev-seed.html?fresh=1&to=first|composite
+      const q = new URLSearchParams(location.search)
+      if (q.get('fresh') === '1') localStorage.clear()
+
+      const { createPinia, setActivePinia } = await import('pinia')
+      setActivePinia(createPinia())
+
+      const { useArchiveStore } = await import('/src/stores/archive.ts')
+      const store = useArchiveStore()
+      store.seedSamples()
+      const first = store.archives[0]
+      const base =
+        q.get('to') === 'compare' && store.archives[1]
+          ? `/#/compare/${first.id}/${store.archives[1].id}`
+          : `/#/archive/${first.id}`
+      // 保留诊断参数（如 debug-w），便于开发调试
+      const keep = new URLSearchParams(q)
+      keep.delete('fresh')
+      keep.delete('to')
+      const qs = keep.toString()
+      location.replace(qs ? `${base}?${qs}` : base)
+    </script>
+  </body>
+</html>

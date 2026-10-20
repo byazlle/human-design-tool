@@ -45,6 +45,8 @@
   --hd-gate-idle-bg: #f6f8fc;
   --hd-gate-ring: #788292;
   --hd-channel-halo: rgba(255, 255, 255, 0.92);
+  /* 白色通道底层的描边：使其在白底上可辨 */
+  --hd-ch-base-halo: rgba(90, 100, 115, 0.5);
 
   /* 字体 */
   --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI',
@@ -154,6 +156,7 @@
   --hd-gate-idle-bg: #1c222c;
   --hd-gate-ring: #9aa4b3;
   --hd-channel-halo: rgba(24, 28, 36, 0.92);
+  --hd-ch-base-halo: rgba(10, 14, 20, 0.55);
   --elev-card: 0 1px 3px rgba(0, 0, 0, 0.5);
   --elev-panel: 0 4px 16px rgba(0, 0, 0, 0.55);
   --elev-dialog: 0 8px 32px rgba(0, 0, 0, 0.6);

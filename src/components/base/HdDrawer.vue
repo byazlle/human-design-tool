@@ -58,6 +58,8 @@ const emit = defineEmits<{ close: [] }>()
   box-shadow: var(--glass-shadow-float);
   z-index: var(--z-drawer);
   padding-top: var(--sp-2);
+  /* 手机端底部手势条安全区 */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .grabber {

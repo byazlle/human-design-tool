@@ -38,6 +38,11 @@ const router = createRouter({
       component: () => import('../views/SettingsView.vue'),
     },
     {
+      path: '/compare/:aId?/:bId?',
+      name: 'compare',
+      component: () => import('../views/CompareView.vue'),
+    },
+    {
       path: '/:pathMatch(.*)*',
       redirect: '/',
     },

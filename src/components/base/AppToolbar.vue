@@ -108,6 +108,10 @@ const settings = useSettingsStore()
   display: flex;
   align-items: center;
   gap: var(--sp-1);
+  flex: none;
+  max-width: 70%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 @media (max-width: 768px) {

@@ -121,7 +121,7 @@ onBeforeUnmount(() => {
 .dock {
   position: fixed;
   right: var(--sp-5);
-  bottom: var(--sp-5);
+  bottom: calc(var(--sp-5) + env(safe-area-inset-bottom, 0px));
   z-index: var(--z-drawer);
   display: flex;
   flex-direction: column;

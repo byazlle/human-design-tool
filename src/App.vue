@@ -50,7 +50,7 @@ onMounted(() => {
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 32px;
+  bottom: calc(32px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   max-width: min(92vw, 520px);
   padding: 10px 18px;
