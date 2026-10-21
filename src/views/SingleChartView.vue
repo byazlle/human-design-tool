@@ -1,6 +1,9 @@
 <script setup lang="ts">
 /** 单人盘页：桌面并排信息 + 右侧详情面板；手机折叠 + 底部抽屉（DESIGN.md §5.2 / §8） */
 import { computed, ref, watch } from 'vue'
+
+import { useDrawingEngine } from '../composables/useDrawingEngine'
+const engine = useDrawingEngine()
 import { useRoute, useRouter } from 'vue-router'
 import { useArchiveStore } from '../stores/archive'
 import { useUiStore } from '../stores/ui'
@@ -25,6 +28,7 @@ import { READING_ANGLES, angleOf } from '../services/readingAngles'
 import { destinyReadings } from '../services/destinyText'
 import PlanetColumn from '../components/chart/PlanetColumn.vue'
 import DetailCard from '../components/chart/DetailCard.vue'
+import ArchiveEditDialog from '../components/archive/ArchiveEditDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -48,6 +52,16 @@ watch(
 
 const filter = ref({ showDecimals: true, showColorToneBase: true, sharedOnly: false })
 const panelOpen = computed(() => Boolean(ui.panel))
+
+/* 编辑 / 复制副本 */
+const editOpen = ref(false)
+
+function duplicateChart() {
+  const copy = archiveStore.duplicate(id.value)
+  if (!copy) return
+  ui.notify('已创建副本，可在副本上继续调整', 'success')
+  router.push(`/archive/${copy.id}`)
+}
 
 /* ── 星级选择（与闸门联动，供 AI 组合解读）────────────── */
 const selectedStars = ref(new Set<string>())
@@ -248,6 +262,8 @@ const starListOpen = ref(false)
     >
       <template #right>
         <span class="tb-actions">
+          <HdButton size="sm" variant="ghost" @click="editOpen = true">编辑</HdButton>
+          <HdButton size="sm" variant="ghost" @click="duplicateChart">复制副本</HdButton>
           <HdButton size="sm" @click="router.push(`/compare/${id}`)"> 双盘对比 </HdButton>
           <HdButton size="sm" :loading="aiState.loading" @click="requestFullReading">
             全盘 AI 解读
@@ -335,7 +351,7 @@ const starListOpen = ref(false)
 
           <div class="chart-stage">
             <div class="graph-wrap">
-              <HumanDesignBodyGraph
+              <HumanDesignBodyGraph :engine="engine"
                 :chart="chart"
                 mode="single"
                 :filter="filter"
@@ -425,8 +441,10 @@ const starListOpen = ref(false)
 
     <!-- 手机：底部固定操作 -->
     <div v-if="isMobile && chart" class="mobile-bar safe-bottom">
-      <HdButton @click="router.push(`/compare/${id}`)">双盘对比</HdButton>
-      <HdButton :loading="aiState.loading" @click="requestFullReading">全盘 AI 解读</HdButton>
+      <HdButton size="sm" variant="ghost" @click="editOpen = true">编辑</HdButton>
+      <HdButton size="sm" variant="ghost" @click="duplicateChart">副本</HdButton>
+      <HdButton size="sm" variant="ghost" @click="router.push(`/compare/${id}`)">对比</HdButton>
+      <HdButton size="sm" :loading="aiState.loading" @click="requestFullReading">全盘 AI</HdButton>
     </div>
 
     <GateChannelPanel
@@ -440,6 +458,8 @@ const starListOpen = ref(false)
       @request-ai="requestAiForSelection"
       @open-channel="ui.openChannel($event, 'single')"
     />
+
+    <ArchiveEditDialog :open="editOpen" :archive="archive ?? null" @close="editOpen = false" />
 
     <AiReadingPanel
       :open="aiState.open"
@@ -581,19 +601,37 @@ const starListOpen = ref(false)
   flex: none;
 }
 
+/* 完整盘一屏展示：卡片高度锁定为可用视口，内部等比缩放，绝不裁切、无需滚动 */
+.col-chart .chart-card {
+  height: calc(100vh - var(--chrome-h) - 152px);
+  min-height: 420px;
+  max-height: 1180px;
+  overflow: hidden;
+}
+
 .chart-stage {
   position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .graph-wrap {
   width: 100%;
+  height: 100%;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .graph-wrap :deep(svg) {
   width: 100%;
-  height: auto;
+  height: 100%;
   max-width: 100%;
+  max-height: 100%;
   margin: 0 auto;
 }
 
@@ -703,6 +741,19 @@ const starListOpen = ref(false)
 
 .layout.mobile .angle-bar {
   grid-column: auto;
+}
+
+.layout.mobile .col-chart .chart-card {
+  height: auto;
+  max-height: none;
+}
+
+.layout.mobile .chart-stage {
+  display: block;
+}
+
+.layout.mobile .graph-wrap {
+  height: auto;
 }
 
 .layout.mobile .graph-wrap :deep(svg) {

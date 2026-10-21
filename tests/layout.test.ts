@@ -9,6 +9,7 @@ import {
   VIEW_H,
   VIEW_W,
   CENTER_SHAPES,
+  CHANNEL_LINES,
 } from '../src/components/chart/bodyGraphLayout'
 import { CHANNELS, GATE_CENTER } from '../src/engine/gateData'
 
@@ -55,5 +56,30 @@ describe('人体图几何', () => {
       expect(a.center).toBe(ch.centers[0])
       expect(b.center).toBe(ch.centers[1])
     }
+  })
+
+  it('每个闸门都必须落在所属中心内部（绘制正确性回归）', () => {
+    const inside = (poly: Array<[number, number]>, x: number, y: number) => {
+      let c = false
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const [xi, yi] = poly[i]
+        const [xj, yj] = poly[j]
+        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c
+      }
+      return c
+    }
+    const bad: string[] = []
+    for (const p of Object.values(GATE_POINTS)) {
+      const poly = CENTER_SHAPES[p.center].polygon
+      if (!inside(poly, p.x, p.y)) bad.push(`${p.gate}(${p.center})`)
+    }
+    expect(bad).toEqual([])
+  })
+
+  it('通道裁剪后长度足够（不出现被中心吞掉的线）', () => {
+    const short = CHANNEL_LINES.filter(
+      (l) => !l.internal && Math.hypot(l.x2 - l.x1, l.y2 - l.y1) < 6,
+    ).map((l) => l.key)
+    expect(short).toEqual([])
   })
 })

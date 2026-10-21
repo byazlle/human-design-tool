@@ -100,6 +100,30 @@ export const useArchiveStore = defineStore('archive', {
       this.persist()
     },
 
+    /** 一键复制为副本：新 id、名称加「副本」后缀，后续编辑互不影响 */
+    duplicate(id: string): Archive | null {
+      const src = this.archives.find((a) => a.id === id)
+      if (!src) return null
+      const copy: Archive = JSON.parse(JSON.stringify(src)) as Archive
+      copy.id = createId()
+      copy.name = `${src.name} 副本`
+      copy.createdAt = new Date().toISOString()
+      this.archives.push(copy)
+      this.persist()
+      return copy
+    },
+
+    /** 按当前出生信息重算全部档案（切换绘图程序后用于数据一致性重建） */
+    regenerateAll(): number {
+      let count = 0
+      for (const a of this.archives) {
+        a.chart = computeChart(draftToInput(a))
+        count += 1
+      }
+      this.persist()
+      return count
+    },
+
     remove(id: string) {
       this.archives = this.archives.filter((a) => a.id !== id)
       this.selectedIds = this.selectedIds.filter((x) => x !== id)

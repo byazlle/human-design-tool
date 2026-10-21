@@ -2,6 +2,9 @@
 /** 设置面板：AI 接口 / 外观 / 数据 / 计算精度（DESIGN.md §4.12） */
 import { ref, watch } from 'vue'
 import { useSettingsStore } from '../../stores/settings'
+import { useArchiveStore } from '../../stores/archive'
+import { useUiStore } from '../../stores/ui'
+import { DRAWING_ENGINES } from '../chart/layouts'
 import HdField from '../base/HdField.vue'
 import HdToggle from '../base/HdToggle.vue'
 import HdButton from '../base/HdButton.vue'
@@ -14,6 +17,8 @@ const emit = defineEmits<{
 }>()
 
 const settings = useSettingsStore()
+const archiveStore = useArchiveStore()
+const ui = useUiStore()
 
 const form = ref({
   baseUrl: settings.ai.baseUrl,
@@ -66,6 +71,11 @@ const fontScaleLabel = () => {
   if (s <= 0.95) return '小'
   if (s >= 1.15) return '大'
   return '标准'
+}
+
+function regenerateAll() {
+  const n = archiveStore.regenerateAll()
+  ui.notify(`已按当前绘图程序重新生成 ${n} 份档案`, 'success')
 }
 </script>
 
@@ -184,6 +194,37 @@ const fontScaleLabel = () => {
             高对比
           </button>
         </div>
+      </div>
+    </section>
+
+    <!-- 绘图程序（多版本一键切换） -->
+    <section class="group">
+      <header>
+        <h2 class="t-title">绘图程序</h2>
+        <p class="t-sm">
+          切换后所有已生成的人类图会立即按新版本重绘；可再点「重新生成全部图表」按新版本重建全部档案数据。
+        </p>
+      </header>
+
+      <div class="engine-list">
+        <button
+          v-for="e in DRAWING_ENGINES"
+          :key="e.id"
+          type="button"
+          class="engine"
+          :class="{ on: settings.appearance.drawingEngine === e.id }"
+          @click="settings.setDrawingEngine(e.id)"
+        >
+          <strong>{{ e.label }}</strong>
+          <span class="t-xs">{{ e.note }}</span>
+        </button>
+      </div>
+
+      <div class="engine-actions">
+        <HdButton size="sm" variant="ghost" @click="regenerateAll">
+          重新生成全部图表
+        </HdButton>
+        <span class="t-xs t-muted">共 {{ archiveStore.archives.length }} 份档案</span>
       </div>
     </section>
 
@@ -340,5 +381,50 @@ header p {
   .seg-label {
     width: 100%;
   }
+}
+
+.engine-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--sp-2);
+}
+
+.engine {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--sp-3);
+  text-align: left;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-soft);
+  transition:
+    border-color var(--dur-fast) ease,
+    background var(--dur-fast) ease;
+}
+
+.engine:hover {
+  border-color: var(--border-strong);
+}
+
+.engine.on {
+  border-color: var(--owner-shared);
+  background: rgba(124, 58, 237, 0.1);
+}
+
+.engine strong {
+  font-size: calc(var(--fs-sm) * var(--font-scale));
+}
+
+.engine .t-xs {
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.engine-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
 }
 </style>

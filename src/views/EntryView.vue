@@ -5,6 +5,9 @@
  * 关键约束：身份证不含出生时间，时分必须手填并给出 warning 提示。
  */
 import { computed, reactive, ref, watch } from 'vue'
+
+import { useDrawingEngine } from '../composables/useDrawingEngine'
+const engine = useDrawingEngine()
 import { useRouter } from 'vue-router'
 import { useArchiveStore } from '../stores/archive'
 import { useSettingsStore } from '../stores/settings'
@@ -323,7 +326,7 @@ function goSettings() {
             <p v-else class="t-sm muted">填写出生日期与时间后自动预览</p>
           </header>
           <div v-if="preview" class="preview-graph">
-            <HumanDesignBodyGraph :chart="preview" compact :interactive="false" />
+            <HumanDesignBodyGraph :engine="engine" :chart="preview" compact :interactive="false" />
           </div>
           <ul v-if="preview" class="preview-facts">
             <li><span class="t-xs">已定义中心</span><span class="t-data">{{ preview.centers.filter((c) => c.defined).length }} / 9</span></li>

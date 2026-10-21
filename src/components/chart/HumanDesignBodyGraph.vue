@@ -1,33 +1,21 @@
 <script setup lang="ts">
 /**
- * 人体图渲染（底板 + 数据两层，规则严格对齐用户规格）：
+ * 人体图渲染（支持多版本绘图程序，规则统一）：
  *
- * 底板层（复刻用户提供的模板底图）：
- *   - 青色渐变背景（浅色）/ 深青渐变（深色）
- *   - 人体淡剪影
- *   - 白色通道管（带浅色描边）——底板上的「线槽」
- *   - 九中心白色填充 + 黑色描边
+ * 绘图程序（可在设置中切换，立即生效）：
+ *   - v1 底图对齐版：青色底板 + 人体剪影 + 白色通道管 + 白中心黑描边
+ *   - v2 Free Human Design 版：参考实现布局与渐变配色（八角星 G、紧凑比例）
  *
- * 数据层：
- *   - 通道：两端均潜意识=纯红实线；两端均显意识=纯黑实线；一端各一=红黑条纹实线；
- *           仅一端激活=红/黑分段虚线（悬挂，不构成完整通道）；两端未激活=不叠加彩色
+ * 数据层规则（两版一致）：
+ *   - 通道：双潜意识=红实线；双显意识=黑实线；一潜一显=红黑条纹；
+ *           仅单端=红/黑分段虚线（悬挂，不构成完整通道）；两端未激活=不叠加彩色
  *   - 闸门：潜意识（设计侧）=蓝底白字；显意识（个性侧）=无底圈黑字
- *   - 中心：任一完整通道接入→填充专属色；否则白底黑描边
+ *   - 中心：任一完整通道接入→有定义（专属色/专属渐变）；否则白底黑描边
  */
 import { computed } from 'vue'
 import type { BodyGraph, CenterId, Ownership, UiFilter } from '../../types/hd'
-import {
-  CENTER_SHAPES,
-  CHANNEL_LINES,
-  GATE_POINTS,
-  VIEW_BOX,
-  GATE_R,
-  GATE_FONT,
-  TUBE_W,
-  CH_W,
-  SILHOUETTE_PATH,
-  polygonPoints,
-} from './bodyGraphLayout'
+import { layoutOf, polygonOf, type DrawingEngine } from './layouts'
+import { SILHOUETTE_PATH } from './bodyGraphLayout'
 
 const props = withDefaults(
   defineProps<{
@@ -40,6 +28,8 @@ const props = withDefaults(
     interactive?: boolean
     compact?: boolean
     showCenterLabels?: boolean
+    /** 绘图程序版本 */
+    engine?: DrawingEngine
   }>(),
   {
     mode: 'single',
@@ -50,6 +40,7 @@ const props = withDefaults(
     interactive: true,
     compact: false,
     showCenterLabels: true,
+    engine: 'v1',
   },
 )
 
@@ -61,6 +52,9 @@ const emit = defineEmits<{
 
 type Source = 'a' | 'b' | 'merged' | 'single'
 const sourceOf = (): Source => (props.mode === 'single' ? 'single' : 'merged')
+
+const layout = computed(() => layoutOf(props.engine))
+const isV1 = computed(() => layout.value.plate === 'cyan')
 
 const activated = computed(() => new Set(props.chart.gates.map((g) => g.gate)))
 const definedChannels = computed(() => new Set(props.chart.channels.map((c) => c.key)))
@@ -85,6 +79,7 @@ const designGates = computed(() => {
 
 /* ── 中心 ─────────────────────────────────────────────── */
 
+/** 版本一：每中心固定专属色 */
 const CENTER_COLORS: Record<CenterId, string> = {
   head: '#9b7bf5',
   ajna: '#3fa7e8',
@@ -98,7 +93,10 @@ const CENTER_COLORS: Record<CenterId, string> = {
 }
 
 function centerFill(id: CenterId): string {
-  return definedCenters.value.has(id) ? CENTER_COLORS[id] : '#ffffff'
+  if (!definedCenters.value.has(id)) return '#ffffff'
+  const c = layout.value.centers.find((x) => x.id === id)
+  if (c?.gradient?.length) return `url(#hd-cg-${id})`
+  return CENTER_COLORS[id]
 }
 
 /* ── 闸门 ─────────────────────────────────────────────── */
@@ -123,7 +121,6 @@ function ownerVar(o: Ownership | undefined): string {
   return 'var(--hd-single-accent)'
 }
 
-/** 潜意识（设计侧）：蓝底白字 */
 function gateIsDesign(gate: number): boolean {
   return designGates.value.has(gate)
 }
@@ -143,8 +140,8 @@ function gateStroke(gate: number): string {
   return gateHasCircle(gate) ? 'rgba(255, 255, 255, 0.85)' : 'transparent'
 }
 function gateStrokeWidth(gate: number): number {
-  if (highlightGates.value.has(gate) && gateLit(gate)) return 4
-  return gateHasCircle(gate) ? 2 : 0
+  if (highlightGates.value.has(gate) && gateLit(gate)) return 3.6
+  return gateHasCircle(gate) ? 1.8 : 0
 }
 
 /* ── 通道 ─────────────────────────────────────────────── */
@@ -173,40 +170,42 @@ function colorOf(c: Consciousness): string {
   return 'url(#hd-stripe)'
 }
 function channelStroke(key: string): string {
-  const line = CHANNEL_LINES.find((l) => l.key === key)
+  const line = layout.value.channels.find((l) => l.key === key)
   if (!line) return 'var(--hd-single-accent)'
   if (props.mode === 'composite') return ownerVar(props.channelOwners[key])
   return colorOf(channelConsciousness(line.gates[0], line.gates[1]))
 }
 
-/** 完整通道：两端均激活时绘制，彩线向中心内延伸一小段接到数字 */
+const visibleChannels = computed(() => layout.value.channels.filter((l) => !l.internal))
+
 const fullChannels = computed(() =>
-  CHANNEL_LINES.filter((l) => definedChannels.value.has(l.key)).map((l) => {
-    const a = GATE_POINTS[l.gates[0]]
-    const b = GATE_POINTS[l.gates[1]]
-    const t = 0.12
-    return {
-      key: l.key,
-      x1: l.x1 + (a.x - l.x1) * t,
-      y1: l.y1 + (a.y - l.y1) * t,
-      x2: l.x2 + (b.x - l.x2) * t,
-      y2: l.y2 + (b.y - l.y2) * t,
-      stroke: channelStroke(l.key),
-    }
-  }),
+  visibleChannels.value
+    .filter((l) => definedChannels.value.has(l.key))
+    .map((l) => {
+      const a = layout.value.gates.find((g) => g.gate === l.gates[0])!
+      const b = layout.value.gates.find((g) => g.gate === l.gates[1])!
+      const t = 0.12
+      return {
+        key: l.key,
+        x1: l.x1 + (a.x - l.x1) * t,
+        y1: l.y1 + (a.y - l.y1) * t,
+        x2: l.x2 + (b.x - l.x2) * t,
+        y2: l.y2 + (b.y - l.y2) * t,
+        stroke: channelStroke(l.key),
+      }
+    }),
 )
 
-/** 悬挂闸门：该闸门向外 45% 长度的红/黑分段虚线 */
 const hangingChannels = computed(() => {
   const out: Array<{ key: string; x1: number; y1: number; x2: number; y2: number; stroke: string }> = []
   if (sharedOnly.value) return out
-  for (const l of CHANNEL_LINES) {
+  for (const l of visibleChannels.value) {
     const [g0, g1] = l.gates
     const a0 = activated.value.has(g0)
     const a1 = activated.value.has(g1)
     if (a0 === a1) continue
     const gate = a0 ? g0 : g1
-    const p = GATE_POINTS[gate]
+    const p = layout.value.gates.find((g) => g.gate === gate)!
     const isStart = gate === g0
     const bx = isStart ? l.x1 : l.x2
     const by = isStart ? l.y1 : l.y2
@@ -231,8 +230,7 @@ const hangingChannels = computed(() => {
 })
 
 function channelWidth(key: string): number {
-  if (highlightChannels.value.has(key)) return CH_W + 4
-  return CH_W
+  return highlightChannels.value.has(key) ? layout.value.chW + 4 : layout.value.chW
 }
 
 function onGate(gate: number) {
@@ -255,29 +253,48 @@ function centerClickable(id: CenterId): boolean {
 <template>
   <svg
     class="hd-graph"
-    :class="{ compact }"
-    :viewBox="VIEW_BOX.str"
+    :class="[`engine-${layout.id}`, { compact }]"
+    :viewBox="layout.viewBox.str"
     role="img"
     aria-label="人类图人体图"
     preserveAspectRatio="xMidYMid meet"
   >
     <defs>
-      <!-- 底板：浅色=青色，深色=深青 -->
       <linearGradient id="hd-plate" x1="0" y1="0" x2="0.35" y2="1">
         <stop offset="0%" stop-color="var(--hd-plate-top)" />
         <stop offset="55%" stop-color="var(--hd-plate-mid)" />
         <stop offset="100%" stop-color="var(--hd-plate-bottom)" />
       </linearGradient>
-      <!-- 红黑相间条纹（一端潜意识一端显意识） -->
+
+      <!-- 版本二：每中心专属渐变（有定义时填充） -->
+      <template v-if="!isV1">
+        <linearGradient
+          v-for="c in layout.centers.filter((x) => x.gradient)"
+          :id="`hd-cg-${c.id}`"
+          :key="`cg-${c.id}`"
+          x1="0"
+          y1="0"
+          x2="0.4"
+          y2="1"
+        >
+          <stop
+            v-for="([off, color], i) in c.gradient!"
+            :key="i"
+            :offset="`${off}%`"
+            :stop-color="color"
+          />
+        </linearGradient>
+      </template>
+
       <pattern
         id="hd-stripe"
-        width="16"
-        height="16"
+        :width="isV1 ? 16 : 12"
+        :height="isV1 ? 16 : 12"
         patternTransform="rotate(45)"
         patternUnits="userSpaceOnUse"
       >
-        <rect width="16" height="16" fill="#111318" />
-        <rect width="8" height="16" fill="#e02020" />
+        <rect :width="isV1 ? 16 : 12" :height="isV1 ? 16 : 12" fill="#111318" />
+        <rect :width="isV1 ? 8 : 6" :height="isV1 ? 16 : 12" fill="#e02020" />
       </pattern>
       <filter id="hd-gate-shadow" x="-70%" y="-70%" width="240%" height="240%">
         <feDropShadow dx="0" dy="1.6" stdDeviation="1.6" flood-color="#0b2530" flood-opacity="0.3" />
@@ -287,28 +304,28 @@ function centerClickable(id: CenterId): boolean {
       </filter>
     </defs>
 
-    <!-- ① 底板：青色背景 + 人体剪影 -->
-    <g class="plate">
+    <!-- 底板（仅版本一）：青色渐变 + 人体剪影 -->
+    <g v-if="isV1" class="plate">
       <rect
-        :x="VIEW_BOX.x"
-        :y="VIEW_BOX.y"
-        :width="VIEW_BOX.w"
-        :height="VIEW_BOX.h"
+        :x="layout.viewBox.x"
+        :y="layout.viewBox.y"
+        :width="layout.viewBox.w"
+        :height="layout.viewBox.h"
         fill="url(#hd-plate)"
       />
       <path :d="SILHOUETTE_PATH" class="silhouette" fill="var(--hd-plate-figure)" opacity="0.55" />
     </g>
 
-    <!-- ② 白色通道管（底板线槽，36 条恒定存在） -->
+    <!-- 通道底板线槽（两版都画，颜色按版本区分） -->
     <g class="tubes">
-      <template v-for="line in CHANNEL_LINES" :key="`t-${line.key}`">
+      <template v-for="line in visibleChannels" :key="`t-${line.key}`">
         <line
           :x1="line.x1"
           :y1="line.y1"
           :x2="line.x2"
           :y2="line.y2"
-          stroke="var(--hd-tube-edge)"
-          :stroke-width="TUBE_W + 4"
+          :stroke="isV1 ? 'var(--hd-tube-edge)' : 'var(--hd-tube-edge-v2)'"
+          :stroke-width="layout.tubeW + 4"
           :opacity="channelVisible(line.key) ? 0.85 : 0.12"
           stroke-linecap="round"
         />
@@ -317,8 +334,8 @@ function centerClickable(id: CenterId): boolean {
           :y1="line.y1"
           :x2="line.x2"
           :y2="line.y2"
-          stroke="var(--hd-tube)"
-          :stroke-width="TUBE_W"
+          :stroke="isV1 ? 'var(--hd-tube)' : 'var(--hd-tube-v2)'"
+          :stroke-width="layout.tubeW"
           :opacity="channelVisible(line.key) ? 1 : 0.14"
           :class="{ 'is-clickable': interactive }"
           stroke-linecap="round"
@@ -327,12 +344,12 @@ function centerClickable(id: CenterId): boolean {
       </template>
     </g>
 
-    <!-- ③ 九中心：白底黑描边，有定义填专属色 -->
+    <!-- 九中心 -->
     <g class="centers">
       <polygon
-        v-for="shape in CENTER_SHAPES"
+        v-for="shape in layout.centers"
         :key="shape.id"
-        :points="polygonPoints(shape.id)"
+        :points="polygonOf(layout, shape.id)"
         :fill="centerFill(shape.id)"
         :stroke="highlightCenters.has(shape.id) ? 'var(--status-warning)' : '#0d1216'"
         :stroke-width="highlightCenters.has(shape.id) ? 5 : 3"
@@ -343,7 +360,7 @@ function centerClickable(id: CenterId): boolean {
       />
     </g>
 
-    <!-- ④ 悬挂通道：红/黑分段虚线（不构成完整通道） -->
+    <!-- 悬挂通道：红/黑分段虚线 -->
     <g class="channels hanging">
       <line
         v-for="seg in hangingChannels"
@@ -353,14 +370,14 @@ function centerClickable(id: CenterId): boolean {
         :x2="seg.x2"
         :y2="seg.y2"
         :stroke="seg.stroke"
-        :stroke-width="CH_W - 2"
+        :stroke-width="layout.chW - 2"
         stroke-dasharray="14 12"
         stroke-linecap="butt"
         opacity="0.95"
       />
     </g>
 
-    <!-- ⑤ 完整通道：红实线 / 黑实线 / 红黑条纹 -->
+    <!-- 完整通道 -->
     <g class="channels full">
       <line
         v-for="seg in fullChannels"
@@ -378,10 +395,10 @@ function centerClickable(id: CenterId): boolean {
       />
     </g>
 
-    <!-- ⑥ 闸门：设计侧蓝底白字；个性侧无圈黑字 -->
+    <!-- 闸门 -->
     <g class="gates">
       <g
-        v-for="point in GATE_POINTS"
+        v-for="point in layout.gates"
         :key="point.gate"
         :opacity="gateHidden(point.gate) ? 0.18 : 1"
       >
@@ -389,7 +406,7 @@ function centerClickable(id: CenterId): boolean {
           v-if="gateHasCircle(point.gate)"
           :cx="point.x"
           :cy="point.y"
-          :r="GATE_R"
+          :r="layout.gateR"
           :fill="gateFill(point.gate)"
           :stroke="gateStroke(point.gate)"
           :stroke-width="gateStrokeWidth(point.gate)"
@@ -400,10 +417,10 @@ function centerClickable(id: CenterId): boolean {
         <text
           v-if="!compact"
           :x="point.x"
-          :y="point.y + GATE_FONT * 0.34"
+          :y="point.y + layout.gateFont * 0.34"
           text-anchor="middle"
           :fill="gateTextFill(point.gate)"
-          :font-size="GATE_FONT"
+          :font-size="layout.gateFont"
           :font-weight="gateLit(point.gate) ? 700 : 600"
           font-family="var(--font-mono)"
           :pointer-events="gateLit(point.gate) && !gateHasCircle(point.gate) ? 'auto' : 'none'"
@@ -416,7 +433,7 @@ function centerClickable(id: CenterId): boolean {
           v-if="interactive"
           :cx="point.x"
           :cy="point.y"
-          :r="GATE_R + 8"
+          :r="layout.gateR + 8"
           fill="transparent"
           class="hit"
           @click="onGate(point.gate)"
@@ -466,5 +483,10 @@ function centerClickable(id: CenterId): boolean {
 
 .gates text {
   user-select: none;
+}
+
+/* 版本二：中心描边更细，贴合参考实现 */
+.engine-v2 .centers polygon {
+  stroke-width: 2.2;
 }
 </style>

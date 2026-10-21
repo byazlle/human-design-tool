@@ -12,6 +12,16 @@
       const q = new URLSearchParams(location.search)
       if (q.get('fresh') === '1') localStorage.clear()
 
+      // 绘图程序版本（调试用）：?engine=v2
+      const eng = q.get('engine')
+      if (eng === 'v1' || eng === 'v2') {
+        const KEY = 'hdt.settings.v1'
+        let saved = {}
+        try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') } catch { saved = {} }
+        saved.appearance = { ...(saved.appearance || {}), drawingEngine: eng }
+        localStorage.setItem(KEY, JSON.stringify(saved))
+      }
+
       const { createPinia, setActivePinia } = await import('pinia')
       setActivePinia(createPinia())
 

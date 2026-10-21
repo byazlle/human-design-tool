@@ -9,6 +9,8 @@ export interface Appearance {
   theme: ThemeMode
   fontScale: number
   bodyGraphPalette: 'default' | 'high-contrast'
+  /** 绘图程序版本：v1 底图对齐版 / v2 Free Human Design 版 */
+  drawingEngine: 'v1' | 'v2'
 }
 
 interface SettingsState {
@@ -29,6 +31,7 @@ const DEFAULTS: SettingsState = {
     theme: 'light',
     fontScale: 1,
     bodyGraphPalette: 'default',
+    drawingEngine: 'v1',
   },
   precision: { decimals: 2 },
 }
@@ -58,6 +61,7 @@ export const useSettingsStore = defineStore('settings', {
       const root = document.documentElement
       root.dataset.theme = this.appearance.theme
       root.dataset.palette = this.appearance.bodyGraphPalette
+      root.dataset.drawingEngine = this.appearance.drawingEngine
       root.style.setProperty('--font-scale', String(this.appearance.fontScale))
       root.style.colorScheme = this.appearance.theme
     },
@@ -96,6 +100,13 @@ export const useSettingsStore = defineStore('settings', {
 
     setPalette(palette: 'default' | 'high-contrast') {
       this.appearance.bodyGraphPalette = palette
+      this.persist()
+      this.applyToDom()
+    },
+
+    /** 切换绘图程序：写入设置后所有已渲染的图立即按新版本重绘 */
+    setDrawingEngine(engine: 'v1' | 'v2') {
+      this.appearance.drawingEngine = engine
       this.persist()
       this.applyToDom()
     },

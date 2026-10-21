@@ -54,6 +54,9 @@
   --hd-plate-figure: rgba(255, 255, 255, 0.62);
   --hd-tube: #ffffff;
   --hd-tube-edge: rgba(110, 145, 155, 0.32);
+  /* 版式二：浅色下用浅灰线槽（无青色底板） */
+  --hd-tube-v2: #e6ecf4;
+  --hd-tube-edge-v2: rgba(120, 135, 155, 0.45);
 
   /* 字体 */
   --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI',
@@ -170,6 +173,8 @@
   --hd-plate-figure: rgba(180, 235, 242, 0.1);
   --hd-tube: #dfe9ec;
   --hd-tube-edge: rgba(0, 0, 0, 0.42);
+  --hd-tube-v2: #2a323d;
+  --hd-tube-edge-v2: rgba(255, 255, 255, 0.16);
   --elev-card: 0 1px 3px rgba(0, 0, 0, 0.5);
   --elev-panel: 0 4px 16px rgba(0, 0, 0, 0.55);
   --elev-dialog: 0 8px 32px rgba(0, 0, 0, 0.6);

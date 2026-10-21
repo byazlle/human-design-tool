@@ -4,6 +4,9 @@
  * 数据与单盘完全一致，仅布局不同；闸门/通道/中心点击释义复用同一套弹层。
  */
 import { computed, ref, watch } from 'vue'
+
+import { useDrawingEngine } from '../composables/useDrawingEngine'
+const engine = useDrawingEngine()
 import { useRoute, useRouter } from 'vue-router'
 import AppToolbar from '../components/base/AppToolbar.vue'
 import EmptyState from '../components/base/EmptyState.vue'
@@ -98,7 +101,7 @@ function goSettings() {
           </p>
         </header>
         <div v-if="archiveA?.chart" class="graph-wrap">
-          <HumanDesignBodyGraph
+          <HumanDesignBodyGraph :engine="engine"
             :chart="archiveA.chart"
             @gate-click="ui.openGate($event, 'single')"
             @channel-click="ui.openChannel($event, 'single')"
@@ -118,7 +121,7 @@ function goSettings() {
           </p>
         </header>
         <div v-if="archiveB?.chart" class="graph-wrap">
-          <HumanDesignBodyGraph
+          <HumanDesignBodyGraph :engine="engine"
             :chart="archiveB.chart"
             @gate-click="ui.openGate($event, 'single')"
             @channel-click="ui.openChannel($event, 'single')"

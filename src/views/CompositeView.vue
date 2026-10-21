@@ -4,6 +4,9 @@
  * 「仅看共享通道」是渲染过滤，不会修改原始数据（DESIGN.md §7）。
  */
 import { computed, ref, watch } from 'vue'
+
+import { useDrawingEngine } from '../composables/useDrawingEngine'
+const engine = useDrawingEngine()
 import { useRoute, useRouter } from 'vue-router'
 import { useArchiveStore } from '../stores/archive'
 import { useCompositeStore } from '../stores/board'
@@ -325,7 +328,7 @@ function goSettings() {
           />
 
           <div class="card graph-card">
-            <HumanDesignBodyGraph
+            <HumanDesignBodyGraph :engine="engine"
               v-if="mobileChart"
               :chart="mobileChart"
               mode="composite"

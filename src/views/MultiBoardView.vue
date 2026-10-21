@@ -1,6 +1,9 @@
 <script setup lang="ts">
 /** 多盘并排（仅桌面）：auto-fit 多栏，每栏独立收起星体表 / 关盘（DESIGN.md §5.2） */
 import { computed, watch } from 'vue'
+
+import { useDrawingEngine } from '../composables/useDrawingEngine'
+const engine = useDrawingEngine()
 import { useRoute, useRouter } from 'vue-router'
 import { useArchiveStore } from '../stores/archive'
 import { useBoardStore } from '../stores/board'
@@ -153,7 +156,7 @@ function goSettings() {
           </header>
 
           <div class="graph">
-            <HumanDesignBodyGraph
+            <HumanDesignBodyGraph :engine="engine"
               v-if="archive.chart"
               :chart="archive.chart"
               mode="single"
