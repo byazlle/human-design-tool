@@ -1,12 +1,20 @@
 /**
  * 绘图程序 · 版本二
- * 依据 https://github.com/adamblvck/free-human-design 的站点绘图数据（site/charts.min.js）：
+ *
+ * 【衍生作品署名】本文件（中心坐标、形状、渐变、闸门偏移等布局数据）部分衍生于
+ *   adamblvck/free-human-design —— https://github.com/adamblvck/free-human-design
+ * 其站点绘图数据（site/charts.min.js）以 MIT 许可发布，版权归 adamblvck 所有。
+ * 本项目在原始布局基础上做了本地校准（闸门偏移内收、字号/圆点/管宽调整、viewBox 由包围盒自动计算）。
+ *
+ * 依据其站点绘图数据：
  *   - 画布基准 800（百分比坐标换算）
  *   - 九中心位置/尺寸/形状（圆角三角、方形、八角星、心形三角）
  *   - 各中心专属渐变配色
  *   - 64 闸门在中心内的相对偏移（dx, dy × size）
  *
  * 规则与版本一保持一致（设计侧蓝底白字 / 个性侧无圈黑字 / 通道红黑白条纹虚线规则）。
+ *
+ * 原始 MIT 许可见仓库根目录 LICENSE 与 THIRD-PARTY.md。
  */
 import type { CenterId } from '../../types/hd'
 import { CHANNELS, GATE_CENTER } from '../../engine/gateData'

@@ -11,6 +11,16 @@ import shutil
 import subprocess
 import sys
 
+# CI（Windows）默认 stdout 编码为 cp1252，无法输出中文打印，
+# 会让脚本在 ensure_stage() 等含中文的 print 处抛 UnicodeEncodeError 而崩溃。
+# 强制以 UTF-8 输出仅影响构建日志，不改变任何产物行为。
+for _s in (sys.stdout, sys.stderr):
+    if _s is not None and hasattr(_s, 'reconfigure'):
+        try:
+            _s.reconfigure(encoding='utf-8')
+        except Exception:
+            pass
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 DESKTOP = os.path.join(ROOT, 'desktop')
 DIST = os.path.join(ROOT, 'dist')

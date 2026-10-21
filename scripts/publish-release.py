@@ -16,6 +16,15 @@ import sys
 import urllib.error
 import urllib.request
 
+# 强制 UTF-8 输出：Windows 下 Python 默认 stdout 为 cp1252，含中文的打印会抛
+# UnicodeEncodeError；仅影响日志编码，不改变产物。
+for _s in (sys.stdout, sys.stderr):
+    if _s is not None and hasattr(_s, 'reconfigure'):
+        try:
+            _s.reconfigure(encoding='utf-8')
+        except Exception:
+            pass
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 REPO = 'byazlle/human-design-tool'
 def _read_version() -> str:

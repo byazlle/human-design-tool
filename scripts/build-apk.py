@@ -16,6 +16,15 @@ import subprocess
 import sys
 import zipfile
 
+# 强制 UTF-8 输出：Windows 下 Python 默认 stdout 为 cp1252，含中文的打印会抛
+# UnicodeEncodeError 导致构建脚本崩溃；仅影响日志编码，不改变产物。
+for _s in (sys.stdout, sys.stderr):
+    if _s is not None and hasattr(_s, 'reconfigure'):
+        try:
+            _s.reconfigure(encoding='utf-8')
+        except Exception:
+            pass
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 TOOLCHAIN = os.path.join(ROOT, '.toolchain')
 

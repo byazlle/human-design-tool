@@ -1,5 +1,7 @@
 # 人类图工具（HumanDesignTool）v1.0.1
 
+> 仓库地址（GitHub）：https://github.com/byazlle/human-design-tool
+
 本地优先的人类图（Human Design）排盘 / 合盘 / 解读工具。所有星历计算与档案存储都在本机完成，
 **无后端、无账号、出生信息不出设备**。
 
@@ -129,6 +131,20 @@ python scripts/push-api.py           # 网络受限时用 Git Data API 推送提
 - 档案存于 `localStorage`（键：`hdt.archives.v1`），可导出 JSON 备份（不含身份证号）。
 - 清空数据会同时清除档案与 AI 缓存，操作前有二次确认。
 
+## 第三方依赖与致谢
+
+本项目的构建、运行与发布使用了多个开源组件，并对下列作者与维护者致以感谢。
+完整版权与许可文本见 **[THIRD-PARTY.md](THIRD-PARTY.md)**，项目主许可见 **[LICENSE](LICENSE)**（MIT）。
+
+- **运行时 / 构建**：Vue 3、Vue Router、Pinia、Vite、Vitest、TypeScript、astronomy-engine、astronomia
+  等，均为 MIT（TypeScript、@tauri-apps/cli 为 Apache-2.0），版权归各自作者。
+- **桌面 / 安卓壳**：Electron、electron-builder（MIT）。
+- **绘图程序「版式二」** 衍生于 [adamblvck/free-human-design](https://github.com/adamblvck/free-human-design)（MIT），
+  其原始版权声明与许可同样适用于相应部分（见 `src/components/chart/bodyGraphLayoutV2.ts` 头部注释）。
+- **计算方法**：星历采用 `astronomy-engine`（VSOP87）；真交点依据 Jean Meeus《Astronomical Algorithms》
+  第 47 章；闸门盘序采用 Jovian Archive 标准 64 卦盘序（偏移 29.8333°）。详见 THIRD-PARTY.md 第三节。
+
 ## 许可
 
-MIT。星历与参考数据来源见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+本项目以 **MIT 许可** 发布（版权 © 2026 byazlle）。许可全文见 [LICENSE](LICENSE)。
+第三方依赖与衍生作品的版权及许可见 [THIRD-PARTY.md](THIRD-PARTY.md)。
