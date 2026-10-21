@@ -1,7 +1,7 @@
 {
   "name": "humandesign-tool",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "人类图（Human Design）本地排盘与合盘工具",
   "scripts": {

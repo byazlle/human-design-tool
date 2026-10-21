@@ -158,10 +158,14 @@ function channelConsciousness(g0: number, g1: number): Consciousness {
   if (allP) return 'p'
   return 'mixed'
 }
+/**
+ * 悬挂闸门的意识归属（决定半段虚线的颜色）：
+ * 仅设计侧 → 红；仅个性侧 → 黑；两侧同时激活 → 红黑交替（mixed）
+ */
 function gateConsciousness(gate: number): Consciousness {
   const p = personalityGates.value.has(gate)
   const d = designGates.value.has(gate)
-  if (p && d) return 'p'
+  if (p && d) return 'mixed'
   return d ? 'd' : 'p'
 }
 function colorOf(c: Consciousness): string {
