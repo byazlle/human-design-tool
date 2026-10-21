@@ -11,7 +11,6 @@ import { getChannel, getGate } from '../services/interpretations'
 import { CENTER_LABELS, type CenterId } from '../types/hd'
 import AppToolbar from '../components/base/AppToolbar.vue'
 import HumanDesignBodyGraph from '../components/chart/HumanDesignBodyGraph.vue'
-import StarList from '../components/chart/StarList.vue'
 import BoardMeta from '../components/chart/BoardMeta.vue'
 import ActivationPanels from '../components/chart/ActivationPanels.vue'
 import GateChannelPanel from '../components/panel/GateChannelPanel.vue'
@@ -21,6 +20,10 @@ import EmptyState from '../components/base/EmptyState.vue'
 import IconButton from '../components/base/IconButton.vue'
 import HdToggle from '../components/base/HdToggle.vue'
 import { CENTER_TEXT } from '../services/interpretations'
+import { gateInsightOf } from '../services/gateInsight'
+import { READING_ANGLES, angleOf } from '../services/readingAngles'
+import { destinyReadings } from '../services/destinyText'
+import PlanetColumn from '../components/chart/PlanetColumn.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -44,6 +47,74 @@ watch(
 
 const filter = ref({ showDecimals: true, showColorToneBase: true, sharedOnly: false })
 const panelOpen = computed(() => Boolean(ui.panel))
+
+/* ── 星级选择（与闸门联动，供 AI 组合解读）────────────── */
+const selectedStars = ref(new Set<string>())
+
+function toggleStar(side: 'design' | 'personality', planet: string) {
+  const key = `${side}:${planet}`
+  const next = new Set(selectedStars.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  selectedStars.value = next
+}
+
+function starBrief(): string {
+  if (!chart.value || !selectedStars.value.size) return ''
+  const bits: string[] = []
+  for (const key of selectedStars.value) {
+    const [side, planet] = key.split(':')
+    const list = side === 'design' ? chart.value.design : chart.value.personality
+    const sp = list.find((x) => x.planet === planet)
+    if (sp) {
+      bits.push(
+        `${side === 'design' ? '潜意识' : '显意识'}${planet} ${sp.gate}.${sp.line}` +
+          `（洞察：${gateInsightOf(sp.gate).trait}）`,
+      )
+    }
+  }
+  return bits.join('\n')
+}
+
+/* ── AI 解读角度 ──────────────────────────────────────── */
+const angleKey = ref('comprehensive')
+const angle = computed(() => angleOf(angleKey.value))
+
+/* ── 人生轨迹（离线模板）──────────────────────────────── */
+const destiny = computed(() => (chart.value ? destinyReadings(chart.value) : []))
+
+/* ── 模块拖拽顺序（桌面端）────────────────────────────── */
+type ModuleKey = 'meta' | 'gates' | 'channels' | 'destiny'
+const MODULE_LABELS: Record<ModuleKey, string> = {
+  meta: '盘面信息',
+  gates: '闸门 · 中心',
+  channels: '激活通道',
+  destiny: '人生轨迹',
+}
+const ORDER_KEY = 'hdt.module.order.v1'
+const defaultOrder: ModuleKey[] = ['meta', 'gates', 'channels', 'destiny']
+const moduleOrder = ref<ModuleKey[]>((() => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ORDER_KEY) ?? '[]') as string[]
+    const valid = raw.filter((k) => defaultOrder.includes(k as ModuleKey)) as ModuleKey[]
+    const missing = defaultOrder.filter((k) => !valid.includes(k))
+    if (valid.length) return [...valid, ...missing]
+  } catch {
+    /* ignore */
+  }
+  return defaultOrder
+})())
+
+const dragKey = ref<ModuleKey | null>(null)
+function onDrop(target: ModuleKey) {
+  const from = moduleOrder.value.indexOf(dragKey.value as ModuleKey)
+  const to = moduleOrder.value.indexOf(target)
+  if (from < 0 || to < 0 || from === to) return
+  const next = [...moduleOrder.value]
+  next.splice(to, 0, ...next.splice(from, 1))
+  moduleOrder.value = next
+  localStorage.setItem(ORDER_KEY, JSON.stringify(next))
+}
 
 const offlineText = computed(() => {
   const sel = ui.panel
@@ -82,37 +153,46 @@ interface BulkPayload {
   title: string
 }
 
-/** 选中多个闸门/通道/中心后一次性解读：缓存键由选择内容决定，选择相同即复用 */
+/** 选中多个闸门/通道/中心（可含星级）后一次性解读：缓存键由选择内容决定 */
 async function onBulkAi(payload: BulkPayload) {
   if (!chart.value) return
   const ref = [
     ...payload.channels,
     ...payload.gates.map((g) => `g${g}`),
     ...payload.centers.map((c) => `c-${c}`),
+    ...[...selectedStars.value].sort(),
   ].join('|')
+  const offline = selectedStars.value.size
+    ? `${payload.offline}\n\n【联动选中的星体】\n${starBrief()}`
+    : payload.offline
   await runAi({
     scope: 'selection',
     ref,
     title: `${archive.value?.name ?? ''} · ${payload.title}`,
-    offline: payload.offline,
+    offline,
     chart: chart.value,
   })
 }
 
 async function requestFullReading() {
   if (!chart.value || !archive.value) return
+  const offline = [
+    `类型：${chart.value.type}`,
+    `人生角色：${chart.value.profile}`,
+    `内在权威：${chart.value.authority}`,
+    `定义：${chart.value.definition}`,
+    `轮回交叉：${chart.value.incarnationCross}`,
+    `已定义通道：${chart.value.channels.map((c) => c.key).join('、') || '无'}`,
+    `激活闸门：${chart.value.gates.map((g) => g.gate).join('、')}`,
+    '',
+    `【解读角度】${angle.value.label}：${angle.value.prompt}`,
+  ]
+  if (selectedStars.value.size) offline.push(`【联动选中的星体】\n${starBrief()}`)
   await runAi({
     scope: 'single',
-    title: `${archive.value.name} · 全盘 AI 解读`,
-    offline: [
-      `类型：${chart.value.type}`,
-      `人生角色：${chart.value.profile}`,
-      `内在权威：${chart.value.authority}`,
-      `定义：${chart.value.definition}`,
-      `轮回交叉：${chart.value.incarnationCross}`,
-      `已定义通道：${chart.value.channels.map((c) => c.key).join('、') || '无'}`,
-      `激活闸门：${chart.value.gates.map((g) => g.gate).join('、')}`,
-    ].join('\n'),
+    ref: angleKey.value,
+    title: `${archive.value.name} · 全盘 AI 解读 · ${angle.value.label}`,
+    offline: offline.join('\n'),
     chart: chart.value,
   })
 }
@@ -185,6 +265,16 @@ const starListOpen = ref(false)
 
     <main v-else class="layout" :class="{ mobile: isMobile }">
       <div class="main-col">
+        <!-- 星体数据：左潜意识 / 右显意识，竖排可折叠（桌面两翼；手机在折叠区内） -->
+        <div v-if="!isMobile" class="planet-wing">
+          <PlanetColumn
+            :stars="chart.design"
+            side="design"
+            :selected="selectedStars"
+            @star-toggle="toggleStar('design', $event)"
+          />
+        </div>
+
         <section class="card chart-card">
           <header class="chart-head">
             <div class="grow">
@@ -230,6 +320,33 @@ const starListOpen = ref(false)
           </div>
         </section>
 
+        <div v-if="!isMobile" class="planet-wing">
+          <PlanetColumn
+            :stars="chart.personality"
+            side="personality"
+            :selected="selectedStars"
+            @star-toggle="toggleStar('personality', $event)"
+          />
+        </div>
+
+        <!-- AI 解读角度条（桌面）：同一盘面按角度换提示词 -->
+        <div v-if="!isMobile" class="angle-bar card">
+          <span class="t-xs angle-label">AI 解读角度</span>
+          <div class="angle-chips">
+            <button
+              v-for="a in READING_ANGLES"
+              :key="a.key"
+              type="button"
+              class="angle-chip"
+              :class="{ on: angleKey === a.key }"
+              :title="a.desc"
+              @click="angleKey = a.key"
+            >
+              {{ a.label }}
+            </button>
+          </div>
+        </div>
+
         <!-- 手机：折叠区 -->
         <section v-if="isMobile" class="card fold">
           <button type="button" class="fold-head" @click="starListOpen = !starListOpen">
@@ -238,6 +355,23 @@ const starListOpen = ref(false)
           </button>
           <div v-if="starListOpen" class="fold-body">
             <BoardMeta :chart="chart" dense />
+
+            <!-- 星体双列：左潜意识 / 右显意识，竖排可折叠 -->
+            <div class="mobile-planets">
+              <PlanetColumn
+                :stars="chart.design"
+                side="design"
+                :selected="selectedStars"
+                @star-toggle="toggleStar('design', $event)"
+              />
+              <PlanetColumn
+                :stars="chart.personality"
+                side="personality"
+                :selected="selectedStars"
+                @star-toggle="toggleStar('personality', $event)"
+              />
+            </div>
+
             <ActivationPanels
               :chart="chart"
               compact
@@ -246,28 +380,64 @@ const starListOpen = ref(false)
               @channel-click="ui.openChannel($event, 'single')"
               @center-click="ui.openCenter($event, 'single')"
             />
-            <StarList :personality="chart.personality" :design="chart.design" :filter="filter" :collapsible="false" compact />
           </div>
         </section>
 
-        <div v-else class="side-col">
-          <section class="card section">
-            <BoardMeta :chart="chart" />
-          </section>
+        <!-- 模块行：可拖动调整顺序（盘面信息 / 闸门·中心 / 激活通道 / 人生轨迹） -->
+        <div v-else class="module-row">
+          <div
+            v-for="m in moduleOrder"
+            :key="m"
+            class="module"
+            :data-module="m"
+            draggable="true"
+            @dragstart="dragKey = m"
+            @dragover.prevent
+            @drop="onDrop(m)"
+          >
+            <div class="module-head">
+              <span class="t-xs grip" title="拖动调整位置">⋮⋮</span>
+              <span class="t-sm module-title">{{ MODULE_LABELS[m] }}</span>
+            </div>
 
-          <!-- 完整盘直接展示已激活通道 / 闸门 / 中心，支持多选批量解读 -->
-          <ActivationPanels
-            :chart="chart"
-            @ai-read="onBulkAi"
-            @gate-click="ui.openGate($event, 'single')"
-            @channel-click="ui.openChannel($event, 'single')"
-            @center-click="ui.openCenter($event, 'single')"
-          />
+            <section v-if="m === 'meta'" class="card module-card">
+              <BoardMeta :chart="chart" />
+            </section>
 
-          <section class="card section">
-            <h2 class="t-title">星体数据</h2>
-            <StarList :personality="chart.personality" :design="chart.design" :filter="filter" />
-          </section>
+            <div v-else-if="m === 'gates'" class="module-card-wrap">
+              <ActivationPanels
+                :chart="chart"
+                :sections="['gates', 'centers']"
+                @ai-read="onBulkAi"
+                @gate-click="ui.openGate($event, 'single')"
+                @channel-click="ui.openChannel($event, 'single')"
+                @center-click="ui.openCenter($event, 'single')"
+              />
+            </div>
+
+            <div v-else-if="m === 'channels'" class="module-card-wrap">
+              <ActivationPanels
+                :chart="chart"
+                :sections="['channels']"
+                @ai-read="onBulkAi"
+                @gate-click="ui.openGate($event, 'single')"
+                @channel-click="ui.openChannel($event, 'single')"
+                @center-click="ui.openCenter($event, 'single')"
+              />
+            </div>
+
+            <section v-else-if="m === 'destiny'" class="card module-card">
+              <div class="destiny">
+                <details v-for="d in destiny" :key="d.key" class="destiny-item">
+                  <summary class="t-sm">
+                    <strong>{{ d.title }}</strong>
+                    <span class="t-xs d-desc">{{ d.desc }}</span>
+                  </summary>
+                  <p class="t-sm d-body">{{ d.text }}</p>
+                </details>
+              </div>
+            </section>
+          </div>
         </div>
       </div>
 
@@ -348,9 +518,185 @@ const starListOpen = ref(false)
   flex: 1;
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(440px, 1.05fr) minmax(360px, 1fr);
+  grid-template-columns: minmax(180px, 230px) minmax(400px, 1fr) minmax(180px, 230px);
+  grid-template-areas:
+    'wingL chart wingR'
+    'angle angle angle'
+    'mods mods mods';
   gap: var(--sp-3);
   align-items: start;
+}
+
+/* 两翼星列 */
+.main-col > .planet-wing {
+  min-width: 0;
+}
+.main-col > .planet-wing:nth-of-type(1) {
+  grid-area: wingL;
+}
+.main-col > .planet-wing:nth-of-type(2) {
+  grid-area: wingR;
+}
+
+.chart-card {
+  grid-area: chart;
+}
+
+/* 角度条 */
+.angle-bar {
+  grid-area: angle;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.angle-label {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.angle-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.angle-chip {
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg-soft);
+  font-size: calc(var(--fs-xs) * var(--font-scale));
+  color: var(--text-secondary);
+  transition:
+    background var(--dur-fast) ease,
+    color var(--dur-fast) ease,
+    border-color var(--dur-fast) ease;
+}
+
+.angle-chip:hover {
+  border-color: var(--border-strong);
+}
+
+.angle-chip.on {
+  background: rgba(124, 58, 237, 0.14);
+  border-color: var(--owner-shared);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* 可拖动模块行 */
+.module-row {
+  grid-area: mods;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-3);
+  align-items: start;
+}
+
+.module {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.module-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: grab;
+  user-select: none;
+}
+
+.module-head:active {
+  cursor: grabbing;
+}
+
+.grip {
+  color: var(--text-muted);
+  letter-spacing: -2px;
+}
+
+.module-title {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.module-card {
+  padding: var(--sp-3);
+}
+
+.module-card-wrap :deep(.activation) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* 人生轨迹卡 */
+.destiny {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.destiny-item summary {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  list-style: none;
+}
+
+.destiny-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.destiny-item summary:hover {
+  background: rgba(124, 58, 237, 0.08);
+}
+
+.d-desc {
+  color: var(--text-muted);
+}
+
+.d-body {
+  color: var(--text-secondary);
+  line-height: 1.7;
+  padding: 4px 8px 0;
+}
+
+/* 中屏：星列并排两列置顶 */
+@media (max-width: 1180px) {
+  .main-col {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      'wingL wingR'
+      'chart chart'
+      'angle angle'
+      'mods mods';
+  }
+
+  .module-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .module-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 手机折叠区星体双列 */
+.mobile-planets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-3);
 }
 
 .side-col {

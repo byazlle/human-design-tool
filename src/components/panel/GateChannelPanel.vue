@@ -9,6 +9,7 @@ import type { BodyGraph, CenterId, Planet } from '../../types/hd'
 import { CENTER_LABELS, PLANET_LABELS } from '../../types/hd'
 import type { PanelSelection } from '../../stores/ui'
 import { CENTER_TEXT, getChannel, getGate } from '../../services/interpretations'
+import { gateInsightOf } from '../../services/gateInsight'
 import { CHANNEL_BY_KEY, GATE_CHANNELS, GATE_NAMES } from '../../engine/gateData'
 import HdSidePanel from '../base/HdSidePanel.vue'
 import HdDrawer from '../base/HdDrawer.vue'
@@ -30,7 +31,7 @@ const emit = defineEmits<{
 
 const info = computed(() => {
   const sel = props.selection
-  if (!sel) return { title: '', keyword: '', text: '', channels: [] as string[] }
+  if (!sel) return { title: '', keyword: '', text: '', insight: null, channels: [] as string[] }
 
   if (sel.kind === 'gate') {
     const gate = Number(sel.ref)
@@ -39,6 +40,7 @@ const info = computed(() => {
       title: g.title,
       keyword: g.keyword,
       text: g.text,
+      insight: gateInsightOf(gate),
       channels: GATE_CHANNELS[gate] ?? [],
     }
   }
@@ -50,6 +52,7 @@ const info = computed(() => {
       title: c.title,
       keyword: def ? `${CENTER_LABELS[def.centers[0]]} → ${CENTER_LABELS[def.centers[1]]}` : '',
       text: c.text,
+      insight: null,
       channels: [] as string[],
     }
   }
@@ -60,6 +63,7 @@ const info = computed(() => {
     title: CENTER_LABELS[id],
     keyword: isDefined ? '已定义' : '开放',
     text: isDefined ? text.defined : text.open,
+    insight: null,
     channels: [] as string[],
   }
 })
@@ -134,6 +138,18 @@ const relatedChannels = computed(() =>
         <p class="t-body" style="white-space: pre-line">{{ info.text }}</p>
       </div>
 
+      <!-- 闸门补充洞察：特质 / 成长方向 / 扎根力 / 驱动力 -->
+      <div v-if="info.insight" class="insight">
+        <p class="t-xs">特质与趋势</p>
+        <p class="t-sm">{{ info.insight.trait }}</p>
+        <p class="t-xs">成长方向</p>
+        <p class="t-sm">{{ info.insight.growth }}</p>
+        <p class="t-xs">扎根力</p>
+        <p class="t-sm">{{ info.insight.grounding }}</p>
+        <p class="t-xs">驱动力</p>
+        <p class="t-sm">{{ info.insight.drive }}</p>
+      </div>
+
       <div v-if="relatedChannels.length" class="related">
         <p class="t-xs">相关通道</p>
         <ul class="rel-list">
@@ -191,6 +207,25 @@ const relatedChannels = computed(() =>
 </template>
 
 <style scoped>
+.insight {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: var(--sp-3);
+  border-top: 1px dashed var(--border);
+}
+
+.insight .t-xs {
+  color: var(--owner-shared);
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.insight .t-sm {
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
 .head {
   display: flex;
   flex-direction: column;

@@ -14,8 +14,10 @@ const props = withDefaults(
     chart: BodyGraph
     /** 紧凑模式：只显示列表，可选 */
     compact?: boolean
+    /** 显示哪些模块（默认全部）；布局拆分时按需传值 */
+    sections?: Array<'channels' | 'gates' | 'centers'>
   }>(),
-  { compact: false },
+  { compact: false, sections: () => ['channels', 'gates', 'centers'] },
 )
 
 const emit = defineEmits<{
@@ -168,7 +170,7 @@ function onChannelClick(key: string) {
 <template>
   <div class="activation" :class="{ compact }">
     <!-- 已激活通道：直接写出通道与作用 -->
-    <section class="card block">
+    <section v-if="sections.includes('channels')" class="card block">
       <header class="block-head">
         <div>
           <h3 class="t-title">已激活通道</h3>
@@ -209,7 +211,7 @@ function onChannelClick(key: string) {
     </section>
 
     <!-- 已激活闸门 -->
-    <section class="card block">
+    <section v-if="sections.includes('gates')" class="card block">
       <header class="block-head">
         <div>
           <h3 class="t-title">已激活闸门</h3>
@@ -235,7 +237,7 @@ function onChannelClick(key: string) {
     </section>
 
     <!-- 九中心 -->
-    <section class="card block">
+    <section v-if="sections.includes('centers')" class="card block">
       <header class="block-head">
         <div>
           <h3 class="t-title">九中心状态</h3>

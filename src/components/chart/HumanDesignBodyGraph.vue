@@ -1,14 +1,18 @@
 <script setup lang="ts">
 /**
- * 人体图 SVG 渲染组件（参照鼎心样图样式锁定）：
- * - 九中心：无定义 = 白色填充 + 黑色描边；有定义 = 每个中心一种固定专属彩色
- * - 闸门：位置固定不变；未激活 = 空心圆 + 黑色数字；激活 = 深蓝填充 + 白色数字
+ * 人体图 SVG 渲染组件（图表渲染统一规则，用户规格 #11）：
+ * - 九中心：任一完整通道接入 → 有定义，填充专属彩色；否则白底黑描边
+ * - 闸门：
+ *     · 潜意识（设计侧，出生前 ~88 天行星激活）→ 蓝色圆形背景 + 白色数字
+ *     · 显意识（个性侧，出生时刻行星激活）→ 不加蓝底圈，仅黑色数字
+ *     · 两侧同时激活 → 按设计侧显示（蓝底白字）
  * - 通道：
- *     · 底层：36 条通道全部以白色粗线绘出（带浅灰描边，与样图一致）
- *     · 两端闸门均激活 → 完整彩色线：显意识红 / 潜意识黑 / 兼具红黑条纹
- *     · 仅单端激活 → 只画该闸门到通道中点的半段，颜色随该闸门意识来源
+ *     · 两端均为潜意识闸门 → 纯红实线（完整通道）
+ *     · 两端均为显意识闸门 → 纯黑实线（完整通道）
+ *     · 一端潜意识一端显意识 → 红黑条纹实线（完整通道）
+ *     · 仅一端激活（悬挂闸门）→ 该闸门到通道中点的红/黑分段虚线，不构成完整通道
+ *     · 两端均未激活 → 不绘制线条
  * - 合盘模式保留归属色（A 蓝 / B 橙 / 共享紫）
- * - highlight 只改变描边，绝不把未激活闸门伪装成已激活
  */
 import { computed } from 'vue'
 import type { BodyGraph, CenterId, Ownership, UiFilter } from '../../types/hd'
@@ -128,62 +132,71 @@ function ownerVar(o: Ownership | undefined): string {
   return 'var(--hd-single-accent)'
 }
 
+/** 是否按设计侧渲染（蓝底白字）：设计侧激活即算，双激活同 */
+function gateIsDesign(gate: number): boolean {
+  return designGates.value.has(gate)
+}
+
 function gateFill(gate: number): string {
   if (props.mode === 'composite' && gateLit(gate)) return ownerVar(props.gateOwners[gate])
   return '#2b6cd4'
 }
 
 function gateTextFill(gate: number): string {
-  return gateLit(gate) ? '#ffffff' : '#111318'
+  if (props.mode === 'composite' && gateLit(gate)) return '#ffffff'
+  return gateIsDesign(gate) ? '#ffffff' : '#111318'
 }
 
 function gateStroke(gate: number): string {
   if (highlightGates.value.has(gate) && gateLit(gate)) return 'var(--status-warning)'
-  return gateLit(gate) ? 'rgba(13, 30, 74, 0.55)' : '#111318'
+  if (props.mode === 'composite' && gateLit(gate)) return 'rgba(13, 30, 74, 0.55)'
+  return gateIsDesign(gate) ? 'rgba(13, 30, 74, 0.55)' : 'transparent'
 }
 
 function gateStrokeWidth(gate: number): number {
   if (highlightGates.value.has(gate) && gateLit(gate)) return 3.2
-  return gateLit(gate) ? 1.4 : 1.8
+  return gateIsDesign(gate) || (props.mode === 'composite' && gateLit(gate)) ? 1.4 : 0
 }
 
 /* ── 通道样式 ─────────────────────────────────────────── */
 
 type Consciousness = 'p' | 'd' | 'mixed'
 
-/** 通道意识属性：两端均有意识激活 → 红；两端均无意识 → 黑；其余（兼具）→ 条纹 */
+/**
+ * 通道意识属性（统一规则 #11）：
+ * 两端均为潜意识（设计）→ 红；两端均为显意识（个性）→ 黑；混合 → 条纹。
+ */
 function channelConsciousness(g0: number, g1: number): Consciousness {
   const p = personalityGates.value
   const d = designGates.value
-  const allP = p.has(g0) && p.has(g1)
   const allD = d.has(g0) && d.has(g1)
-  if (allP && allD) return 'mixed'
-  if (allP) return 'p'
+  const allP = p.has(g0) && p.has(g1)
+  if (allD && allP) return 'mixed'
   if (allD) return 'd'
+  if (allP) return 'p'
   return 'mixed'
 }
 
-/** 单端闸门的意识来源颜色（半段线用） */
+/** 悬挂闸门半段线颜色：设计侧红、个性侧黑、双激活取黑（显意识主导标注） */
 function gateConsciousness(gate: number): Consciousness {
   const p = personalityGates.value.has(gate)
   const d = designGates.value.has(gate)
-  if (p && d) return 'mixed'
-  return p ? 'p' : 'd'
+  if (p && d) return 'p'
+  return d ? 'd' : 'p'
 }
 
-/** 彩色线的描边色（'mixed' 使用红黑条纹 pattern） */
+/** 完整通道线色：'d'（潜意识）→ 红；'p'（显意识）→ 黑；混合 → 红黑条纹 pattern */
 function channelColor(g0: number, g1: number): string {
   const c = channelConsciousness(g0, g1)
-  if (c === 'p') return '#e02020'
-  if (c === 'd') return '#111318'
+  if (c === 'd') return '#e02020'
+  if (c === 'p') return '#111318'
   return 'url(#hd-stripe)'
 }
 
 function halfColor(gate: number): string {
   const c = gateConsciousness(gate)
-  if (c === 'p') return '#e02020'
-  if (c === 'd') return '#111318'
-  return 'url(#hd-stripe)'
+  if (c === 'd') return '#e02020'
+  return '#111318'
 }
 
 function channelStroke(key: string): string {
@@ -193,10 +206,10 @@ function channelStroke(key: string): string {
   return channelColor(line.gates[0], line.gates[1])
 }
 
-/** 线宽：彩色通道 9，白色底层 8 */
+/** 线宽：完整彩线 9，悬挂虚线 7 */
 function channelWidth(key: string): number {
   if (highlightChannels.value.has(key)) return 12
-  return definedChannels.value.has(key) ? 9 : 8
+  return definedChannels.value.has(key) ? 9 : 7
 }
 
 function channelOpacity(key: string): number {
@@ -286,34 +299,9 @@ function centerClickable(id: CenterId): boolean {
       </filter>
     </defs>
 
-    <!-- 通道底层：36 条白色粗线（样图基底），带浅灰描边使其在白底上可辨 -->
+    <!-- 通道（统一规则 #11：两端未激活不绘制） -->
     <g class="channels">
-      <template v-for="line in CHANNEL_LINES" :key="`base-${line.key}`">
-        <line
-          :x1="line.x1"
-          :y1="line.y1"
-          :x2="line.x2"
-          :y2="line.y2"
-          stroke="var(--hd-ch-base-halo)"
-          :stroke-width="channelWidth(line.key) + 2.6"
-          :opacity="channelVisible(line.key) ? 0.9 : 0"
-          stroke-linecap="round"
-        />
-        <line
-          :x1="line.x1"
-          :y1="line.y1"
-          :x2="line.x2"
-          :y2="line.y2"
-          stroke="#ffffff"
-          :stroke-width="channelWidth(line.key)"
-          :opacity="channelVisible(line.key) ? channelOpacity(line.key) : 0"
-          :class="{ 'is-clickable': interactive }"
-          stroke-linecap="round"
-          @click="onChannel(line.key)"
-        />
-      </template>
-
-      <!-- 半段线：仅单端激活的通道 -->
+      <!-- 悬挂闸门：仅单端激活 → 该闸门到通道中点的红/黑分段虚线 -->
       <line
         v-for="seg in halfSegments"
         :key="seg.key"
@@ -322,8 +310,9 @@ function centerClickable(id: CenterId): boolean {
         :x2="seg.x2"
         :y2="seg.y2"
         :stroke="seg.stroke"
-        :stroke-width="9"
+        :stroke-width="7"
         stroke-linecap="round"
+        stroke-dasharray="10 8"
         class="is-overlay"
       />
 
@@ -374,16 +363,17 @@ function centerClickable(id: CenterId): boolean {
         :key="point.gate"
         :opacity="gateHidden(point.gate) ? 0.18 : 1"
       >
+        <!-- 潜意识（设计侧）：蓝底白字；显意识（个性侧）：无底圈纯黑字 -->
         <circle
+          v-if="gateLit(point.gate) && (gateIsDesign(point.gate) || mode === 'composite')"
           :cx="point.x"
           :cy="point.y"
           :r="GATE_R"
-          :fill="gateLit(point.gate) ? gateFill(point.gate) : '#ffffff'"
+          :fill="gateFill(point.gate)"
           :stroke="gateStroke(point.gate)"
           :stroke-width="gateStrokeWidth(point.gate)"
-          :filter="gateLit(point.gate) ? 'url(#hd-gate-shadow)' : undefined"
-          class="is-clickable"
-          :class="{ 'is-active': gateLit(point.gate), 'is-idle': !gateLit(point.gate) }"
+          filter="url(#hd-gate-shadow)"
+          class="is-clickable is-active"
           @click="onGate(point.gate)"
         />
 
@@ -396,7 +386,9 @@ function centerClickable(id: CenterId): boolean {
           :font-size="gateLit(point.gate) ? 13 : 12"
           :font-weight="gateLit(point.gate) ? 700 : 600"
           font-family="var(--font-mono)"
-          pointer-events="none"
+          :pointer-events="gateLit(point.gate) && !gateIsDesign(point.gate) && mode === 'single' ? 'auto' : 'none'"
+          :class="{ 'is-clickable': gateLit(point.gate) && !gateIsDesign(point.gate) }"
+          @click="gateLit(point.gate) && !gateIsDesign(point.gate) && onGate(point.gate)"
         >
           {{ point.gate }}
         </text>
@@ -459,6 +451,10 @@ function centerClickable(id: CenterId): boolean {
 .gates g:hover circle.is-clickable {
   stroke-width: 3;
   transform: scale(1.08);
+}
+
+.gates text.is-clickable {
+  cursor: pointer;
 }
 
 .channels line {

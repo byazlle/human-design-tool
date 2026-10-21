@@ -330,20 +330,20 @@ async function runSmoke(win) {
     return {
       ok: true,
       lit: svg.querySelectorAll('circle.is-active').length,
-      idle: svg.querySelectorAll('circle.is-idle').length,
+      plainText: svg.querySelectorAll('.gates text:not(.is-clickable)').length,
       definedChannels: svg.querySelectorAll('.channels line.is-defined').length,
     }
   })()`)
   check('人体图渲染', graph.ok)
-  check('激活闸门有点亮样式', graph.lit > 0, `lit=${graph.lit}`)
-  check('未激活闸门有外圈样式', graph.idle > 0, `idle=${graph.idle}`)
+  check('设计侧闸门有点亮样式（蓝底白字）', graph.lit > 0, `lit=${graph.lit}`)
+  check('未激活/显意识闸门仅数字（无底圈）', graph.plainText > 0, `n=${graph.plainText}`)
   check('已定义通道单独成层', graph.definedChannels >= 0, `n=${graph.definedChannels}`)
 
   // 3) 完整盘直接列出通道与闸门（无需点击）
   const lists = await js(`({
     channels: document.querySelectorAll('.channel-item').length,
     channelEffect: document.querySelectorAll('.channel-effect').length,
-    gates: document.querySelectorAll('.gate-chip').length,
+    gates: document.querySelectorAll('.act-gate').length,
     centers: document.querySelectorAll('.center-chip').length,
     typeToggle: Boolean(document.querySelector('.detail-toggle')),
   })`)
@@ -372,22 +372,31 @@ async function runSmoke(win) {
   check('通道作用可直接展开阅读', channelText > 10, `len=${channelText}`)
   await shot('04-channel-detail')
 
-  // 6) 星体含义
-  await js(`document.querySelector('.star-list .row')?.click()`)
-  await wait(500)
-  const planet = await js(`({
-    detail: Boolean(document.querySelector('.detail-row')),
-    hasTheme: (document.querySelector('.detail-theme')?.textContent || '').length > 4,
-  })`)
-  check('星体数据可展开含义', planet.detail)
-  check('星体含义含主题说明', planet.hasTheme)
+  // 6) 星体两翼（竖排、可折叠、可选中联动）
+  const planet = await js(`(() => {
+    const cols = document.querySelectorAll('.planet-col')
+    if (cols.length < 2) return { cols: 0, rows: 0, toggle: false }
+    const before = cols[0].querySelectorAll('.row').length
+    cols[0].querySelector('.head')?.click()
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve({
+          cols: cols.length,
+          rows: before,
+          toggle: Boolean(cols[0].closest('.planet-col')),
+        })
+      }, 400)
+    })
+  })()`)
+  check('星体两翼竖排列存在', planet.cols >= 2, `cols=${planet.cols}`)
+  check('星体列行数完整（13 行星）', planet.rows === 13, `rows=${planet.rows}`)
   await shot('05-planet-detail')
 
   // 7) 未激活闸门点击不应点亮（回归第 8 条）
   const beforeLit = await js(`document.querySelectorAll('.graph-wrap svg circle.is-active').length`)
   await js(`(() => {
-    const c = document.querySelector('.graph-wrap svg circle.is-idle')
-    if (c) c.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    const hit = document.querySelector('.graph-wrap svg .gates circle.hit')
+    if (hit) hit.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   })()`)
   await wait(700)
   const afterLit = await js(`document.querySelectorAll('.graph-wrap svg circle.is-active').length`)
