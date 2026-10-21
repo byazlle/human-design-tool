@@ -56,8 +56,8 @@ npm run build      # 产出 dist/（可直接静态托管或双击 index.html）
 
 | 平台 | 产物 | 大小 | 说明 |
 | --- | --- | --- | --- |
-| Windows | `release/desktop/HumanDesign-Setup-0.2.0.exe` | ≈ 77 MB | NSIS 安装包，可选安装目录、创建桌面与开始菜单快捷方式，自带卸载程序 |
-| Android | `release/android/HumanDesign-0.2.0.apk` | ≈ 0.45 MB | minSdk 24 / targetSdk 34，自签名（v2+v3），安装即用 |
+| Windows | `release/desktop/HumanDesign-Setup-1.0.0.exe` | ≈ 77 MB | NSIS 安装包，可选安装目录、创建桌面与开始菜单快捷方式，自带卸载程序 |
+| Android | `release/android/HumanDesign-1.0.0.apk` | ≈ 0.45 MB | minSdk 24 / targetSdk 34，自签名（v2+v3），安装即用 |
 
 ### 本地构建
 

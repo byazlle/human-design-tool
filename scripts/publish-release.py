@@ -18,16 +18,22 @@ import urllib.request
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 REPO = 'byazlle/human-design-tool'
-TAG = 'v0.2.0'
-TITLE = 'v0.2.0 · 液态玻璃界面 + 完整安装包'
+def _read_version() -> str:
+    with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'package.json'), encoding='utf-8') as fh:
+        return json.load(fh)['version']
+
+
+VERSION = _read_version()
+TAG = f'v{VERSION}'
+TITLE = f'v{VERSION} · 人类图排盘（桌面 + 安卓）'
 BRANCH = 'main'
 
 ARTIFACTS = [
-    ('release/desktop/HumanDesign-Setup-0.2.0.exe', 'application/octet-stream'),
-    ('release/android/HumanDesign-0.2.0.apk', 'application/vnd.android.package-archive'),
+    (f'release/desktop/HumanDesign-Setup-{VERSION}.exe', 'application/octet-stream'),
+    (f'release/android/HumanDesign-{VERSION}.apk', 'application/vnd.android.package-archive'),
 ]
 
-BODY = """## 本次更新
+BODY = f"""## 本次更新
 
 **界面**
 - 人体图几何重写：闸门沿九中心边界按弧长定位（最大空隙断开 + 双向 clamp 求最小位移），
@@ -52,8 +58,8 @@ BODY = """## 本次更新
 
 | 平台 | 文件 | 说明 |
 | --- | --- | --- |
-| Windows | `HumanDesign-Setup-0.2.0.exe` | NSIS 安装包，可选安装目录、创建快捷方式、自带卸载 |
-| Android | `HumanDesign-0.2.0.apk` | minSdk 24 / targetSdk 34，自签名（v2+v3），安装即用 |
+| Windows | `HumanDesign-Setup-{VERSION}.exe` | NSIS 安装包，可选安装目录、创建快捷方式、自带卸载 |
+| Android | `HumanDesign-{VERSION}.apk` | minSdk 24 / targetSdk 34，自签名（v2+v3），安装即用 |
 
 ## 验证
 

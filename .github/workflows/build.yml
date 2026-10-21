@@ -123,7 +123,7 @@ jobs:
       - name: 校验 APK 签名与内容
         run: |
           SDK="${ANDROID_HOME}"
-          APK="release/android/HumanDesign-0.2.0.apk"
+          APK=$(ls release/android/*.apk | head -1)
           "$SDK/build-tools/34.0.0/apksigner" verify --verbose "$APK"
           unzip -l "$APK" | grep -E "classes.dex|assets/www/index.html"
 

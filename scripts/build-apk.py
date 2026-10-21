@@ -9,6 +9,7 @@
   java --javac--> class --d8--> classes.dex
   合并 --> zipalign --> apksigner --> 可安装 APK
 """
+import json
 import os
 import shutil
 import subprocess
@@ -42,7 +43,14 @@ DIST = os.path.join(ROOT, 'dist')
 OUT_DIR = os.path.join(ROOT, 'release', 'android')
 KEYSTORE = os.path.join(ROOT, 'android', 'release.keystore')
 
-VERSION = '0.2.0'
+def _read_version() -> str:
+    """版本号唯一来源：根 package.json（避免脚本各自硬编码而漂移）"""
+    with open(os.path.join(ROOT, 'package.json'), encoding='utf-8') as fh:
+        return json.load(fh)['version']
+
+
+VERSION = _read_version()
+VERSION_CODE = 10
 APK_NAME = f'HumanDesign-{VERSION}.apk'
 
 
@@ -209,6 +217,7 @@ def build():
         '--target-sdk-version', '34',
         '--version-code', '2',
         '--version-name', VERSION,
+        '--version-code', str(VERSION_CODE),
         compiled,
     ])
 

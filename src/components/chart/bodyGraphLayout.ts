@@ -330,23 +330,39 @@ export const CHANNEL_LINES: ChannelLine[] = (() => {
   const lines = buildChannelLines()
   const byKey = new Map(lines.map((l) => [l.key, l]))
 
-  // 10-34 改走「20-57 通道中点」，避免与中心内部其它连线重叠
+  /**
+   * 枢纽化走线（用户规格）：
+   * 以「20-57 通道中点 M」为唯一枢纽，10 / 20 / 34 / 57 之间的所有连线都经 M 中转，
+   * 不再直连。收益：中部通道收束成一根主干 + 两条支路，层级清晰、互相不叠。
+   *   主干：20 → M → 57（20-57 本身）
+   *   支路：10 → M、34 → M
+   * 5 条涉及通道（10-20 / 10-34 / 10-57 / 20-34 / 34-57）全部改为经过 M 的折线。
+   */
   const spine = byKey.get('20-57')
-  const exploration = byKey.get('10-34')
-  if (spine && exploration) {
-    const mid: [number, number] = [(spine.x1 + spine.x2) / 2, (spine.y1 + spine.y2) / 2]
-    const g10 = GATE_POINTS[10]
-    const g34 = GATE_POINTS[34]
-    // 34 → 中点（从骶骨边界穿出）
-    const p34 = clipPoint([g34.x, g34.y], mid, 'sacral')
-    // 中点 → 10（进入 G 中心边界）
-    const p10 = clipPoint([g10.x, g10.y], mid, 'g')
-    exploration.points = [p34, mid, p10]
-    exploration.x1 = p34[0]
-    exploration.y1 = p34[1]
-    exploration.x2 = p10[0]
-    exploration.y2 = p10[1]
+  if (!spine) return lines
+
+  const M: [number, number] = [(spine.x1 + spine.x2) / 2, (spine.y1 + spine.y2) / 2]
+  const HUB_KEYS = ['10-20', '10-34', '10-57', '20-34', '34-57']
+
+  /** 闸门 → 枢纽的支路端点（从所属中心边界穿出） */
+  const spoke = (gate: number): [number, number] => {
+    const g = GATE_POINTS[gate]
+    return clipPoint([g.x, g.y], M, g.center)
   }
+
+  for (const key of HUB_KEYS) {
+    const l = byKey.get(key)
+    if (!l) continue
+    const [g0, g1] = l.gates
+    const p0 = spoke(g0)
+    const p1 = spoke(g1)
+    l.points = [p0, M, p1]
+    l.x1 = p0[0]
+    l.y1 = p0[1]
+    l.x2 = p1[0]
+    l.y2 = p1[1]
+  }
+
   return lines
 })()
 

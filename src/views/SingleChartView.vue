@@ -425,7 +425,12 @@ const starListOpen = ref(false)
                 <strong>{{ d.title }}</strong>
                 <span class="t-xs d-desc">{{ d.desc }}</span>
               </summary>
-              <p class="t-sm d-body">{{ d.text }}</p>
+              <div class="d-body">
+                <section v-for="(sec, i) in d.sections" :key="i" class="d-sec">
+                  <h4 class="d-h">{{ sec.h }}</h4>
+                  <p class="t-sm">{{ sec.p }}</p>
+                </section>
+              </div>
             </details>
           </div>
         </section>
@@ -701,6 +706,23 @@ const starListOpen = ref(false)
   color: var(--text-secondary);
   line-height: 1.7;
   padding: 4px 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.d-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.d-h {
+  margin: 0;
+  font-size: calc(var(--fs-xs) * var(--font-scale));
+  font-weight: 700;
+  color: var(--owner-shared);
+  letter-spacing: 0.02em;
 }
 
 /* 手机折叠区星体双列 */
