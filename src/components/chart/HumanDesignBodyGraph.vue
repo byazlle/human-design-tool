@@ -178,21 +178,28 @@ function channelStroke(key: string): string {
 
 const visibleChannels = computed(() => layout.value.channels.filter((l) => !l.internal))
 
+/** 通道折线点（无 reroute 时为两端点） */
+function routeOf(l: { x1: number; y1: number; x2: number; y2: number; points?: Array<[number, number]> }) {
+  return l.points && l.points.length >= 2 ? l.points : ([[l.x1, l.y1], [l.x2, l.y2]] as Array<[number, number]>)
+}
+
+function polyStr(pts: Array<[number, number]>): string {
+  return pts.map(([x, y]) => `${x},${y}`).join(' ')
+}
+
 const fullChannels = computed(() =>
   visibleChannels.value
     .filter((l) => definedChannels.value.has(l.key))
     .map((l) => {
+      const pts = routeOf(l).map((p) => [p[0], p[1]] as [number, number])
       const a = layout.value.gates.find((g) => g.gate === l.gates[0])!
       const b = layout.value.gates.find((g) => g.gate === l.gates[1])!
       const t = 0.12
-      return {
-        key: l.key,
-        x1: l.x1 + (a.x - l.x1) * t,
-        y1: l.y1 + (a.y - l.y1) * t,
-        x2: l.x2 + (b.x - l.x2) * t,
-        y2: l.y2 + (b.y - l.y2) * t,
-        stroke: channelStroke(l.key),
-      }
+      // 两端向中心内延伸，贴近数字
+      pts[0] = [pts[0][0] + (a.x - pts[0][0]) * t, pts[0][1] + (a.y - pts[0][1]) * t]
+      const last = pts.length - 1
+      pts[last] = [pts[last][0] + (b.x - pts[last][0]) * t, pts[last][1] + (b.y - pts[last][1]) * t]
+      return { key: l.key, points: polyStr(pts), stroke: channelStroke(l.key) }
     }),
 )
 
@@ -207,10 +214,11 @@ const hangingChannels = computed(() => {
     const gate = a0 ? g0 : g1
     const p = layout.value.gates.find((g) => g.gate === gate)!
     const isStart = gate === g0
-    const bx = isStart ? l.x1 : l.x2
-    const by = isStart ? l.y1 : l.y2
-    const ox = isStart ? l.x2 : l.x1
-    const oy = isStart ? l.y2 : l.y1
+    const route = routeOf(l)
+    const bx = isStart ? route[0][0] : route[route.length - 1][0]
+    const by = isStart ? route[0][1] : route[route.length - 1][1]
+    const ox = isStart ? route[1][0] : route[route.length - 2][0]
+    const oy = isStart ? route[1][1] : route[route.length - 2][1]
     const t = 0.12
     const sx = bx + (p.x - bx) * t
     const sy = by + (p.y - by) * t
@@ -319,26 +327,24 @@ function centerClickable(id: CenterId): boolean {
     <!-- 通道底板线槽（两版都画，颜色按版本区分） -->
     <g class="tubes">
       <template v-for="line in visibleChannels" :key="`t-${line.key}`">
-        <line
-          :x1="line.x1"
-          :y1="line.y1"
-          :x2="line.x2"
-          :y2="line.y2"
+        <polyline
+          :points="polyStr(routeOf(line))"
+          fill="none"
           :stroke="isV1 ? 'var(--hd-tube-edge)' : 'var(--hd-tube-edge-v2)'"
           :stroke-width="layout.tubeW + 4"
           :opacity="channelVisible(line.key) ? 0.85 : 0.12"
           stroke-linecap="round"
+          stroke-linejoin="round"
         />
-        <line
-          :x1="line.x1"
-          :y1="line.y1"
-          :x2="line.x2"
-          :y2="line.y2"
+        <polyline
+          :points="polyStr(routeOf(line))"
+          fill="none"
           :stroke="isV1 ? 'var(--hd-tube)' : 'var(--hd-tube-v2)'"
           :stroke-width="layout.tubeW"
           :opacity="channelVisible(line.key) ? 1 : 0.14"
           :class="{ 'is-clickable': interactive }"
           stroke-linecap="round"
+          stroke-linejoin="round"
           @click="onChannel(line.key)"
         />
       </template>
@@ -379,18 +385,17 @@ function centerClickable(id: CenterId): boolean {
 
     <!-- 完整通道 -->
     <g class="channels full">
-      <line
+      <polyline
         v-for="seg in fullChannels"
         :key="seg.key"
-        :x1="seg.x1"
-        :y1="seg.y1"
-        :x2="seg.x2"
-        :y2="seg.y2"
+        :points="seg.points"
+        fill="none"
         :stroke="seg.stroke"
         :stroke-width="channelWidth(seg.key)"
         :opacity="channelVisible(seg.key) ? 1 : 0"
         :class="{ 'is-clickable': interactive }"
         stroke-linecap="round"
+        stroke-linejoin="round"
         @click="onChannel(seg.key)"
       />
     </g>

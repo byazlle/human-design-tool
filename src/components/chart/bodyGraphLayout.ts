@@ -141,19 +141,19 @@ export const CENTER_SHAPES: Record<CenterId, CenterShape> = {
 const GATE_POS: Record<number, [number, number]> = {
   // 顶轮
   64: [536, 238],
-  61: [574, 238],
-  63: [619, 238],
+  61: [575, 238],
+  63: [613, 238],
   // 眉心
   47: [537, 348],
-  24: [576, 348],
+  24: [575, 348],
   4: [613, 348],
   17: [552, 440],
   11: [601, 440],
   43: [574, 486],
   // 喉咙
-  62: [536, 636],
-  23: [577, 635],
-  56: [617, 635],
+  62: [540, 636],
+  23: [574, 635],
+  56: [606, 635],
   16: [505, 681],
   35: [648, 680],
   20: [505, 749],
@@ -252,6 +252,8 @@ export interface ChannelLine {
   y2: number
   /** 是否同中心内部通道 */
   internal: boolean
+  /** 折线走线（存在时优先于 x1..y2 两端点） */
+  points?: Array<[number, number]>
 }
 
 /** 从 p 出发朝向 q，与多边形边界的第一个交点参数 t（0..1） */
@@ -324,7 +326,29 @@ function buildChannelLines(): ChannelLine[] {
   })
 }
 
-export const CHANNEL_LINES: ChannelLine[] = buildChannelLines()
+export const CHANNEL_LINES: ChannelLine[] = (() => {
+  const lines = buildChannelLines()
+  const byKey = new Map(lines.map((l) => [l.key, l]))
+
+  // 10-34 改走「20-57 通道中点」，避免与中心内部其它连线重叠
+  const spine = byKey.get('20-57')
+  const exploration = byKey.get('10-34')
+  if (spine && exploration) {
+    const mid: [number, number] = [(spine.x1 + spine.x2) / 2, (spine.y1 + spine.y2) / 2]
+    const g10 = GATE_POINTS[10]
+    const g34 = GATE_POINTS[34]
+    // 34 → 中点（从骶骨边界穿出）
+    const p34 = clipPoint([g34.x, g34.y], mid, 'sacral')
+    // 中点 → 10（进入 G 中心边界）
+    const p10 = clipPoint([g10.x, g10.y], mid, 'g')
+    exploration.points = [p34, mid, p10]
+    exploration.x1 = p34[0]
+    exploration.y1 = p34[1]
+    exploration.x2 = p10[0]
+    exploration.y2 = p10[1]
+  }
+  return lines
+})()
 
 /** 中心形心 */
 export function centerAnchor(id: CenterId): { x: number; y: number } {

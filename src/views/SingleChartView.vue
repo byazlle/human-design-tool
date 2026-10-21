@@ -509,6 +509,7 @@ const starListOpen = ref(false)
 /* 四列布局 */
 .layout {
   display: grid;
+  padding-top: 8px;
   grid-template-columns:
     minmax(560px, 1.85fr) minmax(215px, 0.7fr) minmax(215px, 0.7fr)
     minmax(240px, 0.8fr);
@@ -516,7 +517,7 @@ const starListOpen = ref(false)
   width: 100%;
   max-width: 1720px;
   margin: 0 auto;
-  padding: var(--sp-3) var(--sp-4) 96px;
+  padding: 8px var(--sp-4) 96px;
   box-sizing: border-box;
   align-items: start;
 }
@@ -533,9 +534,10 @@ const starListOpen = ref(false)
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
-  padding: var(--sp-2) var(--sp-3);
+  gap: var(--sp-2);
+  padding: 6px var(--sp-3);
   flex-wrap: wrap;
+  row-gap: 6px;
 }
 
 .angle-label {
@@ -635,26 +637,21 @@ const starListOpen = ref(false)
   margin: 0 auto;
 }
 
+/* 星列浮层：图上方内侧左右（不遮盖图形本体），整体上移贴近顶部 */
 .planet-float {
   position: absolute;
-  top: 6%;
-  width: 132px;
+  top: 1.2%;
+  width: 146px;
   z-index: 3;
-  padding: 8px 8px 10px;
-  border-radius: var(--radius-md);
-  background: var(--glass-bg-soft);
-  backdrop-filter: blur(14px) saturate(160%);
-  -webkit-backdrop-filter: blur(14px) saturate(160%);
-  border: 1px solid var(--glass-border);
-  box-shadow: 0 6px 18px -12px rgba(8, 40, 48, 0.45);
+  min-width: 0;
 }
 
 .planet-float.left {
-  left: 6px;
+  left: 2px;
 }
 
 .planet-float.right {
-  right: 6px;
+  right: 2px;
 }
 
 /* 模块卡 */
@@ -771,8 +768,28 @@ const starListOpen = ref(false)
     grid-column: 1 / -1;
   }
 
+  /* 窄屏：星列停靠在图上方（两列），不覆盖盘面 */
+  .chart-stage {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    align-items: start;
+  }
+
   .planet-float {
-    width: 124px;
+    position: static;
+    width: auto;
+    order: 0;
+  }
+
+  .graph-wrap {
+    grid-column: 1 / -1;
+    height: auto;
+  }
+
+  .graph-wrap :deep(svg) {
+    height: auto;
+    max-height: none;
   }
 }
 
