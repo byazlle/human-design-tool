@@ -47,6 +47,13 @@
   --hd-channel-halo: rgba(255, 255, 255, 0.92);
   /* 白色通道底层的描边：使其在白底上可辨 */
   --hd-ch-base-halo: rgba(90, 100, 115, 0.5);
+  /* 人体图底板：浅色模式统一青色 */
+  --hd-plate-top: #d7f0f4;
+  --hd-plate-mid: #c3e8ec;
+  --hd-plate-bottom: #e2f5f5;
+  --hd-plate-figure: rgba(255, 255, 255, 0.62);
+  --hd-tube: #ffffff;
+  --hd-tube-edge: rgba(110, 145, 155, 0.32);
 
   /* 字体 */
   --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI',
@@ -157,6 +164,12 @@
   --hd-gate-ring: #9aa4b3;
   --hd-channel-halo: rgba(24, 28, 36, 0.92);
   --hd-ch-base-halo: rgba(10, 14, 20, 0.55);
+  --hd-plate-top: #0e3d47;
+  --hd-plate-mid: #0a2c35;
+  --hd-plate-bottom: #10424c;
+  --hd-plate-figure: rgba(180, 235, 242, 0.1);
+  --hd-tube: #dfe9ec;
+  --hd-tube-edge: rgba(0, 0, 0, 0.42);
   --elev-card: 0 1px 3px rgba(0, 0, 0, 0.5);
   --elev-panel: 0 4px 16px rgba(0, 0, 0, 0.55);
   --elev-dialog: 0 8px 32px rgba(0, 0, 0, 0.6);
