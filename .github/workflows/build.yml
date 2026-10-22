@@ -61,12 +61,21 @@ jobs:
         run: |
           $env:HD_SMOKE = '1'
           $env:HD_SMOKE_DIR = Join-Path $env:GITHUB_WORKSPACE '.shots'
+          New-Item -ItemType Directory -Force -Path $env:HD_SMOKE_DIR | Out-Null
           $exe = Get-ChildItem -Path 'release\desktop\win-unpacked\*.exe' |
                  Where-Object { $_.Name -notmatch 'Setup|uninstall' } | Select-Object -First 1
           Write-Host "运行 $($exe.FullName)"
           & $exe.FullName
-          if (-not (Test-Path '.shots\smoke-result.json')) { throw '冒烟自检未产出结果文件' }
-          $result = Get-Content '.shots\smoke-result.json' -Raw | ConvertFrom-Json
+          # GUI 进程不会阻塞 PowerShell：应用启动+自检约需 5-10s 才写出结果文件，
+          # 必须轮询等待，不能启动后立刻检查（run #20 即因此误报失败）
+          $resultPath = Join-Path $env:HD_SMOKE_DIR 'smoke-result.json'
+          $deadline = (Get-Date).AddMinutes(4)
+          while (-not (Test-Path -LiteralPath $resultPath)) {
+            if ((Get-Date) -gt $deadline) { throw "冒烟自检超时：$resultPath 未产出" }
+            Start-Sleep -Milliseconds 500
+          }
+          Start-Sleep -Milliseconds 500
+          $result = Get-Content $resultPath -Raw | ConvertFrom-Json
           Write-Host "自检 $($result.passed)/$($result.total) 通过"
           if (-not $result.ok) { throw "冒烟自检未通过：$($result.failed -join ', ')" }
 
