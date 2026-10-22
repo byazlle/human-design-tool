@@ -7,6 +7,7 @@ import base64
 import json
 import os
 import subprocess
+import tempfile
 import sys
 import urllib.error
 import urllib.request
@@ -37,20 +38,43 @@ TOKEN = token()
 
 
 def api(path: str, method: str = "GET", payload=None):
+    # 本机存在 TLS 拦截代理：系统 curl 走系统证书链可连通 api.github.com，
+    # 而 Python 自带 OpenSSL 证书链会 SSL EOF。因此 HTTP 调用统一走 curl。
+    # 大文件 base64 后可能超出命令行长度上限，故请求体写入临时文件用 -d @file 传。
     url = f"https://api.github.com{path}"
-    data = json.dumps(payload).encode() if payload is not None else None
-    req = urllib.request.Request(url, data=data, method=method)
-    req.add_header("Authorization", f"Bearer {TOKEN}")
-    req.add_header("Accept", "application/vnd.github+json")
-    req.add_header("User-Agent", "hd-tool-push")
-    if data:
-        req.add_header("Content-Type", "application/json")
+    cmd = [
+        "curl", "-sS", "-m", "120", "--retry", "5", "--retry-delay", "2",
+        "--retry-all-errors", "-f",
+        "-X", method, url,
+        "-H", f"Authorization: Bearer {TOKEN}",
+        "-H", "Accept: application/vnd.github+json",
+        "-H", "User-Agent: hd-tool-push",
+    ]
+    tmp = None
+    if payload is not None:
+        data = json.dumps(payload)
+        fd, tmp = tempfile.mkstemp(prefix="hd-push-", suffix=".json")
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(data.encode("utf-8"))
+        except Exception:
+            if tmp and os.path.exists(tmp):
+                os.unlink(tmp)
+            raise
+        cmd += ["-H", "Content-Type: application/json", "-d", f"@{tmp}"]
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            return json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        body = e.read().decode()
-        raise SystemExit(f"HTTP {e.code} {path}: {body[:600]}")
+        out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as e:
+        raise SystemExit(
+            f"curl {method} {path} failed: {(e.stdout or b'').decode('utf-8', 'replace')[:600]}"
+        )
+    finally:
+        if tmp and os.path.exists(tmp):
+            try:
+                os.unlink(tmp)
+            except Exception:
+                pass
+    return json.loads(out.decode("utf-8"))
 
 
 def git(*args: str) -> str:
