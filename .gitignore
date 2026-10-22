@@ -12,6 +12,10 @@ src-tauri/gen/
 # 桌面 / 安卓打包产物
 release/
 build/
+# desktop/build/ 是 electron-builder 的 buildResources（icon.ico 等），必须提交，
+# 否则 CI 上 NSIS 打包报 cannot find specified resource "build/icon.ico"
+!desktop/build/
+!desktop/build/**
 desktop/node_modules/
 android/assets/www/
 

@@ -127,6 +127,9 @@ def build():
         'electron-builder',
         '--win', 'nsis', '--x64',
         '--prepackaged', STAGE,
+        # CI 下 electron-builder 26 会隐式尝试发布（缺 GH_TOKEN 会再失败）；
+        # 发布由工作流单独任务负责，这里只出安装包
+        '--publish', 'never',
     ]
     print('\n$ ' + ' '.join(cmd))
     proc = subprocess.run(cmd, cwd=DESKTOP, env=env, capture_output=True,
