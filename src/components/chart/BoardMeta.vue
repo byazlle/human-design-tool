@@ -197,6 +197,9 @@ function centerFull(id: CenterId) {
 
 .facts dt {
   margin-bottom: 2px;
+  /* 专业关键字颜色：可在设置页自定义 */
+  color: var(--keyword-color);
+  font-weight: 600;
 }
 
 .facts dd {
@@ -243,14 +246,19 @@ function centerFull(id: CenterId) {
 .chip.on {
   background: var(--hd-center-defined);
   border-color: var(--hd-center-defined);
-  color: var(--surface);
+  /* 定义态字体颜色 / 加粗：可在设置页自定义 */
+  color: var(--center-defined-color);
+  font-weight: var(--center-defined-weight);
 }
 :root[data-theme='dark'] .chip.on {
-  color: #16181d;
+  background: var(--hd-center-defined);
+  color: var(--center-defined-color);
 }
 
 .chip.off {
-  color: var(--text-muted);
+  /* 开放态字体颜色 / 加粗：可在设置页自定义 */
+  color: var(--center-open-color);
+  font-weight: var(--center-open-weight);
   border-style: dashed;
 }
 

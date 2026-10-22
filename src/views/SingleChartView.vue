@@ -10,8 +10,6 @@ import { useUiStore } from '../stores/ui'
 import { useSettingsStore } from '../stores/settings'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { useAiReading } from '../composables/useAiReading'
-import { getChannel, getGate } from '../services/interpretations'
-import { CENTER_LABELS, type CenterId } from '../types/hd'
 import AppToolbar from '../components/base/AppToolbar.vue'
 import HumanDesignBodyGraph from '../components/chart/HumanDesignBodyGraph.vue'
 import BoardMeta from '../components/chart/BoardMeta.vue'
@@ -23,11 +21,17 @@ import EmptyState from '../components/base/EmptyState.vue'
 import IconButton from '../components/base/IconButton.vue'
 import HdToggle from '../components/base/HdToggle.vue'
 import { CENTER_TEXT } from '../services/interpretations'
+import { AUTHORITY_LABELS, CENTER_LABELS, DEFINITION_LABELS, TYPE_LABELS, type CenterId } from '../types/hd'
 import { gateInsightOf } from '../services/gateInsight'
-import { READING_ANGLES, angleOf } from '../services/readingAngles'
+import { angleOf } from '../services/readingAngles'
+import { crossReadingOf } from '../services/crossData'
+import { AUTHORITY_TEXT, TYPE_TEXT, getChannel, getGate } from '../services/interpretations'
+import { GATE_NAMES } from '../engine/gateData'
 import { destinyReadings } from '../services/destinyText'
 import PlanetColumn from '../components/chart/PlanetColumn.vue'
 import DetailCard from '../components/chart/DetailCard.vue'
+import CrossPanel from '../components/chart/CrossPanel.vue'
+import AiComposer, { type DimKey } from '../components/panel/AiComposer.vue'
 import ArchiveEditDialog from '../components/archive/ArchiveEditDialog.vue'
 
 const route = useRoute()
@@ -93,7 +97,88 @@ function starBrief(): string {
 
 /* ── AI 解读角度 ──────────────────────────────────────── */
 const angleKey = ref('comprehensive')
-const angle = computed(() => angleOf(angleKey.value))
+
+/* ── 全维度统一 AI 综合解读 ──────────────────────────── */
+function firstSentence(text: string, max = 52): string {
+  const clean = text.replace(/\s+/g, '')
+  const m = clean.match(/^[^。！？;；]+[。！？]?/)
+  const s = m ? m[0] : clean
+  return s.length > max ? `${s.slice(0, max)}…` : s
+}
+
+function buildUnifiedOffline(dims: DimKey[]): string {
+  if (!chart.value) return ''
+  const c = chart.value
+  const parts: string[] = []
+
+  if (dims.includes('profile')) {
+    parts.push(
+      `【人生角色 / 能量类型】类型：${TYPE_LABELS[c.type]}（${c.type}）；人生角色：${c.profile}；${TYPE_TEXT[c.type].desc}`,
+    )
+  }
+  if (dims.includes('strategy')) {
+    parts.push(`【人生策略】${c.strategy || TYPE_TEXT[c.type].strategy}`)
+  }
+  if (dims.includes('authority')) {
+    parts.push(
+      `【内在权威】${AUTHORITY_LABELS[c.authority]}：${AUTHORITY_TEXT[c.authority].desc}`,
+    )
+  }
+  if (dims.includes('definition')) {
+    parts.push(`【整体定义】${DEFINITION_LABELS[c.definition]}（已定义中心 ${c.centers.filter((x) => x.defined).length} 个）`)
+  }
+  if (dims.includes('cross')) {
+    const cr = crossReadingOf(c.personality, c.design, c.profile)
+    parts.push(
+      `【轮回交叉】${cr.name}\n核心释义：${cr.summary.replace(/\n/g, ' ')}\n人生使命：${cr.mission.replace(/\n/g, ' ')}\n活出状态：${cr.highState.replace(/\n/g, ' ')}\n未活出状态：${cr.lowState.replace(/\n/g, ' ')}`,
+    )
+  }
+  if (dims.includes('channels')) {
+    const lines = c.channels.map((ch) => {
+      const t = getChannel(ch.key)
+      return `${ch.key} ${t.title.split(' · ').slice(1).join(' · ') || ch.key}：${firstSentence(t.text)}`
+    })
+    parts.push(`【已激活通道】（共 ${lines.length} 条）\n${lines.join('\n') || '无'}`)
+  }
+  if (dims.includes('gates')) {
+    const lines = c.gates.map((g) => {
+      const ins = gateInsightOf(g.gate)
+      return `闸门 ${g.gate} ${GATE_NAMES[g.gate]?.zh ?? ''}（${ins.trait}；由 ${g.stars.join('/')} 激活）`
+    })
+    parts.push(`【已激活闸门】（共 ${lines.length} 个）\n${lines.join('；')}`)
+  }
+  if (dims.includes('centers')) {
+    const lines = c.centers.map((ct) => {
+      const t = CENTER_TEXT[ct.id]
+      return `${CENTER_LABELS[ct.id]}：${ct.defined ? '已定义' : '开放'}——${firstSentence(ct.defined ? t.defined : t.open)}`
+    })
+    parts.push(`【九大能量中心状态】\n${lines.join('\n')}`)
+  }
+  return parts.join('\n\n')
+}
+
+async function requestUnifiedAi(payload: {
+  dimensions: DimKey[]
+  angleKey: string
+  customDirection: string
+}) {
+  if (!chart.value || !archive.value) return
+  angleKey.value = payload.angleKey
+  const angleInfo = angleOf(payload.angleKey)
+  const direction = payload.customDirection
+    ? `【自定义解读方向】用户希望重点从「${payload.customDirection}」的角度解读，请围绕该方向展开，同时保持术语准确。`
+    : `【解读角度】${angleInfo.label}：${angleInfo.prompt}`
+
+  await runAi({
+    scope: 'unified',
+    ref: `${payload.dimensions.join('+')}:${payload.angleKey}:${payload.customDirection || '-'}`,
+    title: payload.customDirection
+      ? `${archive.value.name} · AI 综合解读 · ${payload.customDirection}`
+      : `${archive.value.name} · AI 综合解读 · ${angleInfo.label}`,
+    offline: `${buildUnifiedOffline(payload.dimensions)}\n\n${direction}\n\n请把以上所有勾选维度作为一个整体来综合解读：先给出整体画像结论，再分别说明各维度如何相互影响，最后给落地建议。篇幅 600-900 字。`,
+    chart: chart.value,
+  })
+}
 
 /* ── 人生轨迹（离线模板）──────────────────────────────── */
 const destiny = computed(() => (chart.value ? destinyReadings(chart.value) : []))
@@ -190,26 +275,7 @@ async function onBulkAi(payload: BulkPayload) {
 }
 
 async function requestFullReading() {
-  if (!chart.value || !archive.value) return
-  const offline = [
-    `类型：${chart.value.type}`,
-    `人生角色：${chart.value.profile}`,
-    `内在权威：${chart.value.authority}`,
-    `定义：${chart.value.definition}`,
-    `轮回交叉：${chart.value.incarnationCross}`,
-    `已定义通道：${chart.value.channels.map((c) => c.key).join('、') || '无'}`,
-    `激活闸门：${chart.value.gates.map((g) => g.gate).join('、')}`,
-    '',
-    `【解读角度】${angle.value.label}：${angle.value.prompt}`,
-  ]
-  if (selectedStars.value.size) offline.push(`【联动选中的星体】\n${starBrief()}`)
-  await runAi({
-    scope: 'single',
-    ref: angleKey.value,
-    title: `${archive.value.name} · 全盘 AI 解读 · ${angle.value.label}`,
-    offline: offline.join('\n'),
-    chart: chart.value,
-  })
+  await requestUnifiedAi({ dimensions: ['channels', 'gates', 'centers', 'strategy', 'definition', 'authority', 'cross', 'profile'], angleKey: angleKey.value, customDirection: '' })
 }
 
 async function copyAi() {
@@ -264,6 +330,7 @@ const starListOpen = ref(false)
         <span class="tb-actions">
           <HdButton size="sm" variant="ghost" @click="editOpen = true">编辑</HdButton>
           <HdButton size="sm" variant="ghost" @click="duplicateChart">复制副本</HdButton>
+          <HdButton size="sm" variant="ghost" @click="router.push(`/chiron/${id}`)"> 凯龙回归 </HdButton>
           <HdButton size="sm" @click="router.push(`/compare/${id}`)"> 双盘对比 </HdButton>
           <HdButton size="sm" :loading="aiState.loading" @click="requestFullReading">
             全盘 AI 解读
@@ -281,25 +348,10 @@ const starListOpen = ref(false)
     />
 
     <main v-else class="layout" :class="{ mobile: isMobile }">
-      <!-- AI 解读角度（整行） -->
+      <!-- AI 全维度组合解读（电脑端 / 手机端同一组件） -->
       <div class="angle-bar card">
-        <span class="t-xs angle-label">AI 解读角度</span>
-        <div class="angle-chips">
-          <button
-            v-for="a in READING_ANGLES"
-            :key="a.key"
-            type="button"
-            class="angle-chip"
-            :class="{ on: angleKey === a.key }"
-            :title="a.desc"
-            @click="angleKey = a.key"
-          >
-            {{ a.label }}
-          </button>
-        </div>
-        <HdButton size="sm" :loading="aiState.loading" @click="requestFullReading">
-          全盘 AI 解读
-        </HdButton>
+        <span class="t-xs angle-label">AI 综合解读</span>
+        <AiComposer :loading="aiState.loading" @run="requestUnifiedAi" />
       </div>
 
       <!-- ① 第一列：图（星列内嵌于图上方内侧左右） -->
@@ -415,8 +467,12 @@ const starListOpen = ref(false)
         />
       </div>
 
-      <!-- ④ 第四列：人生轨迹 + 详情（点击闸门/通道后显示在轨迹下方） -->
+      <!-- ④ 第四列：轮回交叉 + 人生轨迹 + 详情（点击闸门/通道后显示在轨迹下方） -->
       <div class="col">
+        <section class="card module-card">
+          <CrossPanel :chart="chart" />
+        </section>
+
         <section class="card module-card">
           <h3 class="t-title destiny-title">人生轨迹</h3>
           <div class="destiny">
@@ -447,7 +503,7 @@ const starListOpen = ref(false)
     <!-- 手机：底部固定操作 -->
     <div v-if="isMobile && chart" class="mobile-bar safe-bottom">
       <HdButton size="sm" variant="ghost" @click="editOpen = true">编辑</HdButton>
-      <HdButton size="sm" variant="ghost" @click="duplicateChart">副本</HdButton>
+      <HdButton size="sm" variant="ghost" @click="router.push(`/chiron/${id}`)">凯龙</HdButton>
       <HdButton size="sm" variant="ghost" @click="router.push(`/compare/${id}`)">对比</HdButton>
       <HdButton size="sm" :loading="aiState.loading" @click="requestFullReading">全盘 AI</HdButton>
     </div>
@@ -511,18 +567,18 @@ const starListOpen = ref(false)
   }
 }
 
-/* 四列布局 */
+/* 四列布局（间距 / 留白随设置页布局密度变化） */
 .layout {
   display: grid;
   padding-top: 8px;
   grid-template-columns:
     minmax(560px, 1.85fr) minmax(215px, 0.7fr) minmax(215px, 0.7fr)
     minmax(240px, 0.8fr);
-  gap: var(--sp-3);
+  gap: var(--layout-gap, var(--sp-3));
   width: 100%;
   max-width: 1720px;
   margin: 0 auto;
-  padding: 8px var(--sp-4) 96px;
+  padding: 8px var(--layout-pad, var(--sp-4)) 96px;
   box-sizing: border-box;
   align-items: start;
 }
@@ -637,7 +693,8 @@ const starListOpen = ref(false)
 .graph-wrap :deep(svg) {
   width: 100%;
   height: 100%;
-  max-width: 100%;
+  /* 图幅档位：设置页可调 */
+  max-width: var(--graph-max-width, 100%);
   max-height: 100%;
   margin: 0 auto;
 }

@@ -71,8 +71,6 @@ const settings = useSettingsStore()
   gap: var(--sp-3);
   padding: 0 var(--sp-4);
   background: var(--glass-bg-strong);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
   border-bottom: 1px solid var(--glass-border);
 }
 

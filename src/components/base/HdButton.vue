@@ -95,8 +95,6 @@ withDefaults(
 .v-ghost {
   background: var(--glass-bg-soft);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(14px) saturate(160%);
-  -webkit-backdrop-filter: blur(14px) saturate(160%);
   color: var(--text-primary);
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }

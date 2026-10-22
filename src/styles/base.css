@@ -15,12 +15,6 @@ body,
 body {
   margin: 0;
   background-color: var(--bg-base);
-  /* 兜底氛围底色：即使 backdrop 光斑层未加载，也不会是死白 */
-  background-image:
-    radial-gradient(1100px 620px at 6% -12%, var(--glow-1), transparent 52%),
-    radial-gradient(900px 560px at 96% 2%, var(--glow-2), transparent 50%),
-    radial-gradient(820px 560px at 46% 112%, var(--glow-3), transparent 52%);
-  background-attachment: fixed;
   color: var(--text-primary);
   font-family: var(--font-sans);
   font-size: calc(var(--fs-body) * var(--font-scale));
@@ -191,101 +185,50 @@ svg {
   min-width: 0;
 }
 
-/* ---- 液态玻璃表面 ----
-   统一使用：半透明底 + 背景模糊 + 饱和度提升 + 外侧细描边 + 内侧顶部高光。
-   inset 高光是玻璃质感的关键，不要省。 */
+/* ---- 表面（简洁扁平版：实色底 + 细边框 + 轻投影，无模糊无遮罩） ---- */
 .card,
 .glass {
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--glass-shadow);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  /* 内侧 1px 高光 + 外侧 1px 暗边，制造"玻璃厚度" */
-  outline: 1px solid var(--glass-edge);
-  outline-offset: -1px;
+  box-shadow: var(--elev-card);
   position: relative;
 }
 
-/* 顶部高光线：沿圆角内侧走一道渐变反光 */
-.card::before,
-.glass::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    165deg,
-    var(--glass-highlight) 0%,
-    transparent 28%,
-    transparent 72%,
-    rgba(255, 255, 255, 0.18) 100%
-  );
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  opacity: 0.75;
-}
-
 .glass-soft {
-  background: var(--glass-bg-soft);
-  border: 1px solid var(--glass-border);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  box-shadow: none;
 }
 
 .glass-strong {
-  background: var(--glass-bg-strong);
-  border: 1px solid var(--glass-border);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-sat));
-  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-sat));
-  box-shadow: var(--glass-shadow);
+  box-shadow: var(--elev-panel);
 }
 
-/* 悬浮层：更高对比的投影 + 轻微上浮 */
+/* 悬浮层：更清晰的投影 */
 .glass-float {
-  background: var(--glass-bg-float);
-  border: 1px solid var(--glass-border);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-pill);
-  backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-sat));
-  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(var(--glass-sat));
-  box-shadow: var(--glass-shadow-float);
-  outline: 1px solid var(--glass-edge);
-  outline-offset: -1px;
+  box-shadow: var(--elev-panel);
 }
 
-/* 可交互玻璃：悬停时轻微抬起 + 投影加深 */
+/* 可交互表面：悬停轻微抬起（纯 transform，成本低） */
 .lift {
   transition:
     transform var(--dur-base) var(--ease-out),
     box-shadow var(--dur-base) var(--ease-out);
-  will-change: transform;
 }
 .lift:hover {
   transform: translateY(-2px);
-  box-shadow: var(--glass-shadow-float);
+  box-shadow: var(--elev-panel);
 }
 .lift:active {
   transform: translateY(0) scale(0.995);
-}
-
-/* 不支持 backdrop-filter 时退回不透明表面，保证可读 */
-@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
-  .card,
-  .glass,
-  .glass-soft,
-  .glass-strong,
-  .glass-float {
-    background: var(--surface);
-  }
 }
 
 .divider {
@@ -405,4 +348,27 @@ svg {
 
 .safe-top {
   padding-top: calc(var(--sp-2) + env(safe-area-inset-top, 0px));
+}
+
+/* ---- 用户可调布局（设置页「样式设置」） ---- */
+:root[data-density='compact'] {
+  --layout-gap: 8px;
+  --layout-pad: 8px;
+}
+:root[data-density='standard'] {
+  --layout-gap: 12px;
+  --layout-pad: 16px;
+}
+:root[data-density='spacious'] {
+  --layout-gap: 20px;
+  --layout-pad: 24px;
+}
+:root[data-graph-size='small'] {
+  --graph-max-width: 560px;
+}
+:root[data-graph-size='normal'] {
+  --graph-max-width: 780px;
+}
+:root[data-graph-size='large'] {
+  --graph-max-width: 1000px;
 }

@@ -5,9 +5,23 @@ import { useSettingsStore } from '../../stores/settings'
 import { useArchiveStore } from '../../stores/archive'
 import { useUiStore } from '../../stores/ui'
 import { DRAWING_ENGINES } from '../chart/layouts'
+import type { GraphSize, LayoutDensity } from '../../stores/settings'
 import HdField from '../base/HdField.vue'
 import HdToggle from '../base/HdToggle.vue'
 import HdButton from '../base/HdButton.vue'
+
+const FONT_STEPS = [0.85, 0.92, 1, 1.1, 1.2, 1.35] as const
+const FONT_LABELS = ['特小', '偏小', '标准', '稍大', '大', '特大'] as const
+const DENSITIES: Array<{ value: LayoutDensity; label: string }> = [
+  { value: 'compact', label: '紧凑' },
+  { value: 'standard', label: '标准' },
+  { value: 'spacious', label: '宽松' },
+]
+const GRAPH_SIZES: Array<{ value: GraphSize; label: string }> = [
+  { value: 'small', label: '小' },
+  { value: 'normal', label: '标准' },
+  { value: 'large', label: '大' },
+]
 
 const emit = defineEmits<{
   export: []
@@ -64,13 +78,6 @@ function onFile(event: Event) {
   const file = input.files?.[0]
   if (file) emit('import', file)
   input.value = ''
-}
-
-const fontScaleLabel = () => {
-  const s = settings.appearance.fontScale
-  if (s <= 0.95) return '小'
-  if (s >= 1.15) return '大'
-  return '标准'
 }
 
 function regenerateAll() {
@@ -158,22 +165,7 @@ function regenerateAll() {
 
       <div class="seg">
         <span class="t-sm seg-label">字号</span>
-        <div class="seg-ctl" role="group" aria-label="字号">
-          <button type="button" :class="{ on: settings.appearance.fontScale <= 0.95 }" @click="settings.setFontScale(0.92)">
-            小
-          </button>
-          <button
-            type="button"
-            :class="{ on: settings.appearance.fontScale > 0.95 && settings.appearance.fontScale < 1.15 }"
-            @click="settings.setFontScale(1)"
-          >
-            标准
-          </button>
-          <button type="button" :class="{ on: settings.appearance.fontScale >= 1.15 }" @click="settings.setFontScale(1.2)">
-            大
-          </button>
-        </div>
-        <span class="t-xs t-muted">当前：{{ fontScaleLabel() }}</span>
+        <span class="t-xs t-muted">字号已移至下方「样式设置」，提供 6 档可调。</span>
       </div>
 
       <div class="seg">
@@ -192,6 +184,113 @@ function regenerateAll() {
             @click="settings.setPalette('high-contrast')"
           >
             高对比
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 样式设置 -->
+    <section class="group">
+      <header>
+        <h2 class="t-title">样式设置</h2>
+        <p class="t-sm">九中心状态、专业关键字配色与布局全局生效，立即应用。</p>
+      </header>
+
+      <!-- 九中心定义 / 开放 -->
+      <div class="style-rows">
+        <div class="style-row">
+          <span class="t-sm row-label">九中心 · 已定义</span>
+          <label class="color-pick">
+            <input
+              type="color"
+              :value="settings.appearance.centerDefinedColor"
+              @input="settings.setStyle({ centerDefinedColor: ($event.target as HTMLInputElement).value })"
+            />
+            <span class="t-xs">{{ settings.appearance.centerDefinedColor }}</span>
+          </label>
+          <HdToggle
+            compact
+            label="加粗"
+            :model-value="settings.appearance.centerDefinedBold"
+            @update:model-value="settings.setStyle({ centerDefinedBold: $event })"
+          />
+        </div>
+
+        <div class="style-row">
+          <span class="t-sm row-label">九中心 · 开放</span>
+          <label class="color-pick">
+            <input
+              type="color"
+              :value="settings.appearance.centerOpenColor"
+              @input="settings.setStyle({ centerOpenColor: ($event.target as HTMLInputElement).value })"
+            />
+            <span class="t-xs">{{ settings.appearance.centerOpenColor }}</span>
+          </label>
+          <HdToggle
+            compact
+            label="加粗"
+            :model-value="settings.appearance.centerOpenBold"
+            @update:model-value="settings.setStyle({ centerOpenBold: $event })"
+          />
+        </div>
+
+        <div class="style-row">
+          <span class="t-sm row-label">专业关键字<br /><span class="t-xs">（策略、内在权威等）</span></span>
+          <label class="color-pick">
+            <input
+              type="color"
+              :value="settings.appearance.keywordColor"
+              @input="settings.setStyle({ keywordColor: ($event.target as HTMLInputElement).value })"
+            />
+            <span class="t-xs">{{ settings.appearance.keywordColor }}</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 字号：6 档 -->
+      <div class="seg">
+        <span class="t-sm seg-label">字号</span>
+        <div class="seg-ctl" role="group" aria-label="字号档位">
+          <button
+            v-for="(s, i) in FONT_STEPS"
+            :key="s"
+            type="button"
+            :class="{ on: settings.appearance.fontScale === s }"
+            @click="settings.setFontStep(i)"
+          >
+            {{ FONT_LABELS[i] }}
+          </button>
+        </div>
+      </div>
+
+      <!-- 布局密度 -->
+      <div class="seg">
+        <span class="t-sm seg-label">完整盘布局</span>
+        <div class="seg-ctl" role="group" aria-label="布局密度">
+          <button
+            v-for="d in DENSITIES"
+            :key="d.value"
+            type="button"
+            :class="{ on: settings.appearance.layoutDensity === d.value }"
+            @click="settings.setStyle({ layoutDensity: d.value })"
+          >
+            {{ d.label }}
+          </button>
+        </div>
+      </div>
+
+      <!-- 图幅档位 -->
+      <div class="seg">
+        <span class="t-sm seg-label">人体图幅面</span>
+        <div class="seg-ctl" role="group" aria-label="图幅档位">
+          <button
+            v-for="g in GRAPH_SIZES"
+            :key="g.value"
+            type="button"
+            :class="{ on: settings.appearance.graphSize === g.value }"
+            @click="settings.setStyle({ graphSize: g.value })"
+          >
+            {{ g.label }}
           </button>
         </div>
       </div>
@@ -426,5 +525,42 @@ header p {
   align-items: center;
   gap: var(--sp-3);
   flex-wrap: wrap;
+}
+
+/* 样式设置 */
+.style-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.style-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.row-label {
+  width: 132px;
+  flex: none;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+.color-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.color-pick input[type='color'] {
+  width: 34px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  cursor: pointer;
 }
 </style>

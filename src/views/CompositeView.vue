@@ -21,10 +21,19 @@ import {
 import { composite, mergedAsChart } from '../engine/composite'
 import { getChannel, getGate, CENTER_TEXT } from '../services/interpretations'
 import { CHANNEL_BY_KEY } from '../engine/gateData'
-import { CENTER_LABELS, TYPE_LABELS, type CenterId, type Ownership } from '../types/hd'
+import {
+  AUTHORITY_LABELS,
+  CENTER_LABELS,
+  DEFINITION_LABELS,
+  TYPE_LABELS,
+  type CenterId,
+  type Ownership,
+} from '../types/hd'
 import AppToolbar from '../components/base/AppToolbar.vue'
 import CompositeColumn from '../components/composite/CompositeColumn.vue'
 import CompositeToolbar from '../components/composite/CompositeToolbar.vue'
+import RelationshipChannels from '../components/composite/RelationshipChannels.vue'
+import CompositePlanets from '../components/composite/CompositePlanets.vue'
 import GateChannelPanel from '../components/panel/GateChannelPanel.vue'
 import AiReadingPanel from '../components/panel/AiReadingPanel.vue'
 import HumanDesignBodyGraph from '../components/chart/HumanDesignBodyGraph.vue'
@@ -143,10 +152,37 @@ async function requestFullAi() {
   if (!result.value || !archiveA.value || !archiveB.value) return
   const r = result.value
   const dim = activeDimension.value
+  const cp = r.composite
+
+  const REL_LABELS: Record<string, string> = {
+    electromagnetic: '电磁通道（互补吸引）',
+    companionship: '同伴通道（同频共鸣）',
+    dominance: '主导通道（单向输出）',
+    compromise: '妥协通道（迁就卡点）',
+  }
+  const relLines = ['electromagnetic', 'companionship', 'dominance', 'compromise'].map((t) => {
+    const list = r.relationshipChannels.filter((c) => c.type === t)
+    const items = list
+      .map((c) => {
+        const def = CHANNEL_BY_KEY[c.key]
+        return `${c.key} ${def?.nameZh ?? ''}`
+      })
+      .join('、')
+    return `${REL_LABELS[t]}（${list.length}）：${items || '无'}`
+  })
 
   const offline = [
-    `合盘双方：${archiveA.value.name}（${TYPE_LABELS[r.a.type]} ${r.a.profile}） × ${archiveB.value.name}（${TYPE_LABELS[r.b.type]} ${r.b.profile}）`,
-    `合并后类型：${TYPE_LABELS[mergedChart.value?.type ?? r.a.type]}`,
+    `合盘双方：${archiveA.value.name}（${TYPE_LABELS[r.a.type]} ${r.a.profile}，权威 ${AUTHORITY_LABELS[r.a.authority]}） × ${archiveB.value.name}（${TYPE_LABELS[r.b.type]} ${r.b.profile}，权威 ${AUTHORITY_LABELS[r.b.authority]}）`,
+    '',
+    '【合图：第三个能量场】',
+    `合并后能量类型：${TYPE_LABELS[cp.type]}`,
+    `合并后定义：${DEFINITION_LABELS[cp.definition]}（${cp.centers.filter((c) => c.defined).length} 个中心有定义）`,
+    `合并后内在权威：${AUTHORITY_LABELS[cp.authority]}`,
+    `合图轮回交叉：${cp.incarnationCross}（以 ${archiveA.value.name} 太阳轴为意识侧、${archiveB.value.name} 太阳轴为设计侧）`,
+    '',
+    '【四类关系通道】',
+    ...relLines,
+    '',
     `共享通道（${r.sharedChannels.length}）：${r.sharedChannels.map((c) => c.key).join('、') || '无'}`,
     `A 独有通道：${r.merged.channels.filter((c) => c.owners.length === 1 && c.owners[0] === 'a').map((c) => c.key).join('、') || '无'}`,
     `B 独有通道：${r.merged.channels.filter((c) => c.owners.length === 1 && c.owners[0] === 'b').map((c) => c.key).join('、') || '无'}`,
@@ -361,6 +397,64 @@ function goSettings() {
           <div class="mobile-spacer" />
         </div>
 
+        <!-- 合图扩容信息（电脑端 / 手机端一致） -->
+        <div class="info-grid">
+          <section class="card info-card">
+            <h3 class="t-title">合图 · 第三个能量场</h3>
+            <dl class="cp-facts">
+              <div>
+                <dt class="t-xs">能量类型</dt>
+                <dd class="t-body">{{ TYPE_LABELS[result.composite.type] }}</dd>
+              </div>
+              <div>
+                <dt class="t-xs">整体定义</dt>
+                <dd class="t-body">{{ DEFINITION_LABELS[result.composite.definition] }}</dd>
+              </div>
+              <div>
+                <dt class="t-xs">内在权威</dt>
+                <dd class="t-body">{{ AUTHORITY_LABELS[result.composite.authority] }}</dd>
+              </div>
+              <div>
+                <dt class="t-xs">轮回交叉</dt>
+                <dd class="t-body t-mono small">{{ result.composite.incarnationCross }}</dd>
+              </div>
+            </dl>
+            <div class="centers">
+              <p class="t-xs">九中心</p>
+              <ul class="chips">
+                <li
+                  v-for="c in result.composite.centers"
+                  :key="c.id"
+                  class="chip"
+                  :class="c.defined ? 'on' : 'off'"
+                >
+                  {{ CENTER_LABELS[c.id] }} · {{ c.defined ? '定义' : '开放' }}
+                </li>
+              </ul>
+            </div>
+          </section>
+
+          <section class="card info-card">
+            <h3 class="t-title">关系通道动力学</h3>
+            <RelationshipChannels
+              :channels="result.relationshipChannels"
+              :name-a="archiveA?.name ?? 'A'"
+              :name-b="archiveB?.name ?? 'B'"
+              @channel-click="ui.openChannel($event, 'merged')"
+            />
+          </section>
+
+          <section class="card info-card">
+            <h3 class="t-title">行星落点（闸门.爻）</h3>
+            <CompositePlanets
+              :chart-a="result.a"
+              :chart-b="result.b"
+              :name-a="archiveA?.name ?? 'A'"
+              :name-b="archiveB?.name ?? 'B'"
+            />
+          </section>
+        </div>
+
         <GateChannelPanel
           v-if="!isMobile"
           :selection="ui.panel"
@@ -459,8 +553,6 @@ function goSettings() {
   border-radius: var(--radius-md);
   border: 1px solid var(--glass-border);
   background: var(--glass-bg-soft);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   font-size: calc(var(--fs-sm) * var(--font-scale));
 }
 
@@ -505,6 +597,78 @@ function goSettings() {
   align-items: start;
 }
 
+/* 合图扩容信息卡 */
+.info-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 1.4fr;
+  gap: var(--sp-3);
+  align-items: start;
+}
+
+.info-card {
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.cp-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-2) var(--sp-3);
+  margin: 0;
+}
+
+.cp-facts dt {
+  margin-bottom: 2px;
+  color: var(--keyword-color, var(--text-muted));
+  font-weight: 600;
+}
+
+.cp-facts dd {
+  margin: 0;
+}
+
+.cp-facts .small {
+  font-size: calc(var(--fs-sm) * var(--font-scale));
+  color: var(--text-secondary);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.chip {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: calc(var(--fs-xs) * var(--font-scale));
+  border: 1px solid var(--border);
+}
+
+.chip.on {
+  background: var(--hd-center-defined);
+  border-color: var(--hd-center-defined);
+  color: var(--center-defined-color, #ffffff);
+  font-weight: var(--center-defined-weight, 700);
+}
+
+.chip.off {
+  color: var(--center-open-color, var(--text-muted));
+  font-weight: var(--center-open-weight, 400);
+  border-style: dashed;
+}
+
+@media (max-width: 1080px) {
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .mobile-wrap {
   width: 100%;
   display: flex;
@@ -520,8 +684,6 @@ function goSettings() {
   background: var(--glass-bg-soft);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
-  backdrop-filter: blur(14px) saturate(160%);
-  -webkit-backdrop-filter: blur(14px) saturate(160%);
 }
 
 .tabs button {

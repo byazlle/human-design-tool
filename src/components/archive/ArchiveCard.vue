@@ -85,8 +85,6 @@ const definedCount = computed(
   display: flex;
   flex-direction: column;
   background: var(--glass-bg-strong);
-  backdrop-filter: blur(var(--glass-blur)) saturate(175%);
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(175%);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
   box-shadow: var(--glass-shadow);
@@ -116,8 +114,6 @@ const definedCount = computed(
   border-radius: 6px;
   border: 1px solid var(--border-strong);
   background: var(--glass-bg-float);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   color: var(--surface);
   display: inline-flex;
   align-items: center;

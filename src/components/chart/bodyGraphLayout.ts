@@ -17,7 +17,7 @@ export const VIEW_H = 1920
 /** 闸门底圆半径（底图数字高 18px，r=17 恰好包住） */
 export const GATE_R = 17
 /** 闸门数字字号 */
-export const GATE_FONT = 24
+export const GATE_FONT = 28
 /** 白色通道管宽度（底图实测约 17px） */
 export const TUBE_W = 16
 /** 彩色通道覆盖层宽度 */

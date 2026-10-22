@@ -18,6 +18,11 @@ const router = createRouter({
       component: () => import('../views/SingleChartView.vue'),
     },
     {
+      path: '/chiron/:id',
+      name: 'chiron-return',
+      component: () => import('../views/ChironView.vue'),
+    },
+    {
       path: '/boards',
       name: 'multi-board',
       component: () => import('../views/MultiBoardView.vue'),

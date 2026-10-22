@@ -38,8 +38,6 @@ const emit = defineEmits<{ close: [] }>()
   position: fixed;
   inset: 0;
   background: rgba(10, 12, 20, 0.28);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
   z-index: var(--z-drawer-mask);
 }
 
@@ -51,8 +49,6 @@ const emit = defineEmits<{ close: [] }>()
   display: flex;
   flex-direction: column;
   background: var(--glass-bg-strong);
-  backdrop-filter: blur(var(--glass-blur-strong)) saturate(190%);
-  -webkit-backdrop-filter: blur(var(--glass-blur-strong)) saturate(190%);
   border-top: 1px solid var(--glass-border);
   border-radius: 22px 22px 0 0;
   box-shadow: var(--glass-shadow-float);

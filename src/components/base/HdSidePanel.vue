@@ -29,8 +29,6 @@ const emit = defineEmits<{ close: [] }>()
   flex: none;
   height: 100%;
   background: var(--glass-bg);
-  backdrop-filter: blur(28px) saturate(180%);
-  -webkit-backdrop-filter: blur(28px) saturate(180%);
   border-left: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
   z-index: var(--z-panel);

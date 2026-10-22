@@ -24,8 +24,8 @@ const pct = (v: number) => (v / 100) * BASE
 
 export const VIEW_W_V2 = 800
 export const VIEW_H_V2 = 800
-export const GATE_R_V2 = 11
-export const GATE_FONT_V2 = 14
+export const GATE_R_V2 = 12
+export const GATE_FONT_V2 = 16
 export const TUBE_W_V2 = 12
 export const CH_W_V2 = 10
 

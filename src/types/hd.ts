@@ -215,7 +215,24 @@ export interface Archive {
   chart?: BodyGraph
 }
 
-/** 合盘结果：A / B / 合并 + 共享集合 */
+/** 关系通道类型（专业合图动力学） */
+export type RelationshipChannelType =
+  | 'electromagnetic' // 电磁通道：两人互补成通道，强烈吸引
+  | 'companionship' // 同伴通道：两人自带同一条通道，高度同频
+  | 'dominance' // 主导通道：单方拥有完整通道，单向输出
+  | 'compromise' // 妥协通道：一方完整 + 一方单闸门悬挂，迁就卡点
+
+export interface RelationshipChannel {
+  key: string
+  gates: [number, number]
+  type: RelationshipChannelType
+  /** 两端闸门各自的归属（shared / a / b） */
+  gateOwners: [Ownership, Ownership]
+  /** 完整通道持有方（dominance / compromise 时有意义） */
+  holder?: 'a' | 'b'
+}
+
+/** 合盘结果：A / B / 合并 + 共享集合 + 关系动力学 */
 export interface CompositeResult {
   a: BodyGraph
   b: BodyGraph
@@ -228,6 +245,17 @@ export interface CompositeResult {
   channelOwners: Record<string, Ownership>
   sharedChannels: ChannelActivation[]
   sharedGates: number[]
+  /** 四类关系通道 */
+  relationshipChannels: RelationshipChannel[]
+  /** 合图作为「第三个能量场」的独立计算结果 */
+  composite: {
+    type: HDType
+    authority: Authority
+    definition: DefinitionKind
+    centers: CenterState[]
+    incarnationCross: string
+    strategy: string
+  }
 }
 
 export type UiFilter = {

@@ -36,6 +36,9 @@
   --hd-gate-stroke: #1a1d23;
   --hd-channel: #9aa1ad;
   --hd-single-accent: #1a1d23;
+  /* 通道意识色：显意识纯黑 / 潜意识纯红（深色主题下做可读性适配） */
+  --hd-line-p: #000000;
+  --hd-line-d: #e60000;
   /* 图形层：中心渐变、闸门状态 */
   --hd-center-defined-top: #3a4050;
   --hd-center-defined-bottom: #22262f;
@@ -102,30 +105,34 @@
   /* 用户可调字号（设置页） */
   --font-scale: 1;
 
-  /* ---------------- 液态玻璃（Liquid Glass） ---------------- */
-  /* 玻璃本体：半透明 + 模糊 + 饱和度提升，背后必须有光斑层才有质感 */
-  --glass-bg: rgba(255, 255, 255, 0.58);
-  --glass-bg-strong: rgba(255, 255, 255, 0.78);
-  --glass-bg-soft: rgba(255, 255, 255, 0.38);
-  --glass-bg-float: rgba(255, 255, 255, 0.72);
-  --glass-blur: 22px;
-  --glass-blur-strong: 32px;
-  --glass-sat: 180%;
-  /* 边缘：外侧一圈细描边 + 内侧顶部高光，模拟玻璃厚度与折射 */
-  --glass-border: rgba(255, 255, 255, 0.7);
-  --glass-edge: rgba(16, 24, 40, 0.07);
-  --glass-highlight: rgba(255, 255, 255, 0.95);
-  --glass-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 10px 30px -12px rgba(16, 24, 40, 0.18),
-    0 24px 60px -32px rgba(16, 24, 40, 0.22);
-  --glass-shadow-float: 0 2px 6px rgba(16, 24, 40, 0.06),
-    0 18px 44px -16px rgba(16, 24, 40, 0.26), 0 40px 90px -40px rgba(16, 24, 40, 0.3);
-  /* 光斑色（背景氛围） */
-  --glow-1: rgba(124, 58, 237, 0.2);
-  --glow-2: rgba(37, 99, 235, 0.17);
-  --glow-3: rgba(6, 182, 212, 0.14);
-  --glow-4: rgba(236, 72, 153, 0.1);
-  --glow-5: rgba(245, 158, 11, 0.09);
-  --noise-opacity: 0.035;
+  /* 用户可调样式（设置页「样式设置」） */
+  --center-defined-color: #1a1d23;
+  --center-open-color: #8a909c;
+  --center-defined-weight: 700;
+  --center-open-weight: 400;
+  --keyword-color: #5b616e;
+
+  /* ---------------- 表面（性能优先：实色、无模糊） ----------------
+     保留原变量名以兼容既有组件引用，值全部改为实色等价物 */
+  --glass-bg: var(--surface);
+  --glass-bg-strong: var(--surface);
+  --glass-bg-soft: var(--surface-2);
+  --glass-bg-float: var(--surface);
+  --glass-blur: 0px;
+  --glass-blur-strong: 0px;
+  --glass-sat: 100%;
+  --glass-border: var(--border);
+  --glass-edge: transparent;
+  --glass-highlight: transparent;
+  --glass-shadow: var(--elev-card);
+  --glass-shadow-float: var(--elev-panel);
+  /* 光斑色：仅作静态渐变底色（无动画、无模糊滤镜） */
+  --glow-1: rgba(124, 58, 237, 0.08);
+  --glow-2: rgba(37, 99, 235, 0.07);
+  --glow-3: rgba(6, 182, 212, 0.05);
+  --glow-4: rgba(236, 72, 153, 0.04);
+  --glow-5: rgba(245, 158, 11, 0.04);
+  --noise-opacity: 0;
 
   /* 动效 */
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -158,6 +165,8 @@
   --hd-gate-stroke: #c9ced6;
   --hd-channel: #5b616e;
   --hd-single-accent: #f2f4f7;
+  --hd-line-p: #f2f4f7;
+  --hd-line-d: #ff5252;
   --hd-center-defined-top: #fbfcfe;
   --hd-center-defined-bottom: #d9dfe9;
   --hd-center-undef-top: #1c212a;
@@ -179,24 +188,22 @@
   --elev-panel: 0 4px 16px rgba(0, 0, 0, 0.55);
   --elev-dialog: 0 8px 32px rgba(0, 0, 0, 0.6);
 
-  /* 深色玻璃：底色更深、边缘高光减弱，避免发灰 */
-  --glass-bg: rgba(26, 30, 40, 0.55);
-  --glass-bg-strong: rgba(30, 35, 46, 0.76);
-  --glass-bg-soft: rgba(24, 28, 37, 0.38);
-  --glass-bg-float: rgba(32, 37, 48, 0.74);
-  --glass-border: rgba(255, 255, 255, 0.14);
-  --glass-edge: rgba(0, 0, 0, 0.45);
-  --glass-highlight: rgba(255, 255, 255, 0.16);
-  --glass-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 12px 32px -14px rgba(0, 0, 0, 0.6),
-    0 28px 64px -34px rgba(0, 0, 0, 0.68);
-  --glass-shadow-float: 0 2px 8px rgba(0, 0, 0, 0.34), 0 20px 48px -18px rgba(0, 0, 0, 0.66),
-    0 44px 96px -42px rgba(0, 0, 0, 0.72);
-  --glow-1: rgba(124, 58, 237, 0.34);
-  --glow-2: rgba(37, 99, 235, 0.3);
-  --glow-3: rgba(6, 182, 212, 0.24);
-  --glow-4: rgba(236, 72, 153, 0.2);
-  --glow-5: rgba(245, 158, 11, 0.14);
-  --noise-opacity: 0.05;
+  /* 深色表面：实色等价物 */
+  --glass-bg: var(--surface);
+  --glass-bg-strong: var(--surface);
+  --glass-bg-soft: var(--surface-2);
+  --glass-bg-float: var(--surface);
+  --glass-border: var(--border);
+  --glass-edge: transparent;
+  --glass-highlight: transparent;
+  --glass-shadow: var(--elev-card);
+  --glass-shadow-float: var(--elev-panel);
+  --glow-1: rgba(124, 58, 237, 0.14);
+  --glow-2: rgba(37, 99, 235, 0.12);
+  --glow-3: rgba(6, 182, 212, 0.09);
+  --glow-4: rgba(236, 72, 153, 0.07);
+  --glow-5: rgba(245, 158, 11, 0.05);
+  --noise-opacity: 0;
 }
 
 /* 人体图高对比配色：中心用边框强调而非填充 */

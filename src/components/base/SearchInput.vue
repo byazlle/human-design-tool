@@ -36,8 +36,6 @@ function onInput(e: Event) {
   background: var(--glass-bg-soft);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-md);
-  backdrop-filter: blur(14px) saturate(160%);
-  -webkit-backdrop-filter: blur(14px) saturate(160%);
   color: var(--text-muted);
   min-width: 180px;
   transition:

@@ -496,8 +496,17 @@ function onChannelClick(key: string) {
 }
 
 .center-chip.defined {
-  color: var(--text-primary);
-  font-weight: 600;
+  color: var(--center-defined-color);
+  font-weight: var(--center-defined-weight);
+}
+
+.center-chip:not(.defined) {
+  color: var(--center-open-color);
+  font-weight: var(--center-open-weight);
+}
+
+.center-chip .state {
+  color: inherit;
 }
 
 .center-chip.on {
@@ -524,8 +533,6 @@ function onChannelClick(key: string) {
   border-radius: var(--radius-pill);
   background: var(--glass-bg-float);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
   box-shadow: var(--glass-shadow-float);
 }
 

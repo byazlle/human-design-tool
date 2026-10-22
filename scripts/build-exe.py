@@ -104,7 +104,7 @@ def stage_app():
         else:
             shutil.copy2(src, dst)
 
-    for f in ('main.cjs', 'preload.cjs'):
+    for f in ('main.cjs', 'preload.cjs', 'package.json'):
         shutil.copy2(os.path.join(DESKTOP, f), os.path.join(APP_DIR, f))
 
     count = sum(len(files) for _, _, files in os.walk(APP_DIR))

@@ -7,9 +7,11 @@
  *   - v2 Free Human Design 版：参考实现布局与渐变配色（八角星 G、紧凑比例）
  *
  * 数据层规则（两版一致）：
- *   - 通道：双潜意识=红实线；双显意识=黑实线；一潜一显=红黑条纹；
- *           仅单端=红/黑分段虚线（悬挂，不构成完整通道）；两端未激活=不叠加彩色
- *   - 闸门：潜意识（设计侧）=蓝底白字；显意识（个性侧）=无底圈黑字
+ *   - 通道：显意识 = 纯黑实线；潜意识 = 纯红实线；两侧意识并存 = 红黑交替
+ *     斑马线分段实线；取消一切虚线与混色叠涂
+ *   - 悬挂闸门：按意识归属取色的实线短段（无虚线）
+ *   - 闸门：激活即高亮——显意识黑底白字、潜意识红底白字、两侧同激黑底红环；
+ *     未激活闸门保持白底灰字，开/合对比明显；数字统一放大
  *   - 中心：任一完整通道接入→有定义（专属色/专属渐变）；否则白底黑描边
  */
 import { computed } from 'vue'
@@ -99,7 +101,7 @@ function centerFill(id: CenterId): string {
   return CENTER_COLORS[id]
 }
 
-/* ── 闸门 ─────────────────────────────────────────────── */
+/* ── 闸门（统一高亮：黑=显意识，红=潜意识，黑底红环=两侧同激） ── */
 
 function gateLit(gate: number): boolean {
   if (!activated.value.has(gate)) return false
@@ -124,27 +126,35 @@ function ownerVar(o: Ownership | undefined): string {
 function gateIsDesign(gate: number): boolean {
   return designGates.value.has(gate)
 }
+function gateIsPersonality(gate: number): boolean {
+  return personalityGates.value.has(gate)
+}
+/** 激活闸门一律渲染高亮圆点（显/潜/双意识统一） */
 function gateHasCircle(gate: number): boolean {
-  return gateLit(gate) && (gateIsDesign(gate) || props.mode === 'composite')
+  return gateLit(gate)
 }
 function gateFill(gate: number): string {
   if (props.mode === 'composite' && gateLit(gate)) return ownerVar(props.gateOwners[gate])
-  return '#2b6cd4'
+  if (gateIsDesign(gate) && gateIsPersonality(gate)) return 'var(--hd-line-p)'
+  return gateIsDesign(gate) ? 'var(--hd-line-d)' : 'var(--hd-line-p)'
 }
 function gateTextFill(gate: number): string {
   if (props.mode === 'composite' && gateLit(gate)) return '#ffffff'
-  return gateIsDesign(gate) ? '#ffffff' : '#111318'
+  return gateHasCircle(gate) ? '#ffffff' : '#111318'
 }
 function gateStroke(gate: number): string {
   if (highlightGates.value.has(gate) && gateLit(gate)) return 'var(--status-warning)'
-  return gateHasCircle(gate) ? 'rgba(255, 255, 255, 0.85)' : 'transparent'
+  // 双意识同激：黑底加红环，一眼可辨
+  if (gateLit(gate) && gateIsDesign(gate) && gateIsPersonality(gate)) return 'var(--hd-line-d)'
+  return gateHasCircle(gate) ? 'rgba(255, 255, 255, 0.9)' : 'transparent'
 }
 function gateStrokeWidth(gate: number): number {
   if (highlightGates.value.has(gate) && gateLit(gate)) return 3.6
-  return gateHasCircle(gate) ? 1.8 : 0
+  if (gateLit(gate) && gateIsDesign(gate) && gateIsPersonality(gate)) return 3.2
+  return gateHasCircle(gate) ? 1.6 : 0
 }
 
-/* ── 通道 ─────────────────────────────────────────────── */
+/* ── 通道（纯色 / 斑马线，无虚线无叠涂） ─────────────── */
 
 type Consciousness = 'p' | 'd' | 'mixed'
 
@@ -158,10 +168,7 @@ function channelConsciousness(g0: number, g1: number): Consciousness {
   if (allP) return 'p'
   return 'mixed'
 }
-/**
- * 悬挂闸门的意识归属（决定半段虚线的颜色）：
- * 仅设计侧 → 红；仅个性侧 → 黑；两侧同时激活 → 红黑交替（mixed）
- */
+/** 悬挂闸门的意识归属：仅设计侧 → 红；仅个性侧 → 黑；两侧同激 → 斑马线 */
 function gateConsciousness(gate: number): Consciousness {
   const p = personalityGates.value.has(gate)
   const d = designGates.value.has(gate)
@@ -169,15 +176,8 @@ function gateConsciousness(gate: number): Consciousness {
   return d ? 'd' : 'p'
 }
 function colorOf(c: Consciousness): string {
-  if (c === 'd') return '#e02020'
-  if (c === 'p') return '#111318'
-  return 'url(#hd-stripe)'
-}
-function channelStroke(key: string): string {
-  const line = layout.value.channels.find((l) => l.key === key)
-  if (!line) return 'var(--hd-single-accent)'
-  if (props.mode === 'composite') return ownerVar(props.channelOwners[key])
-  return colorOf(channelConsciousness(line.gates[0], line.gates[1]))
+  if (c === 'd') return 'var(--hd-line-d)'
+  return 'var(--hd-line-p)'
 }
 
 const visibleChannels = computed(() => layout.value.channels.filter((l) => !l.internal))
@@ -191,24 +191,114 @@ function polyStr(pts: Array<[number, number]>): string {
   return pts.map(([x, y]) => `${x},${y}`).join(' ')
 }
 
-const fullChannels = computed(() =>
-  visibleChannels.value
-    .filter((l) => definedChannels.value.has(l.key))
-    .map((l) => {
-      const pts = routeOf(l).map((p) => [p[0], p[1]] as [number, number])
-      const a = layout.value.gates.find((g) => g.gate === l.gates[0])!
-      const b = layout.value.gates.find((g) => g.gate === l.gates[1])!
-      const t = 0.12
-      // 两端向中心内延伸，贴近数字
-      pts[0] = [pts[0][0] + (a.x - pts[0][0]) * t, pts[0][1] + (a.y - pts[0][1]) * t]
-      const last = pts.length - 1
-      pts[last] = [pts[last][0] + (b.x - pts[last][0]) * t, pts[last][1] + (b.y - pts[last][1]) * t]
-      return { key: l.key, points: polyStr(pts), stroke: channelStroke(l.key) }
-    }),
-)
+/** 沿折线按段长切分（返回每小段的起止点），用于红黑交替斑马线 */
+function splitAlong(pts: Array<[number, number]>, segLen: number): Array<[number, number, number, number]> {
+  const out: Array<[number, number, number, number]> = []
+  let carry = 0
+  for (let i = 0; i < pts.length - 1; i += 1) {
+    const [ax, ay] = pts[i]
+    const [bx, by] = pts[i + 1]
+    const len = Math.hypot(bx - ax, by - ay)
+    if (len < 1e-6) continue
+    let s = -carry // 该边内已消费的长度
+    while (s < len) {
+      const e = Math.min(s + segLen, len)
+      const t1 = Math.max(0, s) / len
+      const t2 = e / len
+      out.push([ax + (bx - ax) * t1, ay + (by - ay) * t1, ax + (bx - ax) * t2, ay + (by - ay) * t2])
+      s = e
+    }
+    carry = (s - len)
+  }
+  return out
+}
+
+/** 折线总长 */
+function pathLength(pts: Array<[number, number]>): number {
+  let total = 0
+  for (let i = 0; i < pts.length - 1; i += 1) {
+    total += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1])
+  }
+  return total
+}
+
+interface SegPiece {
+  key: string
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  stroke: string
+}
+
+/** 斑马线：红黑交替的实线分段 */
+function zebraPieces(
+  baseKey: string,
+  pts: Array<[number, number]>,
+  consciousness: Consciousness,
+  width: number,
+): SegPiece[] {
+  if (consciousness !== 'mixed') {
+    const stroke = colorOf(consciousness)
+    return [
+      {
+        key: baseKey,
+        x1: pts[0][0],
+        y1: pts[0][1],
+        x2: pts[pts.length - 1][0],
+        y2: pts[pts.length - 1][1],
+        stroke,
+      },
+    ]
+  }
+  const segLen = Math.max(width * 1.7, 10)
+  return splitAlong(pts, segLen).map(([x1, y1, x2, y2], i) => ({
+    key: `${baseKey}-z${i}`,
+    x1,
+    y1,
+    x2,
+    y2,
+    stroke: i % 2 === 0 ? 'var(--hd-line-d)' : 'var(--hd-line-p)',
+  }))
+}
+
+const fullChannels = computed(() => {
+  const out: Array<{ key: string; pieces: SegPiece[]; width: number }> = []
+  for (const l of visibleChannels.value) {
+    if (!definedChannels.value.has(l.key)) continue
+    if (!channelVisible(l.key)) continue
+    const pts = routeOf(l).map((p) => [p[0], p[1]] as [number, number])
+    const a = layout.value.gates.find((g) => g.gate === l.gates[0])!
+    const b = layout.value.gates.find((g) => g.gate === l.gates[1])!
+    const t = 0.12
+    // 两端向中心内延伸，贴近数字
+    pts[0] = [pts[0][0] + (a.x - pts[0][0]) * t, pts[0][1] + (a.y - pts[0][1]) * t]
+    const last = pts.length - 1
+    pts[last] = [pts[last][0] + (b.x - pts[last][0]) * t, pts[last][1] + (b.y - pts[last][1]) * t]
+    const consciousness =
+      props.mode === 'composite' ? 'mixed' : channelConsciousness(l.gates[0], l.gates[1])
+    let pieces: SegPiece[]
+    if (props.mode === 'composite') {
+      pieces = [
+        {
+          key: l.key,
+          x1: pts[0][0],
+          y1: pts[0][1],
+          x2: pts[pts.length - 1][0],
+          y2: pts[pts.length - 1][1],
+          stroke: ownerVar(props.channelOwners[l.key]),
+        },
+      ]
+    } else {
+      pieces = zebraPieces(l.key, pts, consciousness, layout.value.chW)
+    }
+    out.push({ key: l.key, pieces, width: channelWidth(l.key) })
+  }
+  return out
+})
 
 const hangingChannels = computed(() => {
-  const out: Array<{ key: string; x1: number; y1: number; x2: number; y2: number; stroke: string }> = []
+  const out: Array<{ key: string; pieces: SegPiece[]; width: number }> = []
   if (sharedOnly.value) return out
   for (const l of visibleChannels.value) {
     const [g0, g1] = l.gates
@@ -226,16 +316,16 @@ const hangingChannels = computed(() => {
     const t = 0.12
     const sx = bx + (p.x - bx) * t
     const sy = by + (p.y - by) * t
+    const ex = sx + (ox - sx) * 0.45
+    const ey = sy + (oy - sy) * 0.45
+    const stroke =
+      props.mode === 'composite'
+        ? ownerVar(props.gateOwners[gate])
+        : colorOf(gateConsciousness(gate))
     out.push({
       key: `hang-${l.key}`,
-      x1: sx,
-      y1: sy,
-      x2: sx + (ox - sx) * 0.45,
-      y2: sy + (oy - sy) * 0.45,
-      stroke:
-        props.mode === 'composite'
-          ? ownerVar(props.gateOwners[gate])
-          : colorOf(gateConsciousness(gate)),
+      width: layout.value.chW - 2,
+      pieces: [{ key: `hang-${l.key}`, x1: sx, y1: sy, x2: ex, y2: ey, stroke }],
     })
   }
   return out
@@ -298,16 +388,6 @@ function centerClickable(id: CenterId): boolean {
         </linearGradient>
       </template>
 
-      <pattern
-        id="hd-stripe"
-        :width="isV1 ? 16 : 12"
-        :height="isV1 ? 16 : 12"
-        patternTransform="rotate(45)"
-        patternUnits="userSpaceOnUse"
-      >
-        <rect :width="isV1 ? 16 : 12" :height="isV1 ? 16 : 12" fill="#111318" />
-        <rect :width="isV1 ? 8 : 6" :height="isV1 ? 16 : 12" fill="#e02020" />
-      </pattern>
       <filter id="hd-gate-shadow" x="-70%" y="-70%" width="240%" height="240%">
         <feDropShadow dx="0" dy="1.6" stdDeviation="1.6" flood-color="#0b2530" flood-opacity="0.3" />
       </filter>
@@ -328,10 +408,11 @@ function centerClickable(id: CenterId): boolean {
       <path :d="SILHOUETTE_PATH" class="silhouette" fill="var(--hd-plate-figure)" opacity="0.55" />
     </g>
 
-    <!-- 通道底板线槽（两版都画，颜色按版本区分） -->
+    <!-- 通道底板线槽（只画空白管：激活通道由彩色实线/斑马线整段覆盖，不再叠涂） -->
     <g class="tubes">
       <template v-for="line in visibleChannels" :key="`t-${line.key}`">
         <polyline
+          v-if="!definedChannels.has(line.key) || !channelVisible(line.key)"
           :points="polyStr(routeOf(line))"
           fill="none"
           :stroke="isV1 ? 'var(--hd-tube-edge)' : 'var(--hd-tube-edge-v2)'"
@@ -341,6 +422,7 @@ function centerClickable(id: CenterId): boolean {
           stroke-linejoin="round"
         />
         <polyline
+          v-if="!definedChannels.has(line.key) || !channelVisible(line.key)"
           :points="polyStr(routeOf(line))"
           fill="none"
           :stroke="isV1 ? 'var(--hd-tube)' : 'var(--hd-tube-v2)'"
@@ -370,41 +452,44 @@ function centerClickable(id: CenterId): boolean {
       />
     </g>
 
-    <!-- 悬挂通道：红/黑分段虚线 -->
+    <!-- 悬挂通道：实线短段（无虚线） -->
     <g class="channels hanging">
-      <line
-        v-for="seg in hangingChannels"
-        :key="seg.key"
-        :x1="seg.x1"
-        :y1="seg.y1"
-        :x2="seg.x2"
-        :y2="seg.y2"
-        :stroke="seg.stroke"
-        :stroke-width="layout.chW - 2"
-        stroke-dasharray="14 12"
-        stroke-linecap="butt"
-        opacity="0.95"
-      />
+      <template v-for="seg in hangingChannels" :key="seg.key">
+        <line
+          v-for="piece in seg.pieces"
+          :key="piece.key"
+          :x1="piece.x1"
+          :y1="piece.y1"
+          :x2="piece.x2"
+          :y2="piece.y2"
+          :stroke="piece.stroke"
+          :stroke-width="seg.width"
+          stroke-linecap="butt"
+          opacity="0.95"
+        />
+      </template>
     </g>
 
-    <!-- 完整通道 -->
+    <!-- 完整通道：纯色实线 / 红黑斑马线分段 -->
     <g class="channels full">
-      <polyline
-        v-for="seg in fullChannels"
-        :key="seg.key"
-        :points="seg.points"
-        fill="none"
-        :stroke="seg.stroke"
-        :stroke-width="channelWidth(seg.key)"
-        :opacity="channelVisible(seg.key) ? 1 : 0"
-        :class="{ 'is-clickable': interactive }"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        @click="onChannel(seg.key)"
-      />
+      <template v-for="seg in fullChannels" :key="seg.key">
+        <line
+          v-for="piece in seg.pieces"
+          :key="piece.key"
+          :x1="piece.x1"
+          :y1="piece.y1"
+          :x2="piece.x2"
+          :y2="piece.y2"
+          :stroke="piece.stroke"
+          :stroke-width="seg.width"
+          :class="{ 'is-clickable': interactive }"
+          stroke-linecap="butt"
+          @click="onChannel(seg.key)"
+        />
+      </template>
     </g>
 
-    <!-- 闸门 -->
+    <!-- 闸门：激活即高亮（黑=显意识 / 红=潜意识 / 黑底红环=双意识） -->
     <g class="gates">
       <g
         v-for="point in layout.gates"

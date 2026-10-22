@@ -87,8 +87,6 @@ function close() {
   gap: var(--sp-2);
   padding-left: var(--sp-3);
   background: var(--glass-bg-soft);
-  backdrop-filter: blur(18px) saturate(160%);
-  -webkit-backdrop-filter: blur(18px) saturate(160%);
   border-bottom: 1px solid var(--glass-border);
   -webkit-app-region: drag;
   user-select: none;

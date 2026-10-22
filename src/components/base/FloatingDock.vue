@@ -144,8 +144,6 @@ onBeforeUnmount(() => {
   color: var(--text-primary);
   background: var(--glass-bg-float);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(28px) saturate(190%);
-  -webkit-backdrop-filter: blur(28px) saturate(190%);
   box-shadow: var(--glass-shadow-float);
   transition:
     transform var(--dur-base) var(--ease-spring),
@@ -192,8 +190,6 @@ onBeforeUnmount(() => {
   border-radius: 20px;
   background: var(--glass-bg-float);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(30px) saturate(190%);
-  -webkit-backdrop-filter: blur(30px) saturate(190%);
   box-shadow: var(--glass-shadow-float);
   transform-origin: bottom right;
 }

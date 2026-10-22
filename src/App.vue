@@ -57,8 +57,6 @@ onMounted(() => {
   border-radius: var(--radius-pill);
   background: var(--glass-bg-float);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(28px) saturate(190%);
-  -webkit-backdrop-filter: blur(28px) saturate(190%);
   color: var(--text-primary);
   font-size: calc(var(--fs-sm) * var(--font-scale));
   box-shadow: var(--glass-shadow-float);
