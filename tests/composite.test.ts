@@ -81,14 +81,31 @@ describe('专业合图引擎', () => {
     expect(rel?.holder).toBe('a')
   })
 
-  it('合图第三个能量场：重新计算类型 / 定义 / 权威 / 交叉', () => {
+  it('合图第三个能量场：重新计算类型 / 定义 / 权威（不输出轮回交叉）', () => {
     const r = composite(makeChart([43], []), makeChart([23], []))
     expect(r.composite.centers.find((c) => c.id === 'throat')?.defined).toBe(true)
     expect(r.composite.centers.find((c) => c.id === 'ajna')?.defined).toBe(true)
-    expect(typeof r.composite.incarnationCross).toBe('string')
-    expect(r.composite.incarnationCross.length).toBeGreaterThan(0)
+    // 关系没有轮回交叉：字段不应存在
+    expect('incarnationCross' in r.composite).toBe(false)
     const chart = mergedAsChart(r)
+    expect(chart.incarnationCross).toBe('')
     expect(chart.channels.some((c) => c.key === '23-43')).toBe(true)
+  })
+
+  it('中心四象限：四类状态互斥且合计为 9', () => {
+    // A: 定义 23-43（喉咙+眉心）；B: 定义 1-8（喉咙+G）
+    const r = composite(makeChart([], [[23, 43]]), makeChart([], [[1, 8]]))
+    const byState = (s: string) => r.centerQuadrant.filter((c) => c.state === s)
+    expect(byState('both').map((c) => c.id)).toContain('throat') // 双方都定义了喉咙
+    expect(byState('onlyA').map((c) => c.id)).toContain('ajna')
+    expect(byState('onlyB').map((c) => c.id)).toContain('g')
+    expect(byState('open').length).toBeGreaterThan(0)
+    expect(r.centerQuadrant).toHaveLength(9)
+  })
+
+  it('拒绝同一张盘与自己合盘', () => {
+    const self = makeChart([43], [])
+    expect(() => composite(self, self)).toThrow(/两位不同的人/)
   })
 })
 

@@ -6,6 +6,8 @@ import { useSettingsStore } from '../stores/settings'
 import { useUiStore } from '../stores/ui'
 import AppToolbar from '../components/base/AppToolbar.vue'
 import SettingsForm from '../components/settings/SettingsForm.vue'
+import { validateBirth } from '../services/validate'
+import { SCHEMA_VERSION } from '../engine/version'
 import type { Archive } from '../types/hd'
 
 const router = useRouter()
@@ -16,7 +18,8 @@ const ui = useUiStore()
 function exportAll() {
   const payload = {
     app: 'humandesign-tool',
-    version: 1,
+    version: SCHEMA_VERSION,
+    schemaVersion: SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     archives: archiveStore.archives.map(({ chart, ...rest }) => rest),
   }
@@ -27,21 +30,60 @@ function exportAll() {
   a.download = `humandesign-backup-${new Date().toISOString().slice(0, 10)}.json`
   a.click()
   URL.revokeObjectURL(url)
-  ui.notify('已导出备份（不含身份证号）', 'success')
+  ui.notify('已导出备份（不含身份证号与 AI Key）', 'success')
+}
+
+interface RejectedItem {
+  name: string
+  reason: string
 }
 
 async function importFile(file: File) {
   try {
     const text = await file.text()
-    const data = JSON.parse(text) as { archives?: Archive[] }
+    const data = JSON.parse(text) as { archives?: Archive[]; schemaVersion?: number }
     if (!Array.isArray(data.archives)) throw new Error('文件格式不正确')
-    const valid = data.archives.filter(
-      (a) => a && a.id && a.name && a.birth && a.timezone,
-    )
-    if (!valid.length) throw new Error('文件中没有可用档案')
-    archiveStore.importAll(valid)
-    valid.forEach((a) => archiveStore.ensureChart(a.id))
-    ui.notify(`已导入 ${valid.length} 份档案`, 'success')
+
+    const accepted: Archive[] = []
+    const rejected: RejectedItem[] = []
+
+    for (const raw of data.archives) {
+      const a = raw as Archive
+      const label = a?.name || a?.id || '(未命名)'
+      if (!a || !a.id || !a.name || !a.birth || !a.timezone) {
+        rejected.push({ name: label, reason: '缺少必要字段（id / 名称 / 出生信息 / 时区）' })
+        continue
+      }
+      // 关键：出生字段必须逐项校验。Date.UTC 会把 month=13、hour=25 静默滚动，
+      // 不校验就会产出"合法但错误"的盘。
+      const issues = validateBirth(a.birth)
+      if (issues.length) {
+        rejected.push({ name: label, reason: issues[0] })
+        continue
+      }
+      accepted.push(a)
+    }
+
+    if (!accepted.length) {
+      const first = rejected[0]
+      throw new Error(
+        `没有可用档案（共 ${rejected.length} 份被拒${first ? `，如「${first.name}」：${first.reason}` : ''}）`,
+      )
+    }
+
+    archiveStore.importAll(accepted)
+    accepted.forEach((a) => archiveStore.ensureChart(a.id))
+
+    const msg =
+      `已导入 ${accepted.length} 份档案` + (rejected.length ? `，跳过 ${rejected.length} 份` : '')
+    ui.notify(msg, rejected.length ? 'info' : 'success')
+    if (rejected.length) {
+      const detail = rejected
+        .slice(0, 5)
+        .map((r) => `${r.name}：${r.reason}`)
+        .join('\n')
+      console.warn('[import] 被拒条目：\n' + detail)
+    }
   } catch (err) {
     ui.notify(`导入失败：${(err as Error).message}`, 'error')
   }

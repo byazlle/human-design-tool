@@ -1,20 +1,25 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSettingsStore } from './stores/settings'
+import { useArchiveStore } from './stores/archive'
 import { useUiStore } from './stores/ui'
 import GlassBackdrop from './components/base/GlassBackdrop.vue'
 import WindowChrome from './components/base/WindowChrome.vue'
 import FloatingDock from './components/base/FloatingDock.vue'
 
 const settings = useSettingsStore()
+const archive = useArchiveStore()
 const ui = useUiStore()
 const route = useRoute()
 
 const isDesktopShell = Boolean((window as unknown as { hdDesktop?: unknown }).hdDesktop)
+const dataErrorDismissed = ref(false)
 
 onMounted(() => {
   settings.init()
+  // 算法版本对齐：曼陀罗偏移修正后，存量快照必须重算，否则用户会一直看到旧结果
+  archive.syncEngineVersion()
   if (isDesktopShell) document.body.classList.add('shell-desktop')
 })
 </script>
@@ -24,6 +29,10 @@ onMounted(() => {
   <WindowChrome />
 
   <div class="app-content">
+    <div v-if="archive.loadError && !dataErrorDismissed" class="data-error" role="alert">
+      <span class="t-sm">{{ archive.loadError }}</span>
+      <button type="button" class="t-xs" @click="dataErrorDismissed = true">我知道了</button>
+    </div>
     <RouterView v-slot="{ Component }">
       <Transition name="page" mode="out-in">
         <component :is="Component" :key="route.path" />
@@ -45,6 +54,28 @@ onMounted(() => {
   position: relative;
   z-index: 1;
   height: 100%;
+}
+
+.data-error {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-toolbar);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  background: rgba(217, 119, 6, 0.12);
+  border-bottom: 1px solid rgba(217, 119, 6, 0.4);
+  color: var(--text-primary);
+}
+
+.data-error button {
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
 }
 
 .toast {

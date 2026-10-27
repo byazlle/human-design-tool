@@ -1,7 +1,14 @@
 /**
  * 引擎校验测试。
- * 金标准来自 free-human-design（rave-engine 血统，其 26 个激活点已对齐 Swiss Ephemeris）。
- * 这些样本覆盖：东亚时区、北美时区、欧洲时区、跨年/闰年边界。
+ *
+ * 金标准原取自 free-human-design（rave-engine 血统）。
+ *
+ * ⚠️ 2026-10-27 重新定标（v1.2.0）：
+ * 曼陀罗偏移由 29.8333° 修正为 29.875°（Gate 41 起于 302.000°），
+ * 上述参照实现本身带 0.041667° 偏差，故 4 个样本中有 3 个激活点发生**爻位**平移
+ * （Mercury 24.1→24.2、Mercury 26.2→26.3、Mars 6.1→6.2），
+ * 闸门/通道/中心/类型/权威/角色**均未变化**。新值由修正后的引擎重算得到，
+ * 并用 Jovian 公布的 Rave New Year 时刻做绝对锚点校验（见下方「曼陀罗盘序」）。
  */
 import { describe, expect, it } from 'vitest'
 import { gateStartLongitude, mapLongitude } from '../src/engine/mandala'
@@ -30,7 +37,7 @@ const GOLDEN: Golden[] = [
       timezone: 'Asia/Shanghai', lat: 31.23, lng: 121.47,
     },
     utc: '1990-05-21T05:30:00.000Z',
-    personality: ['Sun:8.6', 'Earth:14.6', 'Moon:21.5', 'NorthNode:19.3', 'SouthNode:33.3', 'Mercury:24.1', 'Venus:51.5', 'Mars:22.6', 'Jupiter:39.2', 'Saturn:61.5', 'Uranus:58.6', 'Neptune:38.6', 'Pluto:1.3'],
+    personality: ['Sun:8.6', 'Earth:14.6', 'Moon:21.5', 'NorthNode:19.3', 'SouthNode:33.3', 'Mercury:24.2', 'Venus:51.5', 'Mars:22.6', 'Jupiter:39.2', 'Saturn:61.5', 'Uranus:58.6', 'Neptune:38.6', 'Pluto:1.3'],
     design: ['Sun:55.2', 'Earth:59.2', 'Moon:58.3', 'NorthNode:13.4', 'SouthNode:7.4', 'Mercury:19.6', 'Venus:61.4', 'Mars:54.2', 'Jupiter:15.3', 'Saturn:61.1', 'Uranus:58.5', 'Neptune:38.5', 'Pluto:1.5'],
     type: 'Projector',
     authority: 'Emotional',
@@ -75,8 +82,8 @@ const GOLDEN: Golden[] = [
       timezone: 'Europe/Berlin', lat: 52.52, lng: 13.4,
     },
     utc: '1964-12-31T03:05:00.000Z',
-    personality: ['Sun:58.6', 'Earth:52.6', 'Moon:9.5', 'NorthNode:12.1', 'SouthNode:11.1', 'Mercury:26.2', 'Venus:5.4', 'Mars:6.1', 'Jupiter:2.4', 'Saturn:55.2', 'Uranus:64.4', 'Neptune:43.1', 'Pluto:64.6'],
-    design: ['Sun:48.3', 'Earth:21.3', 'Moon:46.2', 'NorthNode:12.4', 'SouthNode:11.4', 'Mercury:46.6', 'Venus:29.5', 'Mars:33.5', 'Jupiter:8.1', 'Saturn:30.5', 'Uranus:64.2', 'Neptune:1.4', 'Pluto:64.4'],
+    personality: ['Sun:58.6', 'Earth:52.6', 'Moon:9.5', 'NorthNode:12.1', 'SouthNode:11.1', 'Mercury:26.3', 'Venus:5.4', 'Mars:6.2', 'Jupiter:2.4', 'Saturn:55.2', 'Uranus:64.4', 'Neptune:43.1', 'Pluto:64.6'],
+    design: ['Sun:48.3', 'Earth:21.3', 'Moon:46.2', 'NorthNode:12.4', 'SouthNode:11.4', 'Mercury:46.6', 'Venus:29.5', 'Mars:33.5', 'Jupiter:8.2', 'Saturn:30.5', 'Uranus:64.2', 'Neptune:1.4', 'Pluto:64.4'],
     type: 'ManifestingGenerator',
     authority: 'Sacral',
     profile: '6/3',
@@ -89,14 +96,42 @@ const GOLDEN: Golden[] = [
 const fmt = (list: Array<{ planet: string; gate: number; line: number }>) =>
   list.map((p) => `${p.planet}:${p.gate}.${p.line}`)
 
-describe('曼陀罗盘序', () => {
-  it('闸门起点与权威实现一致（含 29.8333° 偏移）', () => {
-    expect(gateStartLongitude(17)).toBeCloseTo(3.9167, 3)
-    expect(gateStartLongitude(41)).toBeCloseTo(302.0417, 3)
-    expect(gateStartLongitude(1)).toBeCloseTo(223.2917, 3)
-    expect(gateStartLongitude(8)).toBeCloseTo(54.5417, 3)
-    expect(gateStartLongitude(55)).toBeCloseTo(330.1667, 3)
-    expect(gateStartLongitude(36)).toBeCloseTo(352.6667, 3)
+describe('曼陀罗盘序（L1 锚点）', () => {
+  /**
+   * 权威锚点：Gate 41 第 1 爻起于宝瓶 2°00′00″ = 302.000°，Gate 60 恰在此结束。
+   * 该值已用 Jovian 官方公布的 Rave New Year 时刻反算验证
+   * （2024-01-22 13:18 UTC / 2026-01-22 00:54 UTC → 太阳黄经 302.0002°）。
+   * 参见 scripts/check-mandala-anchor.mjs。
+   */
+  it('Gate 41 起于 302.000°，Gate 60 在此结束', () => {
+    expect(gateStartLongitude(41)).toBeCloseTo(302.0, 6)
+    expect(gateStartLongitude(60) + 360 / 64).toBeCloseTo(302.0, 6)
+    expect(gateStartLongitude(18)).toBeCloseTo(183.875, 6) // 天秤 3°52′30″
+    expect(gateStartLongitude(25)).toBeCloseTo(358.25, 6) // 双鱼 28°15′
+    expect(gateStartLongitude(1)).toBeCloseTo(223.25, 6) // 天蝎 13°15′
+    expect(gateStartLongitude(17)).toBeCloseTo(3.875, 6)
+    expect(gateStartLongitude(8)).toBeCloseTo(54.5, 6)
+    expect(gateStartLongitude(55)).toBeCloseTo(330.125, 6)
+    expect(gateStartLongitude(36)).toBeCloseTo(352.625, 6)
+  })
+
+  it('Jovian 公布的 Rave New Year 时刻必须落在 Gate 41 / Line 1', () => {
+    for (const utc of ['2024-01-22T13:18:00Z', '2026-01-22T00:54:00Z']) {
+      const t = new Date(utc)
+      const input: BirthInput = {
+        year: t.getUTCFullYear(),
+        month: t.getUTCMonth() + 1,
+        day: t.getUTCDate(),
+        hour: t.getUTCHours(),
+        minute: t.getUTCMinutes(),
+        second: t.getUTCSeconds(),
+        timezone: 'UTC',
+        lat: 0,
+        lng: 0,
+      }
+      const sun = computeChart(input).personality.find((p) => p.planet === 'Sun')!
+      expect(`${sun.gate}.${sun.line}`).toBe('41.1')
+    }
   })
 
   it('闸门内可细分到 6 爻 / 6 颜色 / 6 音调 / 5 基底', () => {

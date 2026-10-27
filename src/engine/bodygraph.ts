@@ -15,7 +15,7 @@ import {
   type Planet,
   type StarPosition,
 } from '../types/hd'
-import { CHANNELS, GATE_CENTER, channelKey } from './gateData'
+import { CHANNELS, GATE_CENTER } from './gateData'
 import { mapLongitude } from './mandala'
 import {
   eclipticLongitude,
@@ -23,6 +23,8 @@ import {
   sunLongitude,
 } from './ephemeris'
 import { zonedToUtc } from './time'
+import { ENGINE_VERSION } from './version'
+import { BirthInputError, validateBirth } from '../services/validate'
 import type { BirthInput } from '../types/hd'
 
 /** 人类图参与计算的 13 个天体（地球=太阳+180，南交点=北交点+180） */
@@ -184,8 +186,8 @@ const STRATEGY: Record<HDType, string> = {
 
 /**
  * 轮回交叉：由人格太阳/地球 + 设计太阳/地球四闸门构成。
- * 角度由人格太阳爻位决定：1–3 右角度，4/1 并列，5–6 左角度。
- * 注：192 个交叉的专有名称属于注册资料，本项目仅给出结构（四闸门 + 角度），不臆造名称。
+ * 角度：右角度 7 个角色（含 4/6），并列仅 4/1，左角度 4 个角色（5/1、5/2、6/2、6/3）。
+ * 注：192 个交叉的专有名称属注册资料，本项目仅给出结构（四闸门 + 角度），不臆造名称。
  */
 export function decideCross(
   personality: StarPosition[],
@@ -298,7 +300,12 @@ export interface ComputeOptions {
  * Design 时刻 = 太阳视黄经比出生时刻少 88° 的时刻（出生前约 88 天）。
  */
 export function computeChart(input: BirthInput): BodyGraph {
-  const { date: birthUtc } = zonedToUtc(
+  // 校验下沉：导入备份 / 手工 URL / 未来分享链接都会绕过 UI 直接到这里。
+  // Date.UTC 会把非法值静默滚动，因此必须在此之前拦截。
+  const issues = validateBirth(input)
+  if (issues.length) throw new BirthInputError(issues)
+
+  const { date: birthUtc, warning } = zonedToUtc(
     input.year,
     input.month,
     input.day,
@@ -321,6 +328,8 @@ export function computeChart(input: BirthInput): BodyGraph {
       designTime: designUtc.toISOString(),
       personalitySun: sunLongitude(birthUtc),
       designSun: sunLongitude(designUtc),
+      engineVersion: ENGINE_VERSION,
+      warning,
     },
   }
 }
@@ -338,8 +347,9 @@ export function computeChartFromUtc(utc: Date): BodyGraph {
       designTime: designUtc.toISOString(),
       personalitySun: sunLongitude(utc),
       designSun: sunLongitude(designUtc),
+      engineVersion: ENGINE_VERSION,
     },
   }
 }
 
-export { channelKey, GATE_CENTER }
+export { GATE_CENTER }

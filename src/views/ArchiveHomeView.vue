@@ -34,10 +34,13 @@ function toggleSelect(id: string) {
 
 function addToComposite(id: string) {
   if (!archiveStore.selectedIds.includes(id)) archiveStore.toggleSelect(id)
-  if (archiveStore.selectedIds.length === 2) {
+  const n = archiveStore.selectedIds.length
+  if (n === 2) {
     const [a, b] = archiveStore.selectedIds
     composite.setPair(a, b)
     router.push(`/composite/${a}/${b}`)
+  } else if (n > 2) {
+    ui.notify(`合盘只能选 2 份，当前已选 ${n} 份，请先取消多余的档案`, 'error')
   } else {
     ui.notify('已选中，请再选择一份档案生成合盘')
   }

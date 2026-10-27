@@ -15,6 +15,22 @@
   对齐：git -c http.sslBackend=schannel fetch origin main && git reset --hard origin/main。
 - CI：push main / tag v* 触发 .github/workflows/build.yml 构建 Windows(NSIS+MSI) 与 Android(APK)。
 
+## 人类图口径（审查结论，改动前先看这里）
+- **MANDALA_OFFSET 必须 = 29.875**（= 331.875 − 302，即 5 门宽 28.125 + 1.75）。
+  现库里的 29.8333 会让 Gate 41 起于 302.0417°，权威口径是宝瓶 2°00′ = 302.000°。
+  **L1 证据（已锁定，勿再翻案）**：Jovian 官方公布 Rave New Year = 太阳进第 41 门，
+  2024-01-22 13:18 UTC、2026-01-22 00:54 UTC；本项目星历在两时刻均得太阳黄经 302.0002°，
+  反解 302.000° 得 00:53:46（差 14 秒），反解 302.0417° 得 01:52:47（差 58 分 47 秒）。
+  复现：`node scripts/check-mandala-anchor.mjs`（在 Rave New Year 时刻，现实现返回 Gate 60.6，
+  L1 应为 41.1）。注意：rave-engine 的 src/calc/mandala.js 用的是同一个错常数，所以
+  "与 rave-engine 一致"不是正确性证明。
+- 四个边界锚点：41@302.000 / 60 末@302.000 / 18@183.875 / 25@358.250。详见 docs/review/。
+- 交叉角度：右角度 7 个（含 **4/6**）、并列仅 4/1、左角度 4 个（5/1、5/2、6/2、6/3）。
+  现有 `if 4/1 → 并列; else if pl>=5 → 左; else 右` **是对的**，别去"修"。
+- `defined` 只用于中心/通道/整图；闸门只有 activated/hanging/open 三态。
+- 连接盘（合盘）没有类型/权威/轮回交叉，只有电磁/妥协/主导/同伴四动力学。
+- Chiron 不属于 13 体，不参与类型/权威/通道判定。
+
 ## 验证命令
 - 类型+构建：npm run build（vue-tsc --noEmit && vite build）
 - 测试：npm run test（vitest，29 项）

@@ -1,6 +1,12 @@
 /**
  * 星历对照测试：本引擎（astronomy-engine）vs 参照实现（astronomia，即 rave-engine 默认后端）。
- * 目的：把「闸门/爻」层面的一致性从 4 个样本扩展到随机 200 个时刻。
+ * 目的：把「星体黄经 → 闸门/爻」的一致性从 4 个样本扩展到随机 200 个时刻。
+ *
+ * ⚠️ 口径说明（2026-10-27）：本测试两侧都用本项目自己的 mapLongitude 做映射，
+ * 因此它验证的是**星历精度**，不含「罗盘起始锚点」——锚点由 engine.test.ts 的
+ * Jovian Rave New Year 断言单独守护。历史上正是因为两侧共用同一映射，
+ * 29.8333° 的锚点偏差才长期没有被发现。
+ *
  * 注：astronomia 仅作为 devDependency 的校验基准，不进入运行时。
  */
 import { describe, expect, it } from 'vitest'

@@ -17,6 +17,7 @@ import type {
   Authority,
   BodyGraph,
   CenterId,
+  CenterQuadrant,
   CenterState,
   ChannelActivation,
   CompositeResult,
@@ -30,7 +31,15 @@ import type {
 } from '../types/hd'
 import { CENTER_IDS } from '../types/hd'
 import { CHANNELS, GATE_CENTER } from './gateData'
-import { decideAuthority, decideCross, decideDefinition, decideType } from './bodygraph'
+import { decideAuthority, decideDefinition, decideType } from './bodygraph'
+
+/** 合盘前置条件错误码 */
+export class CompositeError extends Error {
+  constructor(readonly code: 'SAME_PERSON') {
+    super(code === 'SAME_PERSON' ? '合盘需要两位不同的人' : code)
+    this.name = 'CompositeError'
+  }
+}
 
 function ownerOf(inA: boolean, inB: boolean): Ownership {
   if (inA && inB) return 'shared'
@@ -64,6 +73,10 @@ function classifyChannel(
 }
 
 export function composite(a: BodyGraph, b: BodyGraph): CompositeResult {
+  // 前置条件：合盘必须发生在两个不同的个体之间。
+  // 同一张盘叠加会令所有通道退化为"同伴"，产出体系上无意义的伪结论。
+  if (a === b) throw new CompositeError('SAME_PERSON')
+
   const aGates = new Set(a.gates.map((g) => g.gate))
   const bGates = new Set(b.gates.map((g) => g.gate))
   const allGates = [...new Set([...aGates, ...bGates])].sort((x, y) => x - y)
@@ -137,18 +150,24 @@ export function composite(a: BodyGraph, b: BodyGraph): CompositeResult {
     })
   }
 
-  // ── 合图第三个能量场：类型 / 权威 / 定义 / 轮回交叉 ──
+  // ── 合图第三个能量场：类型 / 定义 / 权威 ──
+  // 注意：不输出轮回交叉（交叉由个体的 人格/设计 太阳-地球 四闸门构成，
+  // 关系合图不存在"第三个交叉"）。
   const type = decideType(definedCenters, unionChannels)
   const authority = decideAuthority(definedCenters, unionChannels)
   const definition = decideDefinition(definedCenters, unionChannels)
 
-  // 合图轮回交叉：以 A 的太阳/地球轴作意识侧、B 的太阳/地球轴作设计侧
-  const pSun = a.personality.find((p) => p.planet === 'Sun')!
-  const pEarth = a.personality.find((p) => p.planet === 'Earth')!
-  const dSun = b.personality.find((p) => p.planet === 'Sun')!
-  const dEarth = b.personality.find((p) => p.planet === 'Earth')!
-  const crossStars: StarPosition[] = [pSun, pEarth, dSun, dEarth]
-  const compositeCross = decideCross(crossStars, crossStars, a.profile)
+  // ── 中心四象限：双方都定义 / 仅 A / 仅 B / 双方都开放 ──
+  // 这是关系解读的核心：并集只说"合起来定义了哪些"，四象限才说"谁在影响谁"。
+  const aDefined = new Set(a.centers.filter((c) => c.defined).map((c) => c.id))
+  const bDefined = new Set(b.centers.filter((c) => c.defined).map((c) => c.id))
+  const centerQuadrant: CenterQuadrant[] = CENTER_IDS.map((id) => {
+    const inA = aDefined.has(id)
+    const inB = bDefined.has(id)
+    const state: CenterQuadrant['state'] =
+      inA && inB ? 'both' : inA ? 'onlyA' : inB ? 'onlyB' : 'open'
+    return { id, state }
+  })
 
   return {
     a,
@@ -161,18 +180,24 @@ export function composite(a: BodyGraph, b: BodyGraph): CompositeResult {
       .map((c) => ({ key: c.key, gates: c.gates })),
     sharedGates: gates.filter((g) => g.owners.length === 2).map((g) => g.gate),
     relationshipChannels,
+    centerQuadrant,
     composite: {
       type,
       authority,
       definition,
       centers,
-      incarnationCross: compositeCross,
       strategy: '',
     },
   }
 }
 
-/** 合盘视图：把合并结果包装成可复用的 BodyGraph 形态，供同一套 SVG 组件渲染 */
+/**
+ * 合盘视图：把合并结果包装成可复用的 BodyGraph 形态，供同一套 SVG 组件渲染。
+ *
+ * 注意：这里只用于「渲染」，不承载任何关系结论。
+ * incarnationCross 恒为空（关系没有轮回交叉）；type/authority 仅供兼容旧渲染模型，
+ * 合盘页面不得展示（见 docs/review 业务流程审计 PF-003）。
+ */
 export function mergedAsChart(result: CompositeResult): BodyGraph {
   const definedCenters = new Set(result.merged.centers.filter((c) => c.defined).map((c) => c.id))
   const mergedChannels: ChannelActivation[] = result.merged.channels.map((c) => ({
@@ -185,7 +210,7 @@ export function mergedAsChart(result: CompositeResult): BodyGraph {
     strategy: '',
     authority: result.composite?.authority ?? decideAuthority(definedCenters, mergedChannels),
     profile: `${result.a.profile} × ${result.b.profile}`,
-    incarnationCross: result.composite?.incarnationCross ?? '合图',
+    incarnationCross: '',
     definition: result.composite?.definition ?? decideDefinition(definedCenters, mergedChannels),
     centers: result.merged.centers,
     gates: result.merged.gates.map((g) => ({ gate: g.gate, stars: g.stars })),

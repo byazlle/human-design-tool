@@ -182,6 +182,10 @@ export interface BodyGraph {
     designTime: string
     personalitySun: number
     designSun: number
+    /** 计算内核版本；缺省表示旧版算法产出的快照，需要重算 */
+    engineVersion?: string
+    /** 该本地时刻不存在或存在歧义（夏令时切换）时的提示 */
+    warning?: string
   }
 }
 
@@ -213,6 +217,8 @@ export interface Archive {
   location: { lat: number; lng: number; place: string }
   createdAt: string
   chart?: BodyGraph
+  /** 重算失败时的原因（例如导入的出生信息非法）；有值时 chart 为空 */
+  chartError?: string
 }
 
 /** 关系通道类型（专业合图动力学） */
@@ -232,6 +238,17 @@ export interface RelationshipChannel {
   holder?: 'a' | 'b'
 }
 
+/**
+ * 中心四象限：关系分析的核心视图。
+ * both = 双方都定义（各自稳定，互不易影响）
+ * onlyA / onlyB = 单方定义（另一方在此中心持续受对方影响）
+ * open = 双方都开放（一起放大、一起失焦）
+ */
+export interface CenterQuadrant {
+  id: CenterId
+  state: 'both' | 'onlyA' | 'onlyB' | 'open'
+}
+
 /** 合盘结果：A / B / 合并 + 共享集合 + 关系动力学 */
 export interface CompositeResult {
   a: BodyGraph
@@ -247,13 +264,18 @@ export interface CompositeResult {
   sharedGates: number[]
   /** 四类关系通道 */
   relationshipChannels: RelationshipChannel[]
-  /** 合图作为「第三个能量场」的独立计算结果 */
+  /** 中心四象限（关系解读核心） */
+  centerQuadrant: CenterQuadrant[]
+  /**
+   * 合图作为"关系场"的派生指标。
+   * 仅作参考：类型/权威属个体属性，关系场不存在"你们是投射者"这种结论。
+   * 不包含轮回交叉 —— 交叉由个体的人格/设计太阳-地球四闸门构成。
+   */
   composite: {
     type: HDType
     authority: Authority
     definition: DefinitionKind
     centers: CenterState[]
-    incarnationCross: string
     strategy: string
   }
 }

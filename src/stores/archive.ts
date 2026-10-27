@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import type { Archive, BirthInput } from '../types/hd'
 import { computeChart } from '../engine/bodygraph'
-import { createId, loadJson, saveJson } from '../utils/storage'
+import { ENGINE_VERSION } from '../engine/version'
+import { createId, loadJsonChecked, saveJson } from '../utils/storage'
 
 const KEY = 'hdt.archives.v1'
 
@@ -17,6 +18,8 @@ interface ArchiveState {
   archives: Archive[]
   selectedIds: string[]
   keyword: string
+  /** 启动读取失败时的错误（用于全局提示，避免"档案全没了"的错觉） */
+  loadError: string | null
 }
 
 function draftToInput(draft: ArchiveDraft): BirthInput {
@@ -34,11 +37,15 @@ function draftToInput(draft: ArchiveDraft): BirthInput {
 }
 
 export const useArchiveStore = defineStore('archive', {
-  state: (): ArchiveState => ({
-    archives: loadJson<Archive[]>(KEY, []),
-    selectedIds: [],
-    keyword: '',
-  }),
+  state: (): ArchiveState => {
+    const loaded = loadJsonChecked<Archive[]>(KEY, [])
+    return {
+      archives: Array.isArray(loaded.value) ? loaded.value : [],
+      selectedIds: [],
+      keyword: '',
+      loadError: loaded.error,
+    }
+  },
 
   getters: {
     filtered(state): Archive[] {
@@ -83,9 +90,37 @@ export const useArchiveStore = defineStore('archive', {
     ensureChart(id: string) {
       const archive = this.archives.find((a) => a.id === id)
       if (!archive) return
-      if (archive.chart) return
-      archive.chart = computeChart(draftToInput(archive))
-      this.persist()
+      if (archive.chart && archive.chart.meta?.engineVersion === ENGINE_VERSION) return
+      this.recompute(archive)
+    },
+
+    /** 单份重算；失败时保留旧快照并打标，不抛错中断批量流程 */
+    recompute(archive: Archive): boolean {
+      try {
+        archive.chart = computeChart(draftToInput(archive))
+        archive.chartError = undefined
+        return true
+      } catch (err) {
+        archive.chart = undefined
+        archive.chartError = (err as Error).message
+        return false
+      }
+    },
+
+    /**
+     * 启动时对齐计算内核版本。
+     * 算法变更（如曼陀罗偏移修正）后，存量快照必须重算，否则用户会一直看到旧结果。
+     */
+    syncEngineVersion(): number {
+      let changed = 0
+      for (const a of this.archives) {
+        if (!a.chart || a.chart.meta?.engineVersion !== ENGINE_VERSION) {
+          this.recompute(a)
+          changed += 1
+        }
+      }
+      if (changed) this.persist()
+      return changed
     },
 
     update(id: string, patch: Partial<ArchiveDraft>) {
@@ -93,10 +128,10 @@ export const useArchiveStore = defineStore('archive', {
       if (!archive) return
       if (patch.name !== undefined) archive.name = patch.name
       if (patch.gender !== undefined) archive.gender = patch.gender
-      if (patch.birth) archive.birth = patch.birth
+      if (patch.birth) archive.birth = { ...patch.birth }
       if (patch.timezone) archive.timezone = patch.timezone
-      if (patch.location) archive.location = patch.location
-      archive.chart = computeChart(draftToInput(archive))
+      if (patch.location) archive.location = { ...patch.location }
+      this.recompute(archive)
       this.persist()
     },
 
