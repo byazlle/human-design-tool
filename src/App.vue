@@ -7,6 +7,7 @@ import { useUiStore } from './stores/ui'
 import GlassBackdrop from './components/base/GlassBackdrop.vue'
 import WindowChrome from './components/base/WindowChrome.vue'
 import FloatingDock from './components/base/FloatingDock.vue'
+import ErrorBoundary from './components/base/ErrorBoundary.vue'
 
 const settings = useSettingsStore()
 const archive = useArchiveStore()
@@ -33,18 +34,28 @@ onMounted(() => {
       <span class="t-sm">{{ archive.loadError }}</span>
       <button type="button" class="t-xs" @click="dataErrorDismissed = true">我知道了</button>
     </div>
-    <RouterView v-slot="{ Component }">
-      <Transition name="page" mode="out-in">
-        <component :is="Component" :key="route.path" />
-      </Transition>
-    </RouterView>
+    <ErrorBoundary>
+      <RouterView v-slot="{ Component }">
+        <Transition name="page" mode="out-in">
+          <component :is="Component" :key="route.path" />
+        </Transition>
+      </RouterView>
+    </ErrorBoundary>
   </div>
 
   <FloatingDock />
 
   <Transition name="toast">
     <div v-if="ui.toast" class="toast" :class="ui.toast.kind" role="status">
-      {{ ui.toast.text }}
+      <span class="toast-text">{{ ui.toast.text }}</span>
+      <button
+        v-if="ui.toast.action"
+        type="button"
+        class="toast-action"
+        @click="ui.runToastAction()"
+      >
+        {{ ui.toast.action.label }}
+      </button>
     </div>
   </Transition>
 </template>
@@ -83,6 +94,9 @@ onMounted(() => {
   left: 50%;
   bottom: calc(32px + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
   max-width: min(92vw, 520px);
   padding: 10px 18px;
   border-radius: var(--radius-pill);
@@ -99,6 +113,22 @@ onMounted(() => {
   background: var(--status-error);
   border-color: rgba(255, 255, 255, 0.3);
   color: #fff;
+}
+
+.toast-text {
+  min-width: 0;
+}
+
+.toast-action {
+  flex: none;
+  margin-left: var(--sp-2);
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid currentColor;
+  color: inherit;
+  font-size: calc(var(--fs-xs) * var(--font-scale));
+  background: transparent;
+  cursor: pointer;
 }
 
 .toast.success {

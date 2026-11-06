@@ -11,7 +11,9 @@ import ArchiveCanvas from '../components/archive/ArchiveCanvas.vue'
 import MobileArchiveList from '../components/archive/MobileArchiveList.vue'
 import BulkActionBar from '../components/archive/BulkActionBar.vue'
 import EmptyState from '../components/base/EmptyState.vue'
+import ConfirmDialog from '../components/base/ConfirmDialog.vue'
 import HdButton from '../components/base/HdButton.vue'
+import type { Archive } from '../types/hd'
 
 const router = useRouter()
 const archiveStore = useArchiveStore()
@@ -81,7 +83,62 @@ function goSettings() {
 
 function loadSamples() {
   const added = archiveStore.seedSamples()
+  if (archiveStore.persistError) {
+    ui.notify(archiveStore.persistError, 'error')
+    return
+  }
   ui.notify(added ? `已载入 ${added} 份示例档案` : '示例档案已存在', added ? 'success' : undefined)
+}
+
+/* ── 删除（二次确认 + 5 秒撤销）────────────────────── */
+const pendingDelete = ref<{ ids: string[]; label: string } | null>(null)
+
+function onRemove(id: string) {
+  const target = archiveStore.byId(id)
+  pendingDelete.value = {
+    ids: [id],
+    label: target ? `「${target.name}」` : '这 1 份档案',
+  }
+}
+
+function onRemoveSelected() {
+  const ids = [...archiveStore.selectedIds]
+  if (!ids.length) return
+  pendingDelete.value = { ids, label: `${ids.length} 份档案` }
+}
+
+function cancelRemove() {
+  pendingDelete.value = null
+}
+
+function confirmRemove() {
+  const pending = pendingDelete.value
+  pendingDelete.value = null
+  if (!pending) return
+  const single = pending.ids.length === 1 ? archiveStore.remove(pending.ids[0]) : null
+  const removed = single ? [single] : archiveStore.removeMany(pending.ids)
+  if (archiveStore.persistError) {
+    ui.notify(archiveStore.persistError, 'error')
+    return
+  }
+  if (!removed.length) {
+    ui.notify('没有可删除的档案', 'error')
+    return
+  }
+  const label = removed.length === 1 ? `「${removed[0].name}」` : `${removed.length} 份档案`
+  ui.notify(`已删除${label}`, 'info', {
+    duration: 5000,
+    action: {
+      label: '撤销',
+      onClick: () => {
+        removed.forEach((item: Archive) => archiveStore.restore(item))
+        ui.notify(
+          archiveStore.persistError ?? `已撤销删除${label}`,
+          archiveStore.persistError ? 'error' : 'success',
+        )
+      },
+    },
+  })
 }
 </script>
 
@@ -107,7 +164,15 @@ function loadSamples() {
 
     <main class="content">
       <EmptyState
-        v-if="!list.length"
+        v-if="!list.length && archiveStore.keyword.trim()"
+        title="没有匹配的档案"
+        :desc="`没有匹配「${archiveStore.keyword.trim()}」的档案，换个关键词试试。`"
+        action-label="清除搜索"
+        @action="archiveStore.setKeyword('')"
+      />
+
+      <EmptyState
+        v-else-if="!list.length"
         title="还没有档案"
         desc="填写出生日期与出生时间，即可在本机生成完整人体图。所有计算与数据都留在这台设备上。"
         action-label="新建档案"
@@ -127,6 +192,7 @@ function loadSamples() {
           @open="open"
           @add-to-composite="addToComposite"
           @close="closeCard"
+          @remove="onRemove"
           @toggle-select="toggleSelect"
         />
         <MobileArchiveList
@@ -134,6 +200,7 @@ function loadSamples() {
           :archives="list"
           :selected-ids="selected"
           @open="open"
+          @remove="onRemove"
           @toggle-select="toggleSelect"
         />
       </template>
@@ -145,6 +212,7 @@ function loadSamples() {
         :count="selected.length"
         @open="openBoards"
         @composite="makeComposite"
+        @remove="onRemoveSelected"
         @clear="archiveStore.clearSelect()"
       />
     </div>
@@ -155,6 +223,16 @@ function loadSamples() {
       <HdButton :disabled="selected.length !== 2" @click="makeComposite">生成合盘</HdButton>
       <HdButton variant="ghost" @click="goNew">新建</HdButton>
     </div>
+
+    <ConfirmDialog
+      :open="Boolean(pendingDelete)"
+      title="删除档案"
+      :desc="pendingDelete ? `确定删除${pendingDelete.label}？删除后可在 5 秒内撤销。` : ''"
+      confirm-text="删除"
+      danger
+      @confirm="confirmRemove"
+      @cancel="cancelRemove"
+    />
   </div>
 </template>
 

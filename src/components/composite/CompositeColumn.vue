@@ -35,9 +35,10 @@ function titleOf(key: string) {
       <div class="grow">
         <h2 class="t-title ellipsis">{{ name }}</h2>
         <p class="t-sm">
+          <!-- 合盘不输出类型/权威/定义型/交叉（规范 §3.8）：合并列只给结构统计 -->
           <template v-if="role === 'merged'">
-            合并后：{{ TYPE_LABELS[chart.type] }} · {{ chart.centers.filter((c) => c.defined).length }}
-            中心有定义
+            {{ chart.centers.filter((c) => c.defined).length }} 个中心有定义 ·
+            共享通道 {{ sharedChannels?.length ?? 0 }} 条
           </template>
           <template v-else>{{ TYPE_LABELS[chart.type] }} · {{ chart.profile }}</template>
         </p>

@@ -39,13 +39,22 @@ export function loadJson<T>(key: string, fallback: T): T {
   return loadJsonChecked(key, fallback).value
 }
 
-export function saveJson(key: string, value: unknown): void {
+/**
+ * 写入本地存储。
+ * @returns true = 写入成功；false = 存储不可用 / 超限（已向控制台上报，调用方需据此避免"假成功"提示）
+ */
+export function saveJson(key: string, value: unknown): boolean {
   try {
     localStorage.setItem(key, JSON.stringify(value))
-  } catch {
-    /* 存储不可用或超限，忽略 */
+    return true
+  } catch (err) {
+    console.warn(`[storage] 写入 ${key} 失败：${(err as Error).message || '未知错误'}`)
+    return false
   }
 }
+
+/** persist 失败时统一使用的可见提示文案（业务含义不变，仅技术错误上报） */
+export const SAVE_FAILURE_HINT = '保存失败：本地存储不可用或空间已满，请先导出备份后清理浏览器数据。'
 
 export function removeKey(key: string): void {
   try {

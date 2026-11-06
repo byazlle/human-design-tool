@@ -2,7 +2,8 @@ import { defineStore } from 'pinia'
 import type { Archive, BirthInput } from '../types/hd'
 import { computeChart } from '../engine/bodygraph'
 import { ENGINE_VERSION } from '../engine/version'
-import { createId, loadJsonChecked, saveJson } from '../utils/storage'
+import { createId, loadJsonChecked, saveJson, SAVE_FAILURE_HINT } from '../utils/storage'
+import { useBoardStore, useCompositeStore } from './board'
 
 const KEY = 'hdt.archives.v1'
 
@@ -20,6 +21,8 @@ interface ArchiveState {
   keyword: string
   /** 启动读取失败时的错误（用于全局提示，避免"档案全没了"的错觉） */
   loadError: string | null
+  /** 最近一次 persist 失败的原因；null 表示最近一次写入成功 */
+  persistError: string | null
 }
 
 function draftToInput(draft: ArchiveDraft): BirthInput {
@@ -44,6 +47,7 @@ export const useArchiveStore = defineStore('archive', {
       selectedIds: [],
       keyword: '',
       loadError: loaded.error,
+      persistError: null,
     }
   },
 
@@ -64,8 +68,11 @@ export const useArchiveStore = defineStore('archive', {
   },
 
   actions: {
-    persist() {
-      saveJson(KEY, this.archives)
+    /** @returns 是否写入成功；失败时置 persistError，供调用方显示错误而非成功 */
+    persist(): boolean {
+      const ok = saveJson(KEY, this.archives)
+      this.persistError = ok ? null : SAVE_FAILURE_HINT
+      return ok
     },
 
     create(draft: ArchiveDraft): Archive {
@@ -148,21 +155,70 @@ export const useArchiveStore = defineStore('archive', {
       return copy
     },
 
-    /** 按当前出生信息重算全部档案（切换绘图程序后用于数据一致性重建） */
-    regenerateAll(): number {
-      let count = 0
+    /**
+     * 按当前出生信息重算全部档案（切换绘图程序后用于数据一致性重建）。
+     * 逐份 try/catch：单份失败不中断整批，失败原因写入 chartError。
+     * @returns { total, failed } —— total 为处理总数，failed 为失败份数
+     */
+    regenerateAll(): { total: number; failed: number } {
+      let total = 0
+      let failed = 0
       for (const a of this.archives) {
-        a.chart = computeChart(draftToInput(a))
-        count += 1
+        total += 1
+        if (!this.recompute(a)) failed += 1
       }
       this.persist()
-      return count
+      return { total, failed }
     },
 
-    remove(id: string) {
-      this.archives = this.archives.filter((a) => a.id !== id)
+    /**
+     * 删除一份档案。
+     * @returns 被删除的档案（供撤销/提示用）；不存在时返回 null
+     */
+    remove(id: string): Archive | null {
+      const index = this.archives.findIndex((a) => a.id === id)
+      if (index < 0) return null
+      const [removed] = this.archives.splice(index, 1)
       this.selectedIds = this.selectedIds.filter((x) => x !== id)
+      this.detachReferences([id])
       this.persist()
+      return removed
+    },
+
+    /** 批量删除；返回被删除列表（供撤销提示） */
+    removeMany(ids: string[]): Archive[] {
+      const idSet = new Set(ids.filter(Boolean))
+      if (!idSet.size) return []
+      const removed: Archive[] = []
+      this.archives = this.archives.filter((a) => {
+        if (!idSet.has(a.id)) return true
+        removed.push(a)
+        return false
+      })
+      this.selectedIds = this.selectedIds.filter((x) => !idSet.has(x))
+      this.detachReferences(idSet)
+      if (removed.length) this.persist()
+      return removed
+    },
+
+    /** 撤销删除：插回列表头部（重复 id 不重复插入） */
+    restore(archive: Archive): void {
+      if (this.archives.some((a) => a.id === archive.id)) return
+      this.archives.unshift(archive)
+      this.persist()
+    },
+
+    /** 清理被删档案在多盘页 / 合盘页中的引用，避免页面引用不存在的 id */
+    detachReferences(ids: Iterable<string>) {
+      const idSet = new Set(ids)
+      if (!idSet.size) return
+      const board = useBoardStore()
+      const composite = useCompositeStore()
+      for (const id of idSet) {
+        board.closeOne(id)
+        if (composite.aId === id) composite.aId = null
+        if (composite.bId === id) composite.bId = null
+      }
     },
 
     toggleSelect(id: string) {
@@ -184,7 +240,11 @@ export const useArchiveStore = defineStore('archive', {
     importAll(list: Archive[]) {
       const existing = new Set(this.archives.map((a) => a.id))
       for (const item of list) {
-        if (!existing.has(item.id)) this.archives.push(item)
+        // 边加边登记：同批次内重复 id 只保留第一份，避免全被追加进库。
+        if (!existing.has(item.id)) {
+          this.archives.push(item)
+          existing.add(item.id)
+        }
       }
       this.persist()
     },

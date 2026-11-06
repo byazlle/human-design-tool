@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest'
 import { gateStartLongitude, mapLongitude } from '../src/engine/mandala'
 import { computeChart } from '../src/engine/bodygraph'
 import { composite } from '../src/engine/composite'
+import { ENGINE_VERSION, SCHEMA_VERSION } from '../src/engine/version'
 import type { Authority, BirthInput, HDType } from '../src/types/hd'
 import { zonedToUtc } from '../src/engine/time'
 
@@ -193,6 +194,50 @@ describe('排盘结果对齐金标准', () => {
       )
     })
   }
+})
+
+describe('轮回交叉四闸门顺序（规范 §3.7 / GAP-02）', () => {
+  it('固定为 人格太阳/人格地球 | 设计太阳/设计地球', () => {
+    const chart = computeChart(GOLDEN[0].input)
+    const pSun = chart.personality.find((p) => p.planet === 'Sun')!
+    const pEarth = chart.personality.find((p) => p.planet === 'Earth')!
+    const dSun = chart.design.find((p) => p.planet === 'Sun')!
+    const dEarth = chart.design.find((p) => p.planet === 'Earth')!
+    expect(
+      chart.incarnationCross.endsWith(
+        `${pSun.gate}/${pEarth.gate} | ${dSun.gate}/${dEarth.gate}`,
+      ),
+    ).toBe(true)
+  })
+})
+
+describe('闸门三态与版本戳（规范 §3.5）', () => {
+  it('gates 只含 in-channel / hanging，且与通道和 hangingGates 自洽', () => {
+    const chart = computeChart(GOLDEN[0].input)
+    expect(chart.gates.filter((g) => g.state === 'in-channel').length).toBeGreaterThan(0)
+    for (const g of chart.gates) {
+      expect(['in-channel', 'hanging']).toContain(g.state)
+    }
+    // hangingGates 必须是 state === 'hanging' 的派生
+    expect(
+      chart.hangingGates.every(
+        (gate) => chart.gates.find((x) => x.gate === gate)?.state === 'hanging',
+      ),
+    ).toBe(true)
+    // 双向一致：在定义通道内 ⇔ in-channel
+    const inChannelGates = new Set(chart.channels.flatMap((c) => c.gates))
+    expect(
+      chart.gates.filter((g) => g.state === 'in-channel').every((g) => inChannelGates.has(g.gate)),
+    ).toBe(true)
+    expect(
+      chart.gates.filter((g) => inChannelGates.has(g.gate)).every((g) => g.state === 'in-channel'),
+    ).toBe(true)
+  })
+
+  it('版本戳：ENGINE_VERSION 以 2.0.0 起、SCHEMA_VERSION 为 3', () => {
+    expect(ENGINE_VERSION.startsWith('2.0.0')).toBe(true)
+    expect(SCHEMA_VERSION).toBe(3)
+  })
 })
 
 describe('合盘', () => {

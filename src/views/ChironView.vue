@@ -2,7 +2,9 @@
 /**
  * 凯龙回归图（Chiron Return Chart）：
  * 凯龙周期 49–51 年，人生第三阶段（疗愈 / 传承 / 榜样）的独立周期盘。
- * 拥有独立的行星落点、闸门、通道、九中心、轮回交叉与人生角色，不替换本命盘。
+ * 规范 §3.9：这是**扩展层**，凯龙不属于标准 13 体；本页只展示回归时刻的结构
+ * （行星落点 / 闸门 / 通道 / 九中心 / 人生角色），不展示类型 / 权威 / 轮回交叉等个体结论，
+ * 也不替换本命盘。
  */
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -10,9 +12,9 @@ import { useArchiveStore } from '../stores/archive'
 import { useUiStore } from '../stores/ui'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { useAiReading } from '../composables/useAiReading'
+import { copyAiResult, saveAiResult } from '../composables/useAiResultActions'
 import { useDrawingEngine } from '../composables/useDrawingEngine'
 import { computeChironReturn } from '../services/chironChart'
-import { chartSummaryOf } from '../services/aiClient'
 import AppToolbar from '../components/base/AppToolbar.vue'
 import HumanDesignBodyGraph from '../components/chart/HumanDesignBodyGraph.vue'
 import BoardMeta from '../components/chart/BoardMeta.vue'
@@ -27,7 +29,13 @@ const router = useRouter()
 const archiveStore = useArchiveStore()
 const ui = useUiStore()
 const { isMobile } = useBreakpoint()
-const { state: aiState, run: runAi } = useAiReading()
+const {
+  state: aiState,
+  run: runAi,
+  retry: retryAi,
+  abort: abortAi,
+  configured: aiConfigured,
+} = useAiReading()
 const engine = useDrawingEngine()
 
 const id = computed(() => String(route.params.id ?? ''))
@@ -36,33 +44,62 @@ const archive = computed(() => archiveStore.byId(id.value))
 const result = computed(() => {
   const a = archive.value
   if (!a) return null
-  return computeChironReturn({
-    year: a.birth.year,
-    month: a.birth.month,
-    day: a.birth.day,
-    hour: a.birth.hour,
-    minute: a.birth.minute,
-    second: a.birth.second,
-    timezone: a.timezone,
-    lat: a.location.lat,
-    lng: a.location.lng,
-  })
+  // 计算失败（含非法时区）不应让整页白屏：降级为「无法计算」空态。
+  try {
+    return computeChironReturn({
+      year: a.birth.year,
+      month: a.birth.month,
+      day: a.birth.day,
+      hour: a.birth.hour,
+      minute: a.birth.minute,
+      second: a.birth.second,
+      timezone: a.timezone,
+      lat: a.location.lat,
+      lng: a.location.lng,
+    })
+  } catch (err) {
+    console.warn('[chiron] 凯龙回归计算失败', err)
+    return null
+  }
 })
 
 const filter = ref({ showDecimals: true, showColorToneBase: true, sharedOnly: false })
 
 const returnLocal = computed(() => {
   if (!result.value) return ''
-  const d = new Date(result.value.returnUtc)
-  const fmt = new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-  return `${fmt.format(d)}（本地时区）`
+  try {
+    const d = new Date(result.value.returnUtc)
+    if (!Number.isFinite(d.getTime())) return ''
+    // 显示口径不变：仍按本机本地时区展示
+    const fmt = new Intl.DateTimeFormat('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+    return `${fmt.format(d)}（本地时区）`
+  } catch (err) {
+    console.warn('[chiron] 本地时间格式化失败', err)
+    return ''
+  }
+})
+
+/**
+ * 凯龙盘的结构摘要（规范 §3.9）：只给回归时刻的结构事实
+ * （人生角色 / 中心 / 通道 / 闸门），不输出类型 / 权威 / 轮回交叉等个体结论。
+ */
+const chironStructureSummary = computed(() => {
+  const r = result.value
+  if (!r) return ''
+  const c = r.chart
+  return [
+    `回归时刻人生角色：${c.profile}`,
+    `已定义中心：${c.centers.filter((x) => x.defined).map((x) => x.id).join('、') || '无'}`,
+    `已定义通道：${c.channels.map((x) => x.key).join('、') || '无'}`,
+    `激活闸门：${c.gates.map((x) => x.gate).join('、')}`,
+  ].join('\n')
 })
 
 async function requestChironAi() {
@@ -73,19 +110,33 @@ async function requestChironAi() {
     `本命凯龙落点：闸门 ${r.natalChiron.gate}.${r.natalChiron.line}`,
     `凯龙回归时刻：${r.returnUtc}（约 ${r.age} 岁）`,
     `回归时刻盘面事实如下，请围绕「疗愈与传承」主题解读：`,
-    chartSummaryOf(r.chart),
+    `【口径约束】本盘为扩展层，不参与本命的个体气场判定。`,
+    chironStructureSummary.value,
   ].join('\n')
   await runAi({
     scope: 'chiron',
     ref: String(r.natalChiron.gate),
     title: `${archive.value.name} · 凯龙回归图解读`,
     offline,
+    chartSummary: chironStructureSummary.value,
     chart: r.chart,
   })
 }
 
 function goBack() {
   router.push(`/archive/${id.value}`)
+}
+
+function goSettings() {
+  router.push('/settings')
+}
+
+function copyAi() {
+  void copyAiResult(aiState.value.content)
+}
+
+function saveAi() {
+  saveAiResult({ title: aiState.value.title, content: aiState.value.content })
 }
 
 watch(
@@ -129,6 +180,12 @@ watch(
     />
 
     <main v-else class="layout" :class="{ mobile: isMobile }">
+      <!-- 规范 §3.9：扩展层必须标注，且不展示个体气场结论 -->
+      <p class="layer-note" role="note">
+        <span class="layer-badge">扩展层</span>
+        非 13 体扩展层 · 不参与本命类型 / 权威判定，仅作疗愈 / 传承主题参考
+      </p>
+
       <!-- 回归信息 -->
       <section class="card chiron-meta">
         <div class="m-item">
@@ -183,7 +240,7 @@ watch(
       <!-- 信息 -->
       <div class="col">
         <section class="card module-card">
-          <BoardMeta :chart="result.chart" />
+          <BoardMeta :chart="result.chart" hide-conclusions />
         </section>
       </div>
 
@@ -204,10 +261,13 @@ watch(
       :content="aiState.content"
       :loading="aiState.loading"
       :error="aiState.error"
+      :configured="aiConfigured"
       @close="ui.closeAi()"
-      @copy="() => {}"
-      @save="() => {}"
-      @regenerate="requestChironAi"
+      @copy="copyAi"
+      @save="saveAi"
+      @regenerate="retryAi"
+      @cancel="abortAi"
+      @settings="goSettings"
     />
   </div>
 </template>
@@ -231,6 +291,31 @@ watch(
   box-sizing: border-box;
   align-items: start;
 }
+
+/* 扩展层标注（规范 §3.9） */
+.layer-note {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  background: rgba(217, 119, 6, 0.12);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: calc(var(--fs-sm) * var(--font-scale));
+  line-height: 1.6;
+}
+
+.layer-badge {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(217, 119, 6, 0.85);
+  color: #fff;
+  font-size: calc(var(--fs-xs) * var(--font-scale));
+}
+
 
 .chiron-meta {
   grid-column: 1 / -1;

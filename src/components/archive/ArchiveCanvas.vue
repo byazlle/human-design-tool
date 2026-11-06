@@ -14,6 +14,7 @@ const emit = defineEmits<{
   open: [id: string]
   'add-to-composite': [id: string]
   close: [id: string]
+  remove: [id: string]
   'toggle-select': [id: string]
 }>()
 
@@ -118,6 +119,7 @@ function onDragEnd() {
         @open="emit('open', archive.id)"
         @add-to-composite="emit('add-to-composite', archive.id)"
         @close="emit('close', archive.id)"
+        @remove="emit('remove', archive.id)"
         @toggle-select="emit('toggle-select', archive.id)"
         @drag-start="onDragStart(archive.id, $event)"
       />

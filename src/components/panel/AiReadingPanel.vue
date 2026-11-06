@@ -10,6 +10,8 @@ const props = defineProps<{
   content: string
   loading: boolean
   error: string | null
+  /** 当前是否已配置可用的 AI 配置；未配置时错误态给「去设置」入口 */
+  configured?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -17,6 +19,8 @@ const emit = defineEmits<{
   copy: []
   save: []
   regenerate: []
+  cancel: []
+  settings: []
 }>()
 
 const hasContent = computed(() => props.content.trim().length > 0)
@@ -46,27 +50,39 @@ const renderedHtml = computed(() => renderMarkdown(props.content))
         </header>
 
         <div class="body">
-          <div v-if="loading" class="skeleton-block">
+          <!-- 错误条常驻：重新生成失败时旧内容仍在下方（U-20） -->
+          <div v-if="error" class="error-state">
+            <p class="t-body msg-error">{{ error }}</p>
+            <p class="t-sm t-muted">
+              AI 解读为「预留配置」功能，需在设置页填写接口地址、API Key 与模型名；失败不会生成任何伪造内容。
+            </p>
+            <div class="error-actions">
+              <button type="button" class="retry" @click="emit('regenerate')">重试</button>
+              <button v-if="configured === false" type="button" class="retry" @click="emit('settings')">
+                去设置
+              </button>
+            </div>
+          </div>
+
+          <div v-if="loading && !hasContent" class="skeleton-block">
             <div class="skeleton" style="height: 16px; width: 60%" />
             <div class="skeleton" style="height: 12px; width: 92%" />
             <div class="skeleton" style="height: 12px; width: 88%" />
             <div class="skeleton" style="height: 12px; width: 76%" />
             <div class="skeleton" style="height: 12px; width: 90%" />
             <p class="t-sm loading-text">正在请求 AI 解读，请稍候…</p>
+            <button type="button" class="retry" @click="emit('cancel')">取消请求</button>
           </div>
 
-          <div v-else-if="error" class="error-state">
-            <p class="t-body msg-error">{{ error }}</p>
-            <p class="t-sm t-muted">
-              AI 解读为「预留配置」功能，需在设置页填写接口地址、API Key 与模型名；失败不会生成任何伪造内容。
-            </p>
-            <button type="button" class="retry" @click="emit('regenerate')">重试</button>
+          <div v-else-if="loading" class="regen-bar">
+            <p class="t-sm loading-text">正在重新生成，旧内容先保留在下方…</p>
+            <button type="button" class="retry" @click="emit('cancel')">取消请求</button>
           </div>
 
           <!-- eslint-disable-next-line vue/no-v-html -- 内容已经过 HTML 转义 -->
-          <div v-else-if="hasContent" class="text md-body" v-html="renderedHtml" />
+          <div v-if="hasContent" class="text md-body" v-html="renderedHtml" />
 
-          <p v-else class="t-sm t-muted">暂无内容。</p>
+          <p v-else-if="!loading && !error" class="t-sm t-muted">暂无内容。</p>
         </div>
       </section>
     </Transition>
@@ -216,6 +232,15 @@ const renderedHtml = computed(() => renderMarkdown(props.content))
   flex-direction: column;
   gap: var(--sp-3);
   align-items: flex-start;
+  margin-bottom: var(--sp-3);
+}
+
+.regen-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
 }
 
 .retry {
@@ -224,6 +249,12 @@ const renderedHtml = computed(() => renderMarkdown(props.content))
   border-radius: var(--radius-md);
   border: 1px solid var(--border-strong);
   font-size: calc(var(--fs-sm) * var(--font-scale));
+}
+
+.error-actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
 }
 
 .fade-enter-active,

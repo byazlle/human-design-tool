@@ -151,9 +151,20 @@ export interface CenterState {
   defined: boolean
 }
 
+/**
+ * 闸门三态（规范 §3.5，L4 项目约定）：
+ * - `in-channel`：该闸门处于一条已定义的完整通道内；
+ * - `hanging`：已激活，但没有配对成完整通道（悬挂闸门）；
+ * - `open`：未激活。`gates` 数组只包含已激活闸门（in-channel / hanging），
+ *   因此数组里不会出现 `open`；`open` 仅用于表达「未出现在数组中」。
+ */
+export type GateState = 'in-channel' | 'hanging' | 'open'
+
 export interface GateActivation {
   gate: number
   stars: Planet[]
+  /** 三态：gates 数组只含激活闸门（in-channel / hanging），未列出即 open */
+  state: GateState
 }
 
 export interface ChannelActivation {
@@ -249,7 +260,13 @@ export interface CenterQuadrant {
   state: 'both' | 'onlyA' | 'onlyB' | 'open'
 }
 
-/** 合盘结果：A / B / 合并 + 共享集合 + 关系动力学 */
+/**
+ * 合盘结果：A / B / 合并 + 共享集合 + 关系动力学。
+ *
+ * 注意：合盘**不输出** type / authority / definition / incarnationCross（规范 §3.8）。
+ * 类型、权威、定义型、轮回交叉都是个体属性；关系场不存在「你们是投射者」这类结论。
+ * 渲染所需的占位 BodyGraph 由 `mergedAsChart()` 内部构造，不对外暴露。
+ */
 export interface CompositeResult {
   a: BodyGraph
   b: BodyGraph
@@ -266,18 +283,6 @@ export interface CompositeResult {
   relationshipChannels: RelationshipChannel[]
   /** 中心四象限（关系解读核心） */
   centerQuadrant: CenterQuadrant[]
-  /**
-   * 合图作为"关系场"的派生指标。
-   * 仅作参考：类型/权威属个体属性，关系场不存在"你们是投射者"这种结论。
-   * 不包含轮回交叉 —— 交叉由个体的人格/设计太阳-地球四闸门构成。
-   */
-  composite: {
-    type: HDType
-    authority: Authority
-    definition: DefinitionKind
-    centers: CenterState[]
-    strategy: string
-  }
 }
 
 export type UiFilter = {
@@ -292,6 +297,14 @@ export interface AiConfig {
   model: string
   timeoutMs: number
   cacheEnabled: boolean
+}
+
+/** 多套 AI 配置中的一条（v2.0）；字段集合与 AiConfig 完全一致 + 标识信息 */
+export interface AiProfile extends AiConfig {
+  id: string
+  name: string
+  createdAt: string
+  lastUsedAt?: string
 }
 
 export type ThemeMode = 'light' | 'dark'

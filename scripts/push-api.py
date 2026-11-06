@@ -27,11 +27,14 @@ BRANCH = "main"
 
 
 def token() -> str:
+    """读取 .env 中的 GitHub Token，兼容 GITHUB_TOKEN=... 与裸 ghp_ 前缀行。"""
+    import re
     with open(os.path.join(ROOT, ".env"), encoding="utf-8") as fh:
-        for line in fh:
-            if line.startswith("GITHUB_TOKEN="):
-                return line.split("=", 1)[1].strip().strip('"').strip("'")
-    raise SystemExit("GITHUB_TOKEN not found")
+        text = fh.read()
+    m = re.search(r"(ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})", text)
+    if m:
+        return m.group(1)
+    raise SystemExit("GitHub Token not found（.env 中需含 GITHUB_TOKEN=... 或 ghp_ 开头的密钥）")
 
 
 TOKEN = token()

@@ -3,12 +3,14 @@
  *
  * 设计原则：
  * - **不新增任何人类图理论**。只做既有事实的陈述与组织：
- *   中心四象限、四类关系通道、双方类型/权威、合起来的定义分数。
+ *   中心四象限、四类关系通道、双方人生角色、合起来的中心定义数量。
+ * - 规范 §3.8：合盘不输出类型 / 权威 / 定义型 / 轮回交叉等个体气场结论，
+ *   因此本文件只陈述关系结构，不对"你们是什么类型"下判断。
  * - 不使用决定论句式（"一定会/必然/就是"），统一用"倾向于/更容易/在这块"。
  * - 未配置 AI 的用户也能在合盘页读到结论，AI 只做"加深"而非唯一来源。
  */
 import type { CompositeResult } from '../types/hd'
-import { CENTER_LABELS, DEFINITION_LABELS, TYPE_LABELS } from '../types/hd'
+import { CENTER_LABELS } from '../types/hd'
 
 export interface ThemeBlock {
   h: string
@@ -40,7 +42,7 @@ export function relationshipTheme(result: CompositeResult): ThemeBlock[] {
   // 1. 结构概览
   blocks.push({
     h: '结构概览',
-    p: `${TYPE_LABELS[a.type]}（${a.profile}）× ${TYPE_LABELS[b.type]}（${b.profile}）。两人的能量叠加后，共 ${definedCount} 个中心被定义，整体呈${DEFINITION_LABELS[result.composite.definition]}。这个数字说明的是"合起来有多完整"，不是任何一方的类型。`,
+    p: `两人的人生角色组合是 ${a.profile} × ${b.profile}。两人的能量叠加后，共 ${definedCount} 个中心被定义。这个数字说明的是"合起来有多完整"，不构成对任何一方的个体判定。`,
   })
 
   // 2. 影响方向（最具解释力的一段）

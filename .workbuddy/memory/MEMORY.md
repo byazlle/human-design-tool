@@ -15,14 +15,19 @@
   对齐：git -c http.sslBackend=schannel fetch origin main && git reset --hard origin/main。
 - CI：push main / tag v* 触发 .github/workflows/build.yml 构建 Windows(NSIS+MSI) 与 Android(APK)。
 
-## 人类图口径（审查结论，改动前先看这里）
-- **MANDALA_OFFSET 必须 = 29.875**（= 331.875 − 302，即 5 门宽 28.125 + 1.75）。
-  现库里的 29.8333 会让 Gate 41 起于 302.0417°，权威口径是宝瓶 2°00′ = 302.000°。
+## 人类图口径（历史审查意见，非用户已确认口径）
+> 2026-11-06 现状盘点：用户明确要求「业务规则/术语/流程状态/边界不清楚时先集中提问，确认前不推断、不下结论」。
+> 以下全部是 docs/review/ 历史审查意见（基于 v1.1.0），**未逐条获用户确认**，已全部列入本轮待确认清单；
+> 确认前不得作为结论或改动依据，也不要拿"与历史审查一致"当正确性证明。
+
+- **MANDALA_OFFSET 审查意见主张 = 29.875**（= 331.875 − 302，即 5 门宽 28.125 + 1.75）。
+  代码事实：v1.1.0 及更早为 29.8333；**v1.2.0 起 `src/engine/mandala.ts:35` 已是 29.875**，
+  但 `docs/ARCHITECTURE.md:114` 仍写 29.8333°（文档未同步）。29.8333 会让 Gate 41 起于 302.0417°。
   **L1 证据（已锁定，勿再翻案）**：Jovian 官方公布 Rave New Year = 太阳进第 41 门，
   2024-01-22 13:18 UTC、2026-01-22 00:54 UTC；本项目星历在两时刻均得太阳黄经 302.0002°，
   反解 302.000° 得 00:53:46（差 14 秒），反解 302.0417° 得 01:52:47（差 58 分 47 秒）。
-  复现：`node scripts/check-mandala-anchor.mjs`（在 Rave New Year 时刻，现实现返回 Gate 60.6，
-  L1 应为 41.1）。注意：rave-engine 的 src/calc/mandala.js 用的是同一个错常数，所以
+  复现脚本 `node scripts/check-mandala-anchor.mjs` 是**对照旧口径 29.8333 的审计脚本**
+  （输出含 ❌ /「发现 2 处不符」），不是"当前实现是否通过"的校验器。注意：rave-engine 的 src/calc/mandala.js 用的是同一个错常数，所以
   "与 rave-engine 一致"不是正确性证明。
 - 四个边界锚点：41@302.000 / 60 末@302.000 / 18@183.875 / 25@358.250。详见 docs/review/。
 - 交叉角度：右角度 7 个（含 **4/6**）、并列仅 4/1、左角度 4 个（5/1、5/2、6/2、6/3）。
@@ -33,6 +38,6 @@
 
 ## 验证命令
 - 类型+构建：npm run build（vue-tsc --noEmit && vite build）
-- 测试：npm run test（vitest，29 项）
+- 测试：npm run test（vitest，2026-11-06 实测 5 文件 / 32 项全绿；`npm run typecheck`、`npm run build` 亦通过）
 - 打包 Windows 安装包：npm run build（根）→ python scripts/build-exe.py（封 NSIS）
 - 打包 Android APK：python scripts/build-apk.py（需本地 Android 工具链，CI 更稳）

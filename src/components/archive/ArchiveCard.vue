@@ -15,6 +15,7 @@ const emit = defineEmits<{
   open: []
   'add-to-composite': []
   close: []
+  remove: []
   'toggle-select': []
   'drag-start': [event: PointerEvent]
 }>()
@@ -43,6 +44,9 @@ const definedCount = computed(
       <h3 class="name ellipsis">{{ archive.name }}</h3>
       <p class="t-sm ellipsis">
         <template v-if="chart">{{ TYPE_LABELS[chart.type] }} · {{ chart.profile }}</template>
+        <span v-else-if="archive.chartError" class="fail-badge" :title="archive.chartError">
+          重算失败
+        </span>
         <template v-else>未生成</template>
       </p>
       <p class="t-xs date t-mono">
@@ -68,7 +72,24 @@ const definedCount = computed(
     <footer class="foot">
       <button type="button" class="action primary" @click.stop="emit('open')">展开完整盘</button>
       <button type="button" class="action" @click.stop="emit('add-to-composite')">加入合盘</button>
-      <button type="button" class="action close" aria-label="关闭卡片" @click.stop="emit('close')">
+      <button
+        type="button"
+        class="action remove"
+        aria-label="删除该档案"
+        title="删除该档案"
+        @click.stop="emit('remove')"
+      >
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v6M14 11v6" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="action close"
+        aria-label="取消选择"
+        title="取消选择（档案仍保留）"
+        @click.stop="emit('close')"
+      >
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <path d="M6 6l12 12M18 6 6 18" />
         </svg>
@@ -149,6 +170,17 @@ const definedCount = computed(
   color: var(--text-muted);
 }
 
+/* 重算失败角标（U-15）：title 为具体错误，点开单盘页可看完整原因 */
+.fail-badge {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--status-error);
+  color: #fff;
+  font-size: calc(var(--fs-xs) * var(--font-scale));
+  line-height: 1.6;
+}
+
 .thumb {
   flex: 1;
   display: flex;
@@ -202,5 +234,17 @@ const definedCount = computed(
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
+}
+
+.action.remove {
+  flex: 0 0 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--status-error);
+}
+.action.remove:hover {
+  border-color: var(--status-error);
+  color: var(--status-error);
 }
 </style>

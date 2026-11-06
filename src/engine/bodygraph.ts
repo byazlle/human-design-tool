@@ -204,7 +204,9 @@ export function decideCross(
   if (profile === '4/1') angle = '并列'
   else if (pl >= 5) angle = '左角度'
 
-  return `${angle}交叉 · ${pSun.gate}/${dSun.gate} | ${pEarth.gate}/${dEarth.gate}`
+  // 规范 §3.7：四闸门顺序固定为 [人格太阳, 人格地球, 设计太阳, 设计地球]，
+  // 与 crossData.ts 的展示顺序一致（canonical: Personality Sun/Earth | Design Sun/Earth）。
+  return `${angle}交叉 · ${pSun.gate}/${pEarth.gate} | ${dSun.gate}/${dEarth.gate}`
 }
 
 export interface GateDetailEntry {
@@ -251,19 +253,24 @@ function computeGraph(
     defined: definedCenters.has(id),
   }))
 
-  const gates: GateActivation[] = [...activated]
-    .sort((a, b) => a - b)
-    .map((gate) => ({
-      gate,
-      stars: [...(gateDetail.get(gate)?.personality ?? []), ...(gateDetail.get(gate)?.design ?? [])],
-    }))
-
+  // 定义通道内的闸门集合（用于三态与悬挂闸门派生）
   const inChannel = new Set<number>()
   for (const ch of definedChannels) {
     inChannel.add(ch.gates[0])
     inChannel.add(ch.gates[1])
   }
-  const hangingGates = [...activated].filter((g) => !inChannel.has(g)).sort((a, b) => a - b)
+
+  const gates: GateActivation[] = [...activated]
+    .sort((a, b) => a - b)
+    .map((gate) => ({
+      gate,
+      stars: [...(gateDetail.get(gate)?.personality ?? []), ...(gateDetail.get(gate)?.design ?? [])],
+      // 规范 §3.5：进数组的闸门只有 in-channel / hanging 两种状态
+      state: inChannel.has(gate) ? 'in-channel' : 'hanging',
+    }))
+
+  // 保留为派生字段，避免破坏既有渲染
+  const hangingGates = gates.filter((g) => g.state === 'hanging').map((g) => g.gate)
 
   const pSun = personality.find((p) => p.planet === 'Sun')!
   const dSun = design.find((p) => p.planet === 'Sun')!

@@ -4,8 +4,12 @@
  * 规则：**只要产出结果可能变化**（星历口径、曼陀罗偏移、36 通道/64 门数据、
  * 类型/权威/定义判定规则）就必须提升此值。档案读取时若版本不一致会后台重算，
  * 避免"算法修好了、老档案还显示旧结果"。
+ *
+ * v2.0.0 说明：**计算规则与 1.2.0 相同**（曼陀罗偏移仍为 29.875°，Gate 41 起于 302.000°）。
+ * 本次提升只用于对齐规范基线（HD-SPEC-v2.0）与 `CompositeResult` 移除 `composite` 字段
+ * 带来的数据结构变化；老档案会因版本戳不一致重算一次，**结果应与旧版一致**。
  */
-export const ENGINE_VERSION = '1.2.0+mandala.29.875'
+export const ENGINE_VERSION = '2.0.0+mandala.29.875'
 
-/** 数据 schema 版本（导出/导入用） */
-export const SCHEMA_VERSION = 2
+/** 数据 schema 版本（导出/导入用）；v2.0 升至 3（闸门三态 state 字段等结构变化） */
+export const SCHEMA_VERSION = 3
