@@ -173,6 +173,7 @@ async function requestUnifiedAi(payload: {
   if (!chart.value || !archive.value) return
   angleKey.value = payload.angleKey
   const angleInfo = angleOf(payload.angleKey)
+  const modeLabel = settings.aiDetailMode === 'detailed' ? '详细' : '精简'
   const direction = payload.customDirection
     ? `【自定义解读方向】用户希望重点从「${payload.customDirection}」的角度解读，请围绕该方向展开，同时保持术语准确。`
     : `【解读角度】${angleInfo.label}：${angleInfo.prompt}`
@@ -182,9 +183,11 @@ async function requestUnifiedAi(payload: {
     ref: `${payload.dimensions.join('+')}:${payload.angleKey}:${payload.customDirection || '-'}`,
     title: payload.customDirection
       ? `${archive.value.name} · AI 综合解读 · ${payload.customDirection}`
-      : `${archive.value.name} · AI 综合解读 · ${angleInfo.label}`,
-    offline: `${buildUnifiedOffline(payload.dimensions)}\n\n${direction}\n\n请把以上所有勾选维度作为一个整体来综合解读：先给出整体画像结论，再分别说明各维度如何相互影响，最后给落地建议。篇幅 600-900 字。`,
+      : `${archive.value.name} · 整体解读（${modeLabel}） · ${angleInfo.label}`,
+    offline: `${buildUnifiedOffline(payload.dimensions)}\n\n${direction}\n\n请把以上所有勾选维度作为一个整体来综合解读：先给出整体画像结论，再分别说明各维度如何相互影响，最后给落地建议。`,
     chart: chart.value,
+    detailMode: settings.aiDetailMode,
+    angle: payload.customDirection || angleInfo.label,
   })
 }
 
@@ -270,15 +273,19 @@ async function onBulkAi(payload: BulkPayload) {
     ...payload.centers.map((c) => `c-${c}`),
     ...[...selectedStars.value].sort(),
   ].join('|')
-  const offline = selectedStars.value.size
+  // payload.offline 已是「一份整体事实块 + 所选对象释义要点」（规范 §1.3），
+  // 直接作为【盘面事实】注入；不再同时用 chartSummaryOf 注入第二次，避免同一信息重复喂给模型。
+  const facts = selectedStars.value.size
     ? `${payload.offline}\n\n【联动选中的星体】\n${starBrief()}`
     : payload.offline
   await runAi({
     scope: 'selection',
     ref,
     title: `${archive.value?.name ?? ''} · ${payload.title}`,
-    offline,
-    chart: chart.value,
+    offline: '',
+    chartSummary: facts,
+    detailMode: settings.aiDetailMode,
+    angle: '整体解读',
   })
 }
 
@@ -399,150 +406,135 @@ const starListOpen = ref(false)
         <AiComposer :loading="aiState.loading" @run="requestUnifiedAi" />
       </div>
 
-      <!-- ① 第一列：图（星列内嵌于图上方内侧左右） -->
-      <div class="col col-chart">
-        <!-- 手机：星列双列置顶 -->
-        <div v-if="isMobile" class="card mobile-planets">
-          <PlanetColumn
-            :stars="chart.design"
-            side="design"
-            :selected="selectedStars"
-            @star-toggle="toggleStar('design', $event)"
-          />
-          <PlanetColumn
-            :stars="chart.personality"
-            side="personality"
-            :selected="selectedStars"
-            @star-toggle="toggleStar('personality', $event)"
-          />
+      <!-- ① 人体图（星列在图上方的内侧左右） -->
+      <div v-if="isMobile" class="card mobile-planets">
+        <PlanetColumn
+          :stars="chart.design"
+          side="design"
+          :selected="selectedStars"
+          @star-toggle="toggleStar('design', $event)"
+        />
+        <PlanetColumn
+          :stars="chart.personality"
+          side="personality"
+          :selected="selectedStars"
+          @star-toggle="toggleStar('personality', $event)"
+        />
+      </div>
+
+      <section class="card chart-card">
+        <header class="chart-head">
+          <div class="grow">
+            <p class="t-xs">
+              {{ archive.birth.year }}-{{ String(archive.birth.month).padStart(2, '0') }}-{{
+                String(archive.birth.day).padStart(2, '0')
+              }}
+              {{ String(archive.birth.hour).padStart(2, '0') }}:{{
+                String(archive.birth.minute).padStart(2, '0')
+              }}
+              · {{ archive.timezone }} · {{ archive.location.place }}
+            </p>
+          </div>
+          <div class="toggles">
+            <HdToggle
+              compact
+              label="小度数"
+              :model-value="filter.showDecimals"
+              @update:model-value="filter.showDecimals = $event"
+            />
+            <HdToggle
+              compact
+              label="色/调/基"
+              :model-value="filter.showColorToneBase"
+              @update:model-value="filter.showColorToneBase = $event"
+            />
+          </div>
+        </header>
+
+        <div class="chart-stage">
+          <div class="graph-wrap">
+            <HumanDesignBodyGraph :engine="engine"
+              :chart="chart"
+              mode="single"
+              :filter="filter"
+              :highlight="{
+                gates: ui.panel?.kind === 'gate' ? [Number(ui.panel.ref)] : [],
+                channels: ui.panel?.kind === 'channel' ? [String(ui.panel.ref)] : [],
+              }"
+              @gate-click="ui.openGate($event, 'single')"
+              @channel-click="ui.openChannel($event, 'single')"
+              @center-click="ui.openCenter($event, 'single')"
+            />
+          </div>
+
+          <!-- 图上方内侧左右：显意识 / 潜意识（桌面浮层） -->
+          <template v-if="!isMobile">
+            <div class="planet-float left">
+              <PlanetColumn
+                :stars="chart.design"
+                side="design"
+                :selected="selectedStars"
+                @star-toggle="toggleStar('design', $event)"
+              />
+            </div>
+            <div class="planet-float right">
+              <PlanetColumn
+                :stars="chart.personality"
+                side="personality"
+                :selected="selectedStars"
+                @star-toggle="toggleStar('personality', $event)"
+              />
+            </div>
+          </template>
         </div>
+      </section>
 
-        <section class="card chart-card">
-          <header class="chart-head">
-            <div class="grow">
-              <p class="t-xs">
-                {{ archive.birth.year }}-{{ String(archive.birth.month).padStart(2, '0') }}-{{
-                  String(archive.birth.day).padStart(2, '0')
-                }}
-                {{ String(archive.birth.hour).padStart(2, '0') }}:{{
-                  String(archive.birth.minute).padStart(2, '0')
-                }}
-                · {{ archive.timezone }} · {{ archive.location.place }}
-              </p>
+      <!-- ② 盘面信息（类型 / 权威 / 定义 / 角色） -->
+      <section class="card module-card">
+        <BoardMeta :chart="chart" />
+      </section>
+
+      <!-- ③ 激活通道 / 闸门 / 九中心 -->
+      <ActivationPanels
+        :chart="chart"
+        :sections="['channels', 'gates', 'centers']"
+        @ai-read="onBulkAi"
+        @gate-click="ui.openGate($event, 'single')"
+        @channel-click="ui.openChannel($event, 'single')"
+        @center-click="ui.openCenter($event, 'single')"
+      />
+
+      <!-- ④ 轮回交叉 -->
+      <section class="card module-card">
+        <CrossPanel :chart="chart" />
+      </section>
+
+      <!-- ⑤ 人生轨迹 -->
+      <section class="card module-card">
+        <h3 class="t-title destiny-title">人生轨迹</h3>
+        <div class="destiny">
+          <details v-for="d in destiny" :key="d.key" class="destiny-item">
+            <summary class="t-sm">
+              <strong>{{ d.title }}</strong>
+              <span class="t-xs d-desc">{{ d.desc }}</span>
+            </summary>
+            <div class="d-body">
+              <section v-for="(sec, i) in d.sections" :key="i" class="d-sec">
+                <h4 class="d-h">{{ sec.h }}</h4>
+                <p class="t-sm">{{ sec.p }}</p>
+              </section>
             </div>
-            <div class="toggles">
-              <HdToggle
-                compact
-                label="小度数"
-                :model-value="filter.showDecimals"
-                @update:model-value="filter.showDecimals = $event"
-              />
-              <HdToggle
-                compact
-                label="色/调/基"
-                :model-value="filter.showColorToneBase"
-                @update:model-value="filter.showColorToneBase = $event"
-              />
-            </div>
-          </header>
+          </details>
+        </div>
+      </section>
 
-          <div class="chart-stage">
-            <div class="graph-wrap">
-              <HumanDesignBodyGraph :engine="engine"
-                :chart="chart"
-                mode="single"
-                :filter="filter"
-                :highlight="{
-                  gates: ui.panel?.kind === 'gate' ? [Number(ui.panel.ref)] : [],
-                  channels: ui.panel?.kind === 'channel' ? [String(ui.panel.ref)] : [],
-                }"
-                @gate-click="ui.openGate($event, 'single')"
-                @channel-click="ui.openChannel($event, 'single')"
-                @center-click="ui.openCenter($event, 'single')"
-              />
-            </div>
-
-            <!-- 图上方内侧左右：显意识 / 潜意识（桌面浮层，眉心上侧、脾与情绪上侧区域） -->
-            <template v-if="!isMobile">
-              <div class="planet-float left">
-                <PlanetColumn
-                  :stars="chart.design"
-                  side="design"
-                  :selected="selectedStars"
-                  @star-toggle="toggleStar('design', $event)"
-                />
-              </div>
-              <div class="planet-float right">
-                <PlanetColumn
-                  :stars="chart.personality"
-                  side="personality"
-                  :selected="selectedStars"
-                  @star-toggle="toggleStar('personality', $event)"
-                />
-              </div>
-            </template>
-          </div>
-        </section>
-      </div>
-
-      <!-- ② 第二列：盘面信息 + 激活通道 -->
-      <div class="col">
-        <section class="card module-card">
-          <BoardMeta :chart="chart" />
-        </section>
-        <ActivationPanels
-          :chart="chart"
-          :sections="['channels']"
-          @ai-read="onBulkAi"
-          @gate-click="ui.openGate($event, 'single')"
-          @channel-click="ui.openChannel($event, 'single')"
-          @center-click="ui.openCenter($event, 'single')"
-        />
-      </div>
-
-      <!-- ③ 第三列：闸门 + 能量中心 -->
-      <div class="col">
-        <ActivationPanels
-          :chart="chart"
-          :sections="['gates', 'centers']"
-          @ai-read="onBulkAi"
-          @gate-click="ui.openGate($event, 'single')"
-          @channel-click="ui.openChannel($event, 'single')"
-          @center-click="ui.openCenter($event, 'single')"
-        />
-      </div>
-
-      <!-- ④ 第四列：轮回交叉 + 人生轨迹 + 详情（点击闸门/通道后显示在轨迹下方） -->
-      <div class="col">
-        <section class="card module-card">
-          <CrossPanel :chart="chart" />
-        </section>
-
-        <section class="card module-card">
-          <h3 class="t-title destiny-title">人生轨迹</h3>
-          <div class="destiny">
-            <details v-for="d in destiny" :key="d.key" class="destiny-item">
-              <summary class="t-sm">
-                <strong>{{ d.title }}</strong>
-                <span class="t-xs d-desc">{{ d.desc }}</span>
-              </summary>
-              <div class="d-body">
-                <section v-for="(sec, i) in d.sections" :key="i" class="d-sec">
-                  <h4 class="d-h">{{ sec.h }}</h4>
-                  <p class="t-sm">{{ sec.p }}</p>
-                </section>
-              </div>
-            </details>
-          </div>
-        </section>
-
-        <DetailCard
-          :selection="ui.panel"
-          :chart="chart"
-          @close="ui.closePanel()"
-          @request-ai="requestAiForSelection"
-        />
-      </div>
+      <!-- 详情（点击闸门/通道/中心后在下方展开） -->
+      <DetailCard
+        :selection="ui.panel"
+        :chart="chart"
+        @close="ui.closePanel()"
+        @request-ai="requestAiForSelection"
+      />
     </main>
 
     <!-- 手机：底部固定操作 -->
@@ -639,31 +631,21 @@ const starListOpen = ref(false)
   color: var(--text-primary);
 }
 
-/* 四列布局（间距 / 留白随设置页布局密度变化） */
+/* 单列纵向流：宽度正好容纳一张人类图（不再四列并排） */
 .layout {
-  display: grid;
-  padding-top: 8px;  grid-template-columns:
-    minmax(560px, 1.85fr) minmax(215px, 0.7fr) minmax(215px, 0.7fr)
-    minmax(240px, 0.8fr);
-  gap: var(--layout-gap, var(--sp-3));
+  display: flex;
+  flex-direction: column;
+  gap: var(--layout-gap, var(--sp-4));
   width: 100%;
-  max-width: 1720px;
+  /* 默认 840（收窄后的阅读宽度）；「图谱尺寸=large(1000)」时列宽自动放宽到 1000 而不溢出 */
+  max-width: max(840px, var(--graph-max-width, 840px));
   margin: 0 auto;
   padding: 8px var(--layout-pad, var(--sp-4)) 96px;
   box-sizing: border-box;
-  align-items: start;
 }
 
-.col {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-  min-width: 0;
-}
-
-/* AI 角度条（整行） */
+/* AI 角度条 */
 .angle-bar {
-  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -735,38 +717,28 @@ const starListOpen = ref(false)
   flex: none;
 }
 
-/* 完整盘一屏展示：卡片高度锁定为可用视口，内部等比缩放，绝不裁切、无需滚动 */
-.col-chart .chart-card {
-  height: calc(100vh - var(--chrome-h) - 152px);
-  min-height: 420px;
-  max-height: 1180px;
-  overflow: hidden;
-}
-
 .chart-stage {
   position: relative;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
 }
 
+/* 人图完整显示：随容器等比缩放，不裁切、不出现内部滚动 */
 .graph-wrap {
   width: 100%;
-  height: 100%;
+  /* 保留「图谱尺寸」设置（small/normal/large → 560/780/1000），
+     外层单列已限制 840，large 时以列宽为准 */
+  max-width: var(--graph-max-width, 840px);
+  margin: 0 auto;
+  display: block;
   min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .graph-wrap :deep(svg) {
+  display: block;
   width: 100%;
-  height: 100%;
-  /* 图幅档位：设置页可调 */
-  max-width: var(--graph-max-width, 100%);
-  max-height: 100%;
+  height: auto;
+  max-width: 100%;
+  max-height: none;
   margin: 0 auto;
 }
 
@@ -879,46 +851,14 @@ const starListOpen = ref(false)
   flex: 1;
 }
 
-/* 手机：单列 */
+/* 手机：同一套单列（无需额外栅格） */
 .layout.mobile {
-  grid-template-columns: 1fr;
   padding: var(--sp-3) var(--sp-3) 96px;
   max-width: 100%;
 }
 
-.layout.mobile .angle-bar {
-  grid-column: auto;
-}
-
-.layout.mobile .col-chart .chart-card {
-  height: auto;
-  max-height: none;
-}
-
-.layout.mobile .chart-stage {
-  display: block;
-}
-
-.layout.mobile .graph-wrap {
-  height: auto;
-}
-
-.layout.mobile .graph-wrap :deep(svg) {
-  height: auto;
-  width: 100%;
-}
-
-/* 中屏：三列，第四列下移整行 */
+/* 中屏：星列停靠在图上方（两列），不覆盖盘面 */
 @media (max-width: 1400px) {
-  .layout {
-    grid-template-columns: minmax(440px, 1.3fr) minmax(235px, 0.8fr) minmax(235px, 0.8fr);
-  }
-
-  .layout > .col:nth-of-type(5) {
-    grid-column: 1 / -1;
-  }
-
-  /* 窄屏：星列停靠在图上方（两列），不覆盖盘面 */
   .chart-stage {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -933,26 +873,6 @@ const starListOpen = ref(false)
   }
 
   .graph-wrap {
-    grid-column: 1 / -1;
-    height: auto;
-  }
-
-  .graph-wrap :deep(svg) {
-    height: auto;
-    max-height: none;
-  }
-}
-
-@media (max-width: 1080px) {
-  .layout {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .layout > .col-chart {
-    grid-column: 1 / -1;
-  }
-
-  .layout > .col:nth-of-type(5) {
     grid-column: 1 / -1;
   }
 }

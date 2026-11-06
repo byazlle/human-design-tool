@@ -9,7 +9,7 @@ import { computed, onScopeDispose, watch } from 'vue'
 import { useUiStore } from '../stores/ui'
 import { useSettingsStore } from '../stores/settings'
 import { AiError, chartSummaryOf, explain, validateAiConfig } from '../services/aiClient'
-import type { BodyGraph } from '../types/hd'
+import type { AiDetailMode, BodyGraph } from '../types/hd'
 
 interface RunOptions {
   scope: string
@@ -19,6 +19,10 @@ interface RunOptions {
   chart?: BodyGraph
   /** 显式给定的「盘面事实」摘要；合盘用它替换标准的单人摘要（规范 §3.8） */
   chartSummary?: string
+  /** 解读详细度；不传则跟随设置里的「解读详细度」 */
+  detailMode?: AiDetailMode
+  /** 解读角度标签，注入【用户选择】 */
+  angle?: string
 }
 
 /** 上一次请求参数：仅用于「重试」，不写入 ui 状态 */
@@ -91,6 +95,8 @@ export function useAiReading() {
         offline: options.offline,
         chartSummary:
           options.chartSummary ?? (options.chart ? chartSummaryOf(options.chart) : undefined),
+        detailMode: options.detailMode ?? settings.aiDetailMode,
+        angle: options.angle,
         signal: own.signal,
       })
       if (own.signal.aborted) {

@@ -5,8 +5,13 @@
  */
 import { computed, ref, watch } from 'vue'
 import type { BodyGraph, CenterId } from '../../types/hd'
-import { CENTER_LABELS } from '../../types/hd'
-import { GATE_NAMES } from '../../engine/gateData'
+import {
+  AUTHORITY_LABELS,
+  CENTER_LABELS,
+  DEFINITION_LABELS,
+  TYPE_LABELS,
+} from '../../types/hd'
+import { CHANNELS, GATE_CENTER, GATE_NAMES } from '../../engine/gateData'
 import { CENTER_TEXT, getChannel, getGate } from '../../services/interpretations'
 
 const props = withDefaults(
@@ -115,40 +120,78 @@ watch(
   () => clearAll(),
 )
 
+/**
+ * 融合解读的输入：**一份**带标题的盘面事实块（规范 `AI-PROMPT-v2.0.md` §1.3）。
+ *
+ * 顺序固定：类型/策略/权威/人生角色/定义 → 九中心 → 已激活通道（含两端闸门）
+ * → 悬挂闸门 → 用户所选对象及其离线释义要点。
+ * 不再拆成「【通道】【闸门】【中心】」三段让模型自己拼。
+ */
 function buildOffline(): string {
-  const parts: string[] = []
+  const c = props.chart
+  const defined = c.centers.filter((x) => x.defined)
+  const open = c.centers.filter((x) => !x.defined)
+  const lines: string[] = [
+    `类型：${TYPE_LABELS[c.type]}（${c.type}）｜策略：${c.strategy}`,
+    `内在权威：${AUTHORITY_LABELS[c.authority]}（${c.authority}）`,
+    `人生角色：${c.profile}｜定义型：${DEFINITION_LABELS[c.definition]}（${c.definition}）`,
+    `九中心：已定义=${defined.map((x) => SHORT_CENTER[x.id]).join('、') || '无'}；开放=${
+      open.map((x) => SHORT_CENTER[x.id]).join('、') || '无'
+    }`,
+  ]
 
-  if (selectedChannels.value.length) {
-    parts.push('【通道】')
-    for (const key of selectedChannels.value) {
-      const c = getChannel(key)
-      parts.push(`${c.title}：${c.text}`)
-    }
+  if (channels.value.length) {
+    lines.push(
+      `已激活通道（${channels.value.length}）：${channels.value
+        .map((ch) => {
+          const def = CHANNELS.find((d) => d.key === ch.key)
+          const ends = def ? `${def.gates[0]}↔${def.gates[1]}` : ch.key
+          const centers = def
+            ? `，${SHORT_CENTER[def.centers[0]]}↔${SHORT_CENTER[def.centers[1]]}`
+            : ''
+          return `${ch.key}（${ch.name}${ends ? ` ${ends}` : ''}${centers}）`
+        })
+        .join('；')}`,
+    )
+  } else {
+    lines.push('已激活通道（0）：这张盘没有形成完整通道')
   }
-  if (selectedGates.value.length) {
-    parts.push('【闸门】')
-    for (const gate of selectedGates.value) {
-      const g = getGate(gate)
-      parts.push(`${g.title}（${g.keyword}）：${g.text}`)
-    }
+
+  if (c.hangingGates.length) {
+    lines.push(
+      `悬挂闸门（${c.hangingGates.length}）：${c.hangingGates
+        .map((g) => `${g}（${SHORT_CENTER[GATE_CENTER[g]]}）`)
+        .join('、')}`,
+    )
   }
-  if (selectedCenters.value.length) {
-    parts.push('【中心】')
-    for (const id of selectedCenters.value) {
-      const defined = props.chart.centers.find((c) => c.id === id)?.defined
-      const t = CENTER_TEXT[id]
-      parts.push(`${CENTER_LABELS[id]}（${defined ? '已定义' : '开放'}）：${defined ? t.defined : t.open}`)
-    }
+
+  // 用户所选对象 + 离线释义要点（同一块内逐行，不加小标题分段）
+  const detail: string[] = []
+  for (const key of selectedChannels.value) {
+    const t = getChannel(key)
+    const def = CHANNELS.find((d) => d.key === key)
+    const ends = def ? `${def.gates[0]}↔${def.gates[1]}（${SHORT_CENTER[def.centers[0]]}↔${SHORT_CENTER[def.centers[1]]}）` : ''
+    detail.push(`通道 ${key}${ends ? ` ${ends}` : ''}：${t.text}`)
   }
-  return parts.join('\n')
+  for (const gate of selectedGates.value) {
+    const g = getGate(gate)
+    detail.push(`闸门 ${gate} ${GATE_NAMES[gate]?.zh ?? ''}（${g.keyword}，${SHORT_CENTER[GATE_CENTER[gate]]}）：${g.text}`)
+  }
+  for (const id of selectedCenters.value) {
+    const isDefined = c.centers.find((x) => x.id === id)?.defined ?? false
+    const t = CENTER_TEXT[id]
+    detail.push(
+      `中心 ${CENTER_LABELS[id]}（${isDefined ? '已定义' : '开放'}）：${isDefined ? t.defined : t.open}`,
+    )
+  }
+
+  const head = `【整体解读 · ${total.value} 项】\n${lines.join('\n')}`
+  return detail.length ? `${head}\n\n${detail.join('\n')}` : head
 }
 
+/** 面板标题：与事实块标题保持一致（规范要求「整体解读 · N 项」） */
 function buildTitle(): string {
-  const bits: string[] = []
-  if (selectedChannels.value.length) bits.push(`${selectedChannels.value.length} 条通道`)
-  if (selectedGates.value.length) bits.push(`${selectedGates.value.length} 个闸门`)
-  if (selectedCenters.value.length) bits.push(`${selectedCenters.value.length} 个中心`)
-  return `已选 ${bits.join(' · ')} · AI 解读`
+  return `整体解读 · ${total.value} 项`
 }
 
 function requestAi() {
@@ -236,7 +279,7 @@ function onChannelClick(key: string) {
       </ul>
     </section>
 
-    <!-- 九中心 -->
+    <!-- 九中心：一行紧凑状态条（不再用大块 grid） -->
     <section v-if="sections.includes('centers')" class="card block">
       <header class="block-head">
         <div>
@@ -248,18 +291,20 @@ function onChannelClick(key: string) {
         </div>
       </header>
 
-      <ul class="center-grid">
+      <ul class="center-strip">
         <li v-for="c in centers" :key="c.id">
           <button
             type="button"
-            class="center-chip"
+            class="center-dot-btn"
             :class="{ on: selectedCenters.includes(c.id), defined: c.defined }"
-            :title="`${c.full}：${c.text}`"
+            :aria-pressed="selectedCenters.includes(c.id)"
+            :title="`${c.full}（${c.defined ? '已定义' : '开放'}）：${c.text}`"
             @click="toggleCenter(c.id)"
             @dblclick="emit('center-click', c.id)"
           >
+            <span class="dot" aria-hidden="true" />
             <span class="cname">{{ c.label }}</span>
-            <span class="state">{{ c.defined ? '定义' : '开放' }}</span>
+            <span class="sr-only">{{ c.defined ? '已定义' : '开放' }}</span>
           </button>
         </li>
       </ul>
@@ -465,61 +510,82 @@ function onChannelClick(key: string) {
   white-space: nowrap;
 }
 
-/* 中心 */
-.center-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: 6px;
-}
-
-.cname {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.center-chip {
+/* 九中心：一行紧凑状态条 */
+.center-strip {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-  width: 100%;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--glass-bg-soft);
-  font-size: calc(var(--fs-sm) * var(--font-scale));
+  gap: 2px 6px;
+}
+
+.center-dot-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 6px;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  font-size: calc(var(--fs-xs) * var(--font-scale));
   color: var(--text-secondary);
   transition:
     border-color var(--dur-fast) ease,
     background var(--dur-fast) ease;
 }
 
-.center-chip.defined {
+.center-dot-btn .dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  background: transparent;
+}
+
+/* 已定义：实心圆点 */
+.center-dot-btn.defined {
   color: var(--center-defined-color);
   font-weight: var(--center-defined-weight);
 }
 
-.center-chip:not(.defined) {
+.center-dot-btn.defined .dot {
+  background: currentColor;
+}
+
+/* 开放：虚线空心圆点 + 浅色 */
+.center-dot-btn:not(.defined) {
   color: var(--center-open-color);
   font-weight: var(--center-open-weight);
 }
 
-.center-chip .state {
-  color: inherit;
+.center-dot-btn:not(.defined) .dot {
+  border-style: dashed;
+  opacity: 0.8;
 }
 
-.center-chip.on {
+.center-dot-btn:hover {
+  background: rgba(16, 24, 40, 0.05);
+}
+
+.center-dot-btn.on {
   border-color: var(--owner-shared);
   background: rgba(124, 58, 237, 0.12);
+  color: var(--owner-shared);
 }
 
-.state {
-  flex: none;
-  font-size: calc(var(--fs-xs) * var(--font-scale));
-  color: var(--text-muted);
-  font-weight: 400;
+.cname {
   white-space: nowrap;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* 批量工具条 */

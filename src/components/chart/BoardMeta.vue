@@ -1,13 +1,12 @@
 <script setup lang="ts">
-/** 盘面基础信息：类型 / 策略 / 权威 / 人生角色 / 轮回交叉 / 定义型 / 九中心状态 */
+/**
+ * 盘面基础信息：类型 / 策略 / 权威 / 人生角色 / 定义型。
+ * 轮回交叉由 CrossPanel 独立展示，九中心由 ActivationPanels 的状态条展示，
+ * 这里不再重复（单盘页去重）。
+ */
 import { computed, ref } from 'vue'
-import type { BodyGraph, CenterId } from '../../types/hd'
-import {
-  AUTHORITY_LABELS,
-  CENTER_LABELS,
-  DEFINITION_LABELS,
-  TYPE_LABELS,
-} from '../../types/hd'
+import type { BodyGraph } from '../../types/hd'
+import { AUTHORITY_LABELS, DEFINITION_LABELS, TYPE_LABELS } from '../../types/hd'
 import { AUTHORITY_TEXT, TYPE_TEXT } from '../../services/interpretations'
 import { TYPE_DETAIL } from '../../services/typeDetail'
 
@@ -15,7 +14,7 @@ const props = defineProps<{
   chart: BodyGraph
   dense?: boolean
   /**
-   * 只展示结构（人生角色 + 九中心），隐藏类型 / 策略 / 权威 / 定义 / 轮回交叉。
+   * 只展示结构（人生角色），隐藏类型 / 策略 / 权威 / 定义 / 轮回交叉。
    * 用于凯龙回归盘等「扩展层」盘面：这些个体气场结论不属于该盘（规范 §3.9）。
    */
   hideConclusions?: boolean
@@ -25,30 +24,6 @@ const typeText = computed(() => TYPE_TEXT[props.chart.type])
 const typeDetail = computed(() => TYPE_DETAIL[props.chart.type])
 const detailOpen = ref(false)
 const authorityText = computed(() => AUTHORITY_TEXT[props.chart.authority])
-const definedCenters = computed(() =>
-  props.chart.centers.filter((c) => c.defined).map((c) => c.id),
-)
-const openCenters = computed(() => props.chart.centers.filter((c) => !c.defined).map((c) => c.id))
-
-const SHORT_CENTER: Record<CenterId, string> = {
-  head: '头顶',
-  ajna: '眉心',
-  throat: '喉咙',
-  g: 'G',
-  heart: '心',
-  spleen: '脾',
-  sacral: '骶骨',
-  solar: '情绪',
-  root: '根',
-}
-
-function centerLabel(id: CenterId) {
-  return SHORT_CENTER[id]
-}
-
-function centerFull(id: CenterId) {
-  return CENTER_LABELS[id]
-}
 </script>
 
 <template>
@@ -79,10 +54,6 @@ function centerFull(id: CenterId) {
       <div v-if="!hideConclusions">
         <dt class="t-xs">定义</dt>
         <dd class="t-body">{{ DEFINITION_LABELS[chart.definition] }}</dd>
-      </div>
-      <div v-if="!hideConclusions">
-        <dt class="t-xs">轮回交叉</dt>
-        <dd class="t-body t-mono small">{{ chart.incarnationCross }}</dd>
       </div>
     </dl>
 
@@ -130,24 +101,6 @@ function centerFull(id: CenterId) {
           </ul>
         </section>
       </div>
-    </div>
-
-    <div class="centers">
-      <p class="t-xs">九中心</p>
-      <ul class="chips">
-        <li
-          v-for="c in chart.centers"
-          :key="c.id"
-          class="chip"
-          :class="c.defined ? 'on' : 'off'"
-          :title="`${centerFull(c.id)} · ${c.defined ? '已定义' : '开放'}`"
-        >
-          {{ centerLabel(c.id) }}
-        </li>
-      </ul>
-      <p class="t-xs muted">
-        已定义 {{ definedCenters.length }} / 开放 {{ openCenters.length }}
-      </p>
     </div>
   </section>
 </template>
@@ -235,39 +188,6 @@ function centerFull(id: CenterId) {
   margin-top: 6px;
   border-radius: 50%;
   background: var(--text-muted);
-}
-
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 6px 0;
-}
-
-.chip {
-  padding: 2px 8px;
-  border-radius: var(--radius-pill);
-  font-size: calc(var(--fs-xs) * var(--font-scale));
-  border: 1px solid var(--border);
-}
-
-.chip.on {
-  background: var(--hd-center-defined);
-  border-color: var(--hd-center-defined);
-  /* 定义态字体颜色 / 加粗：可在设置页自定义 */
-  color: var(--center-defined-color);
-  font-weight: var(--center-defined-weight);
-}
-:root[data-theme='dark'] .chip.on {
-  background: var(--hd-center-defined);
-  color: var(--center-defined-color);
-}
-
-.chip.off {
-  /* 开放态字体颜色 / 加粗：可在设置页自定义 */
-  color: var(--center-open-color);
-  font-weight: var(--center-open-weight);
-  border-style: dashed;
 }
 
 .muted {
