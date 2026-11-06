@@ -10,8 +10,9 @@ import { useBoardStore } from '../stores/board'
 import { useUiStore } from '../stores/ui'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { useAiReading } from '../composables/useAiReading'
+import { copyAiResult, saveAiResult } from '../composables/useAiResultActions'
 import { getChannel, getGate, CENTER_TEXT } from '../services/interpretations'
-import { CENTER_LABELS, type CenterId } from '../types/hd'
+import { CENTER_LABELS, type Archive, type CenterId } from '../types/hd'
 import AppToolbar from '../components/base/AppToolbar.vue'
 import HumanDesignBodyGraph from '../components/chart/HumanDesignBodyGraph.vue'
 import StarList from '../components/chart/StarList.vue'
@@ -27,7 +28,13 @@ const archiveStore = useArchiveStore()
 const board = useBoardStore()
 const ui = useUiStore()
 const { isMobile } = useBreakpoint()
-const { state: aiState, run: runAi } = useAiReading()
+const {
+  state: aiState,
+  run: runAi,
+  retry: retryAi,
+  abort: abortAi,
+  configured: aiConfigured,
+} = useAiReading()
 
 const filter = { showDecimals: true, showColorToneBase: true, sharedOnly: false }
 
@@ -55,17 +62,21 @@ watch(
   { immediate: true },
 )
 
+/** 保留所有仍存在的档案；缺盘面的那一栏显示空态，而不是整栏消失 */
 const columns = computed(() =>
   ids.value
     .map((id) => archiveStore.byId(id))
-    .filter((a): a is NonNullable<typeof a> => Boolean(a?.chart)),
+    .filter((a): a is Archive => Boolean(a)),
 )
 
 const panelChart = computed(() => {
   const sel = ui.panel
-  if (!sel) return columns.value[0]?.chart
+  if (!sel) return columns.value.find((c) => c.chart)?.chart
   const id = sel.source === 'b' ? columns.value[1]?.id : columns.value[0]?.id
-  const archive = columns.value.find((c) => c.id === id) ?? columns.value[0]
+  const archive =
+    columns.value.find((c) => c.id === id) ??
+    columns.value.find((c) => c.chart) ??
+    columns.value[0]
   return archive?.chart
 })
 
@@ -101,6 +112,14 @@ async function requestAi() {
     offline: offlineText.value,
     chart: panelChart.value,
   })
+}
+
+function copyAi() {
+  void copyAiResult(aiState.value.content)
+}
+
+function saveAi() {
+  saveAiResult({ title: aiState.value.title, content: aiState.value.content })
 }
 
 function closeOne(id: string) {
@@ -165,6 +184,13 @@ function goSettings() {
               @channel-click="ui.openChannel($event, 'single')"
               @center-click="ui.openCenter($event, 'single')"
             />
+            <p v-else class="t-sm msg-warning col-empty">
+              {{
+                archive.chartError
+                  ? `重算失败：${archive.chartError}`
+                  : '这份档案还没有可用的人类图，可到设置页「重新生成全部图表」重试。'
+              }}
+            </p>
           </div>
 
           <StarList
@@ -198,10 +224,13 @@ function goSettings() {
       :content="aiState.content"
       :loading="aiState.loading"
       :error="aiState.error"
+      :configured="aiConfigured"
       @close="ui.closeAi()"
-      @copy="() => {}"
-      @save="() => {}"
-      @regenerate="requestAi"
+      @copy="copyAi"
+      @save="saveAi"
+      @regenerate="retryAi"
+      @cancel="abortAi"
+      @settings="goSettings"
     />
   </div>
 </template>
@@ -260,5 +289,11 @@ function goSettings() {
 .meta {
   padding: var(--sp-3);
   border-top: 1px solid var(--border);
+}
+
+.col-empty {
+  padding: var(--sp-4);
+  text-align: center;
+  line-height: 1.6;
 }
 </style>

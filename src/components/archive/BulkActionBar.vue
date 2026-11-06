@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** 批量操作条：选中 ≥1 出现；选中 2 时高亮「生成合盘」（DESIGN.md §4.3） */
 const props = defineProps<{ count: number }>()
-const emit = defineEmits<{ open: []; composite: []; clear: [] }>()
+const emit = defineEmits<{ open: []; composite: []; remove: []; clear: [] }>()
 </script>
 
 <template>
@@ -19,6 +19,7 @@ const emit = defineEmits<{ open: []; composite: []; clear: [] }>()
       >
         生成合盘
       </button>
+      <button type="button" class="btn danger" @click="emit('remove')">删除选中</button>
       <button type="button" class="btn ghost" @click="emit('clear')">清空</button>
     </div>
   </Transition>
@@ -30,6 +31,8 @@ const emit = defineEmits<{ open: []; composite: []; clear: [] }>()
   bottom: var(--sp-4);
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
   margin: 0 auto;
@@ -72,6 +75,16 @@ const emit = defineEmits<{ open: []; composite: []; clear: [] }>()
 .btn.ghost {
   border-color: transparent;
   color: var(--text-muted);
+}
+
+.btn.danger {
+  border-color: var(--status-error);
+  color: var(--status-error);
+}
+
+.btn.danger:hover {
+  background: var(--status-error);
+  color: #fff;
 }
 
 .pop-enter-active,

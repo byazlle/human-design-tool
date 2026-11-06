@@ -81,12 +81,20 @@ BODY = f"""## 本次更新
 
 
 def token():
+    """读取 .env 中的 GitHub Token。
+
+    兼容多种写法（历史 .env 曾用 `githubAPI：ghp_xxx` 全角冒号、单行无换行）：
+      1) GITHUB_TOKEN=xxx / GITHUB_TOKEN: xxx
+      2) 任意含 ghp_ / github_pat_ 前缀的行（兜底提取）
+    """
+    import re
     path = os.path.join(ROOT, '.env')
     with io.open(path, encoding='utf-8') as fh:
-        for line in fh:
-            if line.startswith('GITHUB_TOKEN='):
-                return line.split('=', 1)[1].strip().strip('"')
-    raise SystemExit('未找到 GITHUB_TOKEN')
+        text = fh.read()
+    m = re.search(r'(ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})', text)
+    if m:
+        return m.group(1)
+    raise SystemExit('未找到 GitHub Token（.env 中需含 GITHUB_TOKEN=... 或 ghp_ 开头的密钥）')
 
 
 def api(path, method='GET', data=None, headers=None):

@@ -13,22 +13,17 @@ import { useCompositeStore } from '../stores/board'
 import { useUiStore } from '../stores/ui'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { useAiReading } from '../composables/useAiReading'
+import { copyAiResult, saveAiResult } from '../composables/useAiResultActions'
 import {
   COMPOSITE_DIMENSIONS,
   customDimension,
   type CompositeDimension,
 } from '../services/compositeDimensions'
 import { composite, mergedAsChart } from '../engine/composite'
+import { relationshipTheme } from '../services/relationshipTheme'
 import { getChannel, getGate, CENTER_TEXT } from '../services/interpretations'
 import { CHANNEL_BY_KEY } from '../engine/gateData'
-import {
-  AUTHORITY_LABELS,
-  CENTER_LABELS,
-  DEFINITION_LABELS,
-  TYPE_LABELS,
-  type CenterId,
-  type Ownership,
-} from '../types/hd'
+import { CENTER_LABELS, type CenterId, type Ownership } from '../types/hd'
 import AppToolbar from '../components/base/AppToolbar.vue'
 import CompositeColumn from '../components/composite/CompositeColumn.vue'
 import CompositeToolbar from '../components/composite/CompositeToolbar.vue'
@@ -47,7 +42,13 @@ const archiveStore = useArchiveStore()
 const compositeStore = useCompositeStore()
 const ui = useUiStore()
 const { isMobile } = useBreakpoint()
-const { state: aiState, run: runAi } = useAiReading()
+const {
+  state: aiState,
+  run: runAi,
+  retry: retryAi,
+  abort: abortAi,
+  configured: aiConfigured,
+} = useAiReading()
 
 const dimensionKey = ref('love')
 const customTopic = ref('')
@@ -64,12 +65,15 @@ const bId = computed(() => String(route.params.bId ?? ''))
 const archiveA = computed(() => archiveStore.byId(aId.value))
 const archiveB = computed(() => archiveStore.byId(bId.value))
 
+/** 前置条件：必须是两位不同的人。手改 URL 为 /composite/X/X 时在此拦截。 */
+const invalidPair = computed(() => !aId.value || !bId.value || aId.value === bId.value)
+
 watch(
   [aId, bId],
   ([a, b]) => {
     if (a) archiveStore.ensureChart(a)
     if (b) archiveStore.ensureChart(b)
-    if (a && b) compositeStore.setPair(a, b)
+    if (a && b && a !== b) compositeStore.setPair(a, b)
   },
   { immediate: true },
 )
@@ -77,14 +81,58 @@ watch(
 const ready = computed(() => Boolean(archiveA.value?.chart && archiveB.value?.chart))
 
 const result = computed(() => {
+  if (invalidPair.value) return null
   const a = archiveA.value?.chart
   const b = archiveB.value?.chart
   if (!a || !b) return null
-  return composite(a, b)
+  // 规范 §3.8：同一 Archive.id 视为同一人（副本/重算后对象不同但 id 相同）
+  return composite(a, b, { aId: aId.value, bId: bId.value })
+})
+
+/** 关系主题：离线结论，不依赖 AI */
+const theme = computed(() => (result.value ? relationshipTheme(result.value) : []))
+
+/** 四象限分组（渲染用） */
+const quadrants = computed(() => {
+  const r = result.value
+  if (!r) return []
+  const groups: Array<{ key: string; label: string; hint: string; items: string[] }> = [
+    { key: 'both', label: '双方都定义', hint: '各自稳定，也各有主见', items: [] },
+    { key: 'onlyA', label: '仅 A 定义', hint: 'B 在此更易受 A 影响', items: [] },
+    { key: 'onlyB', label: '仅 B 定义', hint: 'A 在此更易受 B 影响', items: [] },
+    { key: 'open', label: '双方都开放', hint: '一起放大，也一起失焦', items: [] },
+  ]
+  for (const c of r.centerQuadrant) {
+    const g = groups.find((x) => x.key === c.state)
+    if (g) g.items.push(CENTER_LABELS[c.id])
+  }
+  return groups
 })
 
 const mergedChart = computed(() => (result.value ? mergedAsChart(result.value) : null))
 const filters = computed(() => compositeStore.filters)
+
+/**
+ * 合盘的 AI 事实摘要：规范 §3.8 只允许
+ * 中心四象限 / 共享·独有闸门通道数 / 四类关系通道计数 / 双方各自 profile。
+ * 严禁出现合图类型、权威、定义型、轮回交叉。
+ */
+const compositeSummary = computed(() => {
+  const r = result.value
+  if (!r) return ''
+  const quadCount = (state: string) => r.centerQuadrant.filter((c) => c.state === state).length
+  const sharedChannelCount = r.sharedChannels.length
+  const onlyA = r.merged.channels.filter((c) => c.owners.length === 1 && c.owners[0] === 'a').length
+  const onlyB = r.merged.channels.filter((c) => c.owners.length === 1 && c.owners[0] === 'b').length
+  const relCount = (type: string) => r.relationshipChannels.filter((c) => c.type === type).length
+  return [
+    `双方人生角色：A ${r.a.profile} × B ${r.b.profile}`,
+    `中心四象限：双方都定义 ${quadCount('both')} · 仅 A 定义 ${quadCount('onlyA')} · 仅 B 定义 ${quadCount('onlyB')} · 双方都开放 ${quadCount('open')}`,
+    `通道：共享 ${sharedChannelCount} 条 · A 独有 ${onlyA} 条 · B 独有 ${onlyB} 条`,
+    `共享闸门：${r.sharedGates.length} 个`,
+    `关系通道：电磁 ${relCount('electromagnetic')} · 同伴 ${relCount('companionship')} · 主导 ${relCount('dominance')} · 妥协 ${relCount('compromise')}`,
+  ].join('\n')
+})
 
 /** 手机端当前 Tab */
 const mobileTab = ref<'a' | 'b' | 'merged'>('merged')
@@ -144,6 +192,7 @@ async function requestSelectionAi() {
     ref: String(sel.ref),
     title: `${title} · 合盘视角解读`,
     offline: offlineText.value,
+    chartSummary: compositeSummary.value,
     chart: mergedChart.value ?? undefined,
   })
 }
@@ -152,7 +201,6 @@ async function requestFullAi() {
   if (!result.value || !archiveA.value || !archiveB.value) return
   const r = result.value
   const dim = activeDimension.value
-  const cp = r.composite
 
   const REL_LABELS: Record<string, string> = {
     electromagnetic: '电磁通道（互补吸引）',
@@ -171,14 +219,18 @@ async function requestFullAi() {
     return `${REL_LABELS[t]}（${list.length}）：${items || '无'}`
   })
 
+  const quadLines = quadrants.value.map(
+    (g) => `${g.label}（${g.items.length}）：${g.items.join('、') || '无'}`,
+  )
+
   const offline = [
-    `合盘双方：${archiveA.value.name}（${TYPE_LABELS[r.a.type]} ${r.a.profile}，权威 ${AUTHORITY_LABELS[r.a.authority]}） × ${archiveB.value.name}（${TYPE_LABELS[r.b.type]} ${r.b.profile}，权威 ${AUTHORITY_LABELS[r.b.authority]}）`,
+    `合盘双方：${archiveA.value.name}（人生角色 ${r.a.profile}） × ${archiveB.value.name}（人生角色 ${r.b.profile}）`,
     '',
-    '【合图：第三个能量场】',
-    `合并后能量类型：${TYPE_LABELS[cp.type]}`,
-    `合并后定义：${DEFINITION_LABELS[cp.definition]}（${cp.centers.filter((c) => c.defined).length} 个中心有定义）`,
-    `合并后内在权威：${AUTHORITY_LABELS[cp.authority]}`,
-    `合图轮回交叉：${cp.incarnationCross}（以 ${archiveA.value.name} 太阳轴为意识侧、${archiveB.value.name} 太阳轴为设计侧）`,
+    '【中心四象限（关系影响方向）】',
+    ...quadLines,
+    `合并后共 ${r.merged.centers.filter((c) => c.defined).length} 个中心被定义`,
+    '',
+    '【口径约束】合盘只讨论影响力方向、共鸣区、共同放大区与四类连接通道；个体层面的结论不进入关系场。',
     '',
     '【四类关系通道】',
     ...relLines,
@@ -200,6 +252,7 @@ async function requestFullAi() {
     ref: dim.key === 'custom' ? customTopic.value.trim() || 'custom' : dim.key,
     title: `合盘解读 · ${dim.label}`,
     offline,
+    chartSummary: compositeSummary.value,
     chart: mergedChart.value ?? undefined,
   })
 }
@@ -240,6 +293,14 @@ function goNew() {
 function goSettings() {
   router.push('/settings')
 }
+
+function copyAi() {
+  void copyAiResult(aiState.value.content)
+}
+
+function saveAi() {
+  saveAiResult({ title: aiState.value.title, content: aiState.value.content })
+}
 </script>
 
 <template>
@@ -247,9 +308,17 @@ function goSettings() {
     <AppToolbar title="合盘" back-label="档案库" @back="goBack" @new="goNew" @settings="goSettings" @help="ui.notify('蓝 = A 独有，橙 = B 独有，紫 = 双方共享。开启「仅看共享通道」只改变显示，不改变数据。')" />
 
     <EmptyState
-      v-if="!ready || !result || !mergedChart"
+      v-if="invalidPair"
+      title="合盘需要两位不同的人"
+      desc="当前路径指向的是同一份档案。请返回档案库，勾选两份不同的档案后点击「生成合盘」。"
+      action-label="返回档案库"
+      @action="goBack"
+    />
+
+    <EmptyState
+      v-else-if="!ready || !result || !mergedChart"
       title="无法生成合盘"
-      desc="需要两份已生成的档案。请返回档案库，勾选恰好两份后点击「生成合盘」。"
+      desc="需要两份已生成的档案。若其中一份已被删除或重算失败，请返回档案库重新选择两份档案。"
       action-label="返回档案库"
       @action="goBack"
     />
@@ -397,41 +466,34 @@ function goSettings() {
           <div class="mobile-spacer" />
         </div>
 
-        <!-- 合图扩容信息（电脑端 / 手机端一致） -->
+        <!-- 合盘结论：关系主题 + 中心四象限
+             注意：这里不输出「能量类型 / 内在权威 / 轮回交叉」——
+             类型与权威属个体属性，关系场没有类型；交叉由个体四闸门构成。 -->
         <div class="info-grid">
           <section class="card info-card">
-            <h3 class="t-title">合图 · 第三个能量场</h3>
-            <dl class="cp-facts">
-              <div>
-                <dt class="t-xs">能量类型</dt>
-                <dd class="t-body">{{ TYPE_LABELS[result.composite.type] }}</dd>
+            <h3 class="t-title">关系主题</h3>
+            <div class="theme-blocks">
+              <div v-for="b in theme" :key="b.h" class="theme-block">
+                <p class="t-sm theme-h">{{ b.h }}</p>
+                <p class="t-sm theme-p">{{ b.p }}</p>
               </div>
-              <div>
-                <dt class="t-xs">整体定义</dt>
-                <dd class="t-body">{{ DEFINITION_LABELS[result.composite.definition] }}</dd>
-              </div>
-              <div>
-                <dt class="t-xs">内在权威</dt>
-                <dd class="t-body">{{ AUTHORITY_LABELS[result.composite.authority] }}</dd>
-              </div>
-              <div>
-                <dt class="t-xs">轮回交叉</dt>
-                <dd class="t-body t-mono small">{{ result.composite.incarnationCross }}</dd>
-              </div>
-            </dl>
-            <div class="centers">
-              <p class="t-xs">九中心</p>
-              <ul class="chips">
-                <li
-                  v-for="c in result.composite.centers"
-                  :key="c.id"
-                  class="chip"
-                  :class="c.defined ? 'on' : 'off'"
-                >
-                  {{ CENTER_LABELS[c.id] }} · {{ c.defined ? '定义' : '开放' }}
-                </li>
-              </ul>
             </div>
+          </section>
+
+          <section class="card info-card">
+            <h3 class="t-title">中心四象限</h3>
+            <p class="t-xs muted quad-lead">
+              并集只说「合起来定义了哪些」，四象限才说「谁在影响谁」。
+            </p>
+            <ul class="quad">
+              <li v-for="g in quadrants" :key="g.key" class="quad-row">
+                <div class="quad-head">
+                  <span class="quad-label">{{ g.label }}</span>
+                  <span class="t-xs muted">{{ g.hint }}</span>
+                </div>
+                <p class="t-sm">{{ g.items.length ? g.items.join('、') : '—' }}</p>
+              </li>
+            </ul>
           </section>
 
           <section class="card info-card">
@@ -494,10 +556,13 @@ function goSettings() {
       :content="aiState.content"
       :loading="aiState.loading"
       :error="aiState.error"
+      :configured="aiConfigured"
       @close="ui.closeAi()"
-      @copy="() => {}"
-      @save="() => {}"
-      @regenerate="requestFullAi"
+      @copy="copyAi"
+      @save="saveAi"
+      @regenerate="retryAi"
+      @cancel="abortAi"
+      @settings="goSettings"
     />
   </div>
 </template>
@@ -779,5 +844,53 @@ function goSettings() {
   .grid3 {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── 关系主题 ── */
+.theme-blocks {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-top: var(--sp-2);
+}
+.theme-block {
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--border);
+}
+.theme-h {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.theme-p {
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+/* ── 中心四象限 ── */
+.quad-lead {
+  margin: var(--sp-1) 0 var(--sp-2);
+}
+.quad {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.quad-row {
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+.quad-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: 2px;
+}
+.quad-label {
+  font-size: calc(var(--fs-sm) * var(--font-scale));
+  font-weight: 600;
+  color: var(--text-primary);
 }
 </style>

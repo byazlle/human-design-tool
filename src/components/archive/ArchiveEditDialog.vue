@@ -4,6 +4,7 @@ import { computed, reactive, watch } from 'vue'
 import type { Archive } from '../../types/hd'
 import { useArchiveStore } from '../../stores/archive'
 import { useUiStore } from '../../stores/ui'
+import { validateBirth } from '../../services/validate'
 import HdButton from '../base/HdButton.vue'
 
 const props = defineProps<{ open: boolean; archive: Archive | null }>()
@@ -44,20 +45,39 @@ watch(
   { immediate: true },
 )
 
-const valid = computed(
-  () =>
-    form.name.trim().length > 0 &&
-    form.year > 1900 &&
-    form.year < 2100 &&
-    form.month >= 1 &&
-    form.month <= 12 &&
-    form.day >= 1 &&
-    form.day <= 31 &&
-    form.hour >= 0 &&
-    form.hour <= 23 &&
-    form.minute >= 0 &&
-    form.minute <= 59,
+/**
+ * 校验统一走 `validateBirth`（与导入/计算层同一套规则）：
+ * 含按月天数（2 月 31 日会被拒）、年份 1900–2100、时区可识别等。
+ */
+const birthIssues = computed<string[]>(() =>
+  validateBirth({
+    year: Number(form.year),
+    month: Number(form.month),
+    day: Number(form.day),
+    hour: Number(form.hour),
+    minute: Number(form.minute),
+    second: props.archive?.birth.second ?? 0,
+    timezone: form.timezone,
+  }),
 )
+
+/** 把整体校验结果按字段归位，供行内提示使用 */
+const fieldErrors = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {}
+  for (const msg of birthIssues.value) {
+    if (msg.includes('年份')) map.year ??= msg
+    else if (msg.includes('月份')) map.month ??= msg
+    else if (msg.includes('日期')) map.day ??= msg
+    else if (msg.includes('小时')) map.hour ??= msg
+    else if (msg.includes('分钟')) map.minute ??= msg
+    else if (msg.includes('时区')) map.timezone ??= msg
+    else map.common ??= msg
+  }
+  return map
+})
+
+const nameError = computed(() => (form.name.trim() ? '' : '请填写名称'))
+const valid = computed(() => !nameError.value && birthIssues.value.length === 0)
 
 function save() {
   if (!props.archive || !valid.value) return
@@ -78,7 +98,7 @@ function save() {
       lng: Number(form.lng),
     },
   })
-  ui.notify('已保存，盘面已按新出生信息重算', 'success')
+  ui.notify(archiveStore.persistError ?? '已保存，盘面已按新出生信息重算', archiveStore.persistError ? 'error' : 'success')
   emit('close')
 }
 </script>
@@ -96,41 +116,50 @@ function save() {
         </header>
 
         <div class="body">
-          <label class="field">
+          <label class="field" :class="{ 'has-error': nameError }">
             <span class="t-xs">姓名 / 标题</span>
             <input v-model="form.name" type="text" maxlength="24" />
+            <span v-if="nameError" class="t-xs msg-error">{{ nameError }}</span>
           </label>
 
           <div class="grid3">
-            <label class="field">
+            <label class="field" :class="{ 'has-error': fieldErrors.year }">
               <span class="t-xs">年</span>
               <input v-model.number="form.year" type="number" min="1901" max="2099" />
+              <span v-if="fieldErrors.year" class="t-xs msg-error">{{ fieldErrors.year }}</span>
             </label>
-            <label class="field">
+            <label class="field" :class="{ 'has-error': fieldErrors.month }">
               <span class="t-xs">月</span>
               <input v-model.number="form.month" type="number" min="1" max="12" />
+              <span v-if="fieldErrors.month" class="t-xs msg-error">{{ fieldErrors.month }}</span>
             </label>
-            <label class="field">
+            <label class="field" :class="{ 'has-error': fieldErrors.day }">
               <span class="t-xs">日</span>
               <input v-model.number="form.day" type="number" min="1" max="31" />
+              <span v-if="fieldErrors.day" class="t-xs msg-error">{{ fieldErrors.day }}</span>
             </label>
           </div>
 
           <div class="grid2">
-            <label class="field">
+            <label class="field" :class="{ 'has-error': fieldErrors.hour }">
               <span class="t-xs">时</span>
               <input v-model.number="form.hour" type="number" min="0" max="23" />
+              <span v-if="fieldErrors.hour" class="t-xs msg-error">{{ fieldErrors.hour }}</span>
             </label>
-            <label class="field">
+            <label class="field" :class="{ 'has-error': fieldErrors.minute }">
               <span class="t-xs">分</span>
               <input v-model.number="form.minute" type="number" min="0" max="59" />
+              <span v-if="fieldErrors.minute" class="t-xs msg-error">{{ fieldErrors.minute }}</span>
             </label>
           </div>
 
-          <label class="field">
+          <label class="field" :class="{ 'has-error': fieldErrors.timezone }">
             <span class="t-xs">时区</span>
             <input v-model="form.timezone" type="text" placeholder="Asia/Shanghai" />
+            <span v-if="fieldErrors.timezone" class="t-xs msg-error">{{ fieldErrors.timezone }}</span>
           </label>
+
+          <p v-if="fieldErrors.common" class="t-xs msg-error">{{ fieldErrors.common }}</p>
 
           <label class="field">
             <span class="t-xs">出生地</span>
@@ -222,6 +251,11 @@ function save() {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+}
+
+/* 行内校验失败：输入框描边变红（U-24） */
+.field.has-error input {
+  border-color: var(--status-error);
 }
 
 .field input {

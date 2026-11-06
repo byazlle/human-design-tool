@@ -11,7 +11,15 @@ import {
 import { AUTHORITY_TEXT, TYPE_TEXT } from '../../services/interpretations'
 import { TYPE_DETAIL } from '../../services/typeDetail'
 
-const props = defineProps<{ chart: BodyGraph; dense?: boolean }>()
+const props = defineProps<{
+  chart: BodyGraph
+  dense?: boolean
+  /**
+   * 只展示结构（人生角色 + 九中心），隐藏类型 / 策略 / 权威 / 定义 / 轮回交叉。
+   * 用于凯龙回归盘等「扩展层」盘面：这些个体气场结论不属于该盘（规范 §3.9）。
+   */
+  hideConclusions?: boolean
+}>()
 
 const typeText = computed(() => TYPE_TEXT[props.chart.type])
 const typeDetail = computed(() => TYPE_DETAIL[props.chart.type])
@@ -46,7 +54,7 @@ function centerFull(id: CenterId) {
 <template>
   <section class="meta" :class="{ dense }">
     <div class="hero">
-      <div>
+      <div v-if="!hideConclusions">
         <p class="t-xs">类型 TYPE</p>
         <h2 class="type">{{ TYPE_LABELS[chart.type] }}</h2>
         <p class="t-sm en">{{ chart.type }}</p>
@@ -57,22 +65,22 @@ function centerFull(id: CenterId) {
       </div>
     </div>
 
-    <p class="t-body desc" v-if="!dense">{{ typeText.desc }}</p>
+    <p class="t-body desc" v-if="!dense && !hideConclusions">{{ typeText.desc }}</p>
 
     <dl class="facts">
-      <div>
+      <div v-if="!hideConclusions">
         <dt class="t-xs">策略</dt>
         <dd class="t-body">{{ chart.strategy || typeText.strategy }}</dd>
       </div>
-      <div>
+      <div v-if="!hideConclusions">
         <dt class="t-xs">内在权威</dt>
         <dd class="t-body">{{ AUTHORITY_LABELS[chart.authority] }}</dd>
       </div>
-      <div>
+      <div v-if="!hideConclusions">
         <dt class="t-xs">定义</dt>
         <dd class="t-body">{{ DEFINITION_LABELS[chart.definition] }}</dd>
       </div>
-      <div>
+      <div v-if="!hideConclusions">
         <dt class="t-xs">轮回交叉</dt>
         <dd class="t-body t-mono small">{{ chart.incarnationCross }}</dd>
       </div>

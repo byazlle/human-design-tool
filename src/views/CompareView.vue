@@ -48,6 +48,16 @@ function syncRoute() {
 const archiveA = computed(() => all.value.find((a) => a.id === aId.value) ?? null)
 const archiveB = computed(() => all.value.find((a) => a.id === bId.value) ?? null)
 
+/** 缺盘面的档案在这里补算，避免左右栏出现空白 */
+watch(
+  [aId, bId],
+  ([a, b]) => {
+    if (a) archiveStore.ensureChart(a)
+    if (b) archiveStore.ensureChart(b)
+  },
+  { immediate: true },
+)
+
 /** 防止两边选同一人：一侧选中后，另一侧若冲突则自动换到下一个可用档案 */
 watch(aId, (v) => {
   if (v && v === bId.value) {
@@ -108,6 +118,13 @@ function goSettings() {
             @center-click="ui.openCenter($event, 'single')"
           />
         </div>
+        <p v-else class="pane-empty t-sm msg-warning">
+          {{
+            archiveA?.chartError
+              ? `重算失败：${archiveA.chartError}`
+              : '这份档案还没有可用的人类图，可在设置页「重新生成全部图表」重试。'
+          }}
+        </p>
       </section>
 
       <section class="card pane">
@@ -128,6 +145,13 @@ function goSettings() {
             @center-click="ui.openCenter($event, 'single')"
           />
         </div>
+        <p v-else class="pane-empty t-sm msg-warning">
+          {{
+            archiveB?.chartError
+              ? `重算失败：${archiveB.chartError}`
+              : '这份档案还没有可用的人类图，可在设置页「重新生成全部图表」重试。'
+          }}
+        </p>
       </section>
     </main>
   </div>
@@ -182,6 +206,12 @@ function goSettings() {
   width: 100%;
   height: auto;
   max-height: 78vh;
+}
+
+.pane-empty {
+  padding: var(--sp-4);
+  text-align: center;
+  line-height: 1.6;
 }
 
 @media (max-width: 860px) {

@@ -8,6 +8,7 @@ defineProps<{ archives: Archive[]; selectedIds: string[] }>()
 
 const emit = defineEmits<{
   open: [id: string]
+  remove: [id: string]
   'toggle-select': [id: string]
 }>()
 </script>
@@ -44,6 +45,9 @@ const emit = defineEmits<{
             <template v-if="archive.chart">
               {{ TYPE_LABELS[archive.chart.type] }} · {{ archive.chart.profile }}
             </template>
+            <span v-else-if="archive.chartError" class="fail-badge" :title="archive.chartError">
+              重算失败
+            </span>
             <template v-else>未生成</template>
           </span>
           <span class="t-xs t-mono">
@@ -55,6 +59,18 @@ const emit = defineEmits<{
             }}
           </span>
         </span>
+      </button>
+
+      <button
+        type="button"
+        class="remove"
+        aria-label="删除该档案"
+        title="删除该档案"
+        @click.stop="emit('remove', archive.id)"
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13M10 11v6M14 11v6" />
+        </svg>
       </button>
     </li>
   </ul>
@@ -135,5 +151,33 @@ const emit = defineEmits<{
 .name {
   font-size: calc(var(--fs-body) * var(--font-scale));
   font-weight: 600;
+}
+
+/* 重算失败角标（U-15） */
+.fail-badge {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--status-error);
+  color: #fff;
+  font-size: calc(var(--fs-xs) * var(--font-scale));
+  line-height: 1.6;
+}
+
+.remove {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  color: var(--status-error);
+}
+
+.remove:hover {
+  border-color: var(--status-error);
+  background: var(--surface-2);
 }
 </style>

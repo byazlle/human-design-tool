@@ -20,11 +20,23 @@ export interface AiReadingState {
   error: string | null
 }
 
+export interface ToastAction {
+  label: string
+  onClick: () => void
+}
+
+export interface ToastOptions {
+  /** toast 内可点击的动作（如「撤销」） */
+  action?: ToastAction
+  /** 停留毫秒数，默认 2600 */
+  duration?: number
+}
+
 interface UiState {
   panel: PanelSelection | null
   drawerOpen: boolean
   aiReading: AiReadingState
-  toast: { text: string; kind: 'info' | 'success' | 'error' } | null
+  toast: { text: string; kind: 'info' | 'success' | 'error'; action?: ToastAction } | null
 }
 
 export const useUiStore = defineStore('ui', {
@@ -75,6 +87,14 @@ export const useUiStore = defineStore('ui', {
     setAiLoading(loading: boolean) {
       this.aiReading.loading = loading
     },
+    /**
+     * 重新生成同一面板：保留已展示的旧内容，只标记 loading 并清掉旧错误。
+     * （对应 U-20：失败时不应把上一次的解读清空）
+     */
+    beginRegenerate() {
+      this.aiReading.loading = true
+      this.aiReading.error = null
+    },
     setAiContent(content: string) {
       this.aiReading.content = content
       this.aiReading.loading = false
@@ -88,11 +108,21 @@ export const useUiStore = defineStore('ui', {
       this.aiReading.open = false
     },
 
-    notify(text: string, kind: 'info' | 'success' | 'error' = 'info') {
-      this.toast = { text, kind }
+    notify(text: string, kind: 'info' | 'success' | 'error' = 'info', options: ToastOptions = {}) {
+      const duration = options.duration ?? 2600
+      this.toast = { text, kind, action: options.action }
       window.setTimeout(() => {
         if (this.toast?.text === text) this.toast = null
-      }, 2600)
+      }, duration)
+    },
+    /** 执行 toast 上的动作（并立即关闭 toast） */
+    runToastAction() {
+      const action = this.toast?.action
+      this.toast = null
+      action?.onClick()
+    },
+    clearToast() {
+      this.toast = null
     },
   },
 })

@@ -114,14 +114,28 @@ function parseDraft(): { draft: Draft | null; error?: string } {
   return { draft: { year: y, month: m, day: d, hour: hh, minute: mm, second: ss } }
 }
 
-/** 实时预览：输入合法即算，异常静默（不打扰输入过程） */
-const preview = computed<BodyGraph | null>(() => {
+/** 实时预览：输入合法即算；计算异常要可见（不能静默吞掉） */
+interface PreviewState {
+  chart: BodyGraph | null
+  error: string | null
+}
+
+const preview = computed<PreviewState>(() => {
   const { draft } = parseDraft()
-  if (!draft) return null
+  if (!draft) return { chart: null, error: null }
   try {
-    return computeChart({ ...draft, timezone: form.timezone, lat: location.value.lat, lng: location.value.lng })
-  } catch {
-    return null
+    return {
+      chart: computeChart({
+        ...draft,
+        timezone: form.timezone,
+        lat: location.value.lat,
+        lng: location.value.lng,
+      }),
+      error: null,
+    }
+  } catch (err) {
+    console.warn('[EntryView] 实时预览计算失败', err)
+    return { chart: null, error: `实时预览计算失败：${(err as Error).message || '未知错误'}` }
   }
 })
 
@@ -154,20 +168,42 @@ function onParseId() {
   idWarning.value = !form.birthTime
 }
 
+/** 提交中：防抖，避免连点创建多条档案（U-25） */
+const submitting = ref(false)
+
+/** 把第一个错误字段滚动到可见位置并短暂高亮（U-24） */
+function focusFirstError() {
+  const order: Array<[keyof typeof errors, string]> = [
+    ['name', 'field-name'],
+    ['birthDate', 'field-birth'],
+    ['consent', 'field-consent'],
+  ]
+  const hit = order.find(([key]) => errors[key])
+  if (!hit) return
+  const el = document.getElementById(hit[1])
+  if (!el) return
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  el.classList.add('field-flash')
+  window.setTimeout(() => el.classList.remove('field-flash'), 1200)
+}
+
 function submit() {
+  if (submitting.value) return
   Object.keys(errors).forEach((k) => delete errors[k])
   if (!form.name.trim()) errors.name = '请填写姓名或昵称'
   const { draft, error } = parseDraft()
-  if (!draft) {
-    errors.birthDate = error ?? '出生信息不完整'
-    ui.notify(error ?? '出生信息不完整', 'error')
-    return
-  }
-  if (mode.value === 'id' && !form.consent) {
-    errors.consent = '请先阅读并同意隐私说明'
-    return
-  }
+  if (!draft) errors.birthDate = error ?? '出生信息不完整'
+  if (mode.value === 'id' && !form.consent) errors.consent = '请先阅读并同意隐私说明'
 
+  const firstError = Object.values(errors)[0]
+  if (firstError) {
+    ui.notify(firstError, 'error')
+    focusFirstError()
+    return
+  }
+  if (!draft) return
+
+  submitting.value = true
   try {
     const archive = archiveStore.create({
       name: form.name,
@@ -176,11 +212,17 @@ function submit() {
       timezone: form.timezone,
       location: location.value,
     })
+    // U-14：写入失败时不得提示成功，也不跳转
+    if (archiveStore.persistError) {
+      ui.notify(`保存失败：${archiveStore.persistError}`, 'error')
+      return
+    }
     ui.notify('已生成人类图', 'success')
-    if (isMobile.value) router.push(`/archive/${archive.id}`)
-    else router.push(`/archive/${archive.id}`)
+    router.push(`/archive/${archive.id}`)
   } catch (err) {
     ui.notify(`生成失败：${(err as Error).message}`, 'error')
+  } finally {
+    submitting.value = false
   }
 }
 
@@ -195,7 +237,7 @@ function goSettings() {
 
 <template>
   <div class="page">
-    <AppToolbar title="新建档案" back-label="返回" :search-value="''" @back="goBack" @new="() => {}" @settings="goSettings" @help="ui.notify('填写出生日期与时间即可生成人类图；时间越准确，结果越可靠。')" />
+    <AppToolbar title="新建档案" back-label="返回" :search-value="''" @back="goBack" @settings="goSettings" @help="ui.notify('填写出生日期与时间即可生成人类图；时间越准确，结果越可靠。')" />
 
     <main class="content" :class="{ mobile: isMobile }">
       <div class="form-col">
@@ -226,7 +268,7 @@ function goSettings() {
           <p v-if="parseNote" class="t-sm" :class="parseNote.includes('已解析') ? 'msg-success' : 'msg-warning'">
             {{ parseNote }}
           </p>
-          <label class="consent">
+          <label id="field-consent" class="consent">
             <input v-model="form.consent" type="checkbox" />
             <span class="t-sm">
               我已阅读：身份证号仅用于在本机提取出生日期与地区，处理完即丢弃，不存储、不上传。
@@ -239,7 +281,15 @@ function goSettings() {
         <section class="card block">
           <h2 class="t-title">基本信息</h2>
           <div class="grid2">
-            <HdField v-model="form.name" label="姓名 / 昵称" placeholder="用于档案列表显示" required :error="errors.name" />
+            <HdField
+              id="field-name"
+              v-model="form.name"
+              label="姓名 / 昵称"
+              placeholder="用于档案列表显示"
+              hint="请填写姓名（用于区分档案）"
+              required
+              :error="errors.name"
+            />
             <label class="gender">
               <span class="t-sm">性别</span>
               <span class="gender-ctl">
@@ -256,6 +306,7 @@ function goSettings() {
           <h2 class="t-title">出生时间</h2>
           <div class="grid2">
             <HdField
+              id="field-birth"
               v-model="form.birthDate"
               label="出生日期"
               type="date"
@@ -311,7 +362,9 @@ function goSettings() {
         </section>
 
         <div class="submit-bar">
-          <HdButton block @click="submit">生成人类图</HdButton>
+          <HdButton block :loading="submitting" :disabled="submitting" @click="submit">
+            {{ submitting ? '生成中…' : '生成人类图' }}
+          </HdButton>
         </div>
       </div>
 
@@ -320,18 +373,19 @@ function goSettings() {
         <div class="card preview">
           <header class="preview-head">
             <p class="t-xs">实时预览</p>
-            <p v-if="preview" class="t-sm">
-              {{ TYPE_LABELS[preview.type] }} · {{ preview.profile }} · {{ AUTHORITY_LABELS[preview.authority] }}
+            <p v-if="preview.chart" class="t-sm">
+              {{ TYPE_LABELS[preview.chart.type] }} · {{ preview.chart.profile }} · {{ AUTHORITY_LABELS[preview.chart.authority] }}
             </p>
             <p v-else class="t-sm muted">填写出生日期与时间后自动预览</p>
           </header>
-          <div v-if="preview" class="preview-graph">
-            <HumanDesignBodyGraph :engine="engine" :chart="preview" compact :interactive="false" />
+          <p v-if="preview.error" class="t-sm msg-warning preview-error">{{ preview.error }}</p>
+          <div v-if="preview.chart" class="preview-graph">
+            <HumanDesignBodyGraph :engine="engine" :chart="preview.chart" compact :interactive="false" />
           </div>
-          <ul v-if="preview" class="preview-facts">
-            <li><span class="t-xs">已定义中心</span><span class="t-data">{{ preview.centers.filter((c) => c.defined).length }} / 9</span></li>
-            <li><span class="t-xs">通道</span><span class="t-data">{{ preview.channels.length }} 条</span></li>
-            <li><span class="t-xs">激活闸门</span><span class="t-data">{{ preview.gates.length }} 个</span></li>
+          <ul v-if="preview.chart" class="preview-facts">
+            <li><span class="t-xs">已定义中心</span><span class="t-data">{{ preview.chart.centers.filter((c) => c.defined).length }} / 9</span></li>
+            <li><span class="t-xs">通道</span><span class="t-data">{{ preview.chart.channels.length }} 条</span></li>
+            <li><span class="t-xs">激活闸门</span><span class="t-data">{{ preview.chart.gates.length }} 个</span></li>
           </ul>
         </div>
       </aside>
@@ -510,6 +564,11 @@ select {
   width: auto;
 }
 
+.preview-error {
+  margin: 0 var(--sp-3) var(--sp-2);
+  line-height: 1.6;
+}
+
 .preview-facts {
   display: flex;
   flex-direction: column;
@@ -521,6 +580,14 @@ select {
 .preview-facts li {
   display: flex;
   justify-content: space-between;
+}
+
+/* 校验失败时短暂高亮第一个错误字段（U-24） */
+.field-flash {
+  outline: 2px solid var(--status-error);
+  outline-offset: 4px;
+  border-radius: var(--radius-md);
+  transition: outline-color 200ms ease;
 }
 
 @media (max-width: 768px) {

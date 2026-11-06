@@ -16,7 +16,7 @@ withDefaults(
   { type: 'text', error: '', hint: '', required: false, disabled: false },
 )
 
-const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
+const emit = defineEmits<{ 'update:modelValue': [value: string]; blur: [] }>()
 
 function onInput(event: Event) {
   emit('update:modelValue', (event.target as HTMLInputElement).value)
@@ -39,6 +39,7 @@ function onInput(event: Event) {
         :maxlength="maxlength"
         :autocomplete="autocomplete"
         @input="onInput"
+        @blur="emit('blur')"
       />
       <slot name="suffix" />
     </span>

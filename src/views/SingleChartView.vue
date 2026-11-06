@@ -10,6 +10,7 @@ import { useUiStore } from '../stores/ui'
 import { useSettingsStore } from '../stores/settings'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { useAiReading } from '../composables/useAiReading'
+import { copyAiResult, saveAiResult } from '../composables/useAiResultActions'
 import AppToolbar from '../components/base/AppToolbar.vue'
 import HumanDesignBodyGraph from '../components/chart/HumanDesignBodyGraph.vue'
 import BoardMeta from '../components/chart/BoardMeta.vue'
@@ -33,6 +34,7 @@ import DetailCard from '../components/chart/DetailCard.vue'
 import CrossPanel from '../components/chart/CrossPanel.vue'
 import AiComposer, { type DimKey } from '../components/panel/AiComposer.vue'
 import ArchiveEditDialog from '../components/archive/ArchiveEditDialog.vue'
+import ConfirmDialog from '../components/base/ConfirmDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -40,7 +42,13 @@ const archiveStore = useArchiveStore()
 const ui = useUiStore()
 const settings = useSettingsStore()
 const { isMobile } = useBreakpoint()
-const { state: aiState, run: runAi } = useAiReading()
+const {
+  state: aiState,
+  run: runAi,
+  retry: retryAi,
+  abort: abortAi,
+  configured: aiConfigured,
+} = useAiReading()
 
 const id = computed(() => String(route.params.id ?? ''))
 const archive = computed(() => archiveStore.byId(id.value))
@@ -63,7 +71,7 @@ const editOpen = ref(false)
 function duplicateChart() {
   const copy = archiveStore.duplicate(id.value)
   if (!copy) return
-  ui.notify('已创建副本，可在副本上继续调整', 'success')
+  ui.notify(archiveStore.persistError ?? '已创建副本，可在副本上继续调整', archiveStore.persistError ? 'error' : 'success')
   router.push(`/archive/${copy.id}`)
 }
 
@@ -278,29 +286,12 @@ async function requestFullReading() {
   await requestUnifiedAi({ dimensions: ['channels', 'gates', 'centers', 'strategy', 'definition', 'authority', 'cross', 'profile'], angleKey: angleKey.value, customDirection: '' })
 }
 
-async function copyAi() {
-  try {
-    await navigator.clipboard.writeText(aiState.value.content)
-    ui.notify('已复制', 'success')
-  } catch {
-    ui.notify('复制失败，请手动选择文本', 'error')
-  }
+function copyAi() {
+  void copyAiResult(aiState.value.content)
 }
 
 function saveAi() {
-  try {
-    const key = 'hdt.ai.history.v1'
-    const list = JSON.parse(localStorage.getItem(key) ?? '[]') as unknown[]
-    list.unshift({
-      title: aiState.value.title,
-      content: aiState.value.content,
-      at: new Date().toISOString(),
-    })
-    localStorage.setItem(key, JSON.stringify(list.slice(0, 50)))
-    ui.notify('已保存到本地记录', 'success')
-  } catch {
-    ui.notify('保存失败', 'error')
-  }
+  saveAiResult({ title: aiState.value.title, content: aiState.value.content })
 }
 
 function goBack() {
@@ -311,6 +302,43 @@ function goNew() {
 }
 function goSettings() {
   router.push('/settings')
+}
+
+/* ── 删除档案 ─────────────────────────────────────── */
+const confirmDelete = ref(false)
+
+function askDelete() {
+  if (!archive.value) return
+  confirmDelete.value = true
+}
+
+function doDelete() {
+  confirmDelete.value = false
+  const name = archive.value?.name ?? ''
+  const removed = archiveStore.remove(id.value)
+  if (archiveStore.persistError) {
+    ui.notify(archiveStore.persistError, 'error')
+    return
+  }
+  if (!removed) {
+    ui.notify('档案不存在或已被删除', 'error')
+    return
+  }
+  ui.notify(`已删除「${name}」`, 'info', {
+    duration: 5000,
+    action: {
+      label: '撤销',
+      onClick: () => {
+        archiveStore.restore(removed)
+        ui.notify(
+          archiveStore.persistError ?? `已撤销删除「${name}」`,
+          archiveStore.persistError ? 'error' : 'success',
+        )
+        router.replace(`/archive/${removed.id}`)
+      },
+    },
+  })
+  router.replace('/')
 }
 
 const starListOpen = ref(false)
@@ -332,6 +360,7 @@ const starListOpen = ref(false)
           <HdButton size="sm" variant="ghost" @click="duplicateChart">复制副本</HdButton>
           <HdButton size="sm" variant="ghost" @click="router.push(`/chiron/${id}`)"> 凯龙回归 </HdButton>
           <HdButton size="sm" @click="router.push(`/compare/${id}`)"> 双盘对比 </HdButton>
+          <HdButton size="sm" variant="danger" @click="askDelete">删除</HdButton>
           <HdButton size="sm" :loading="aiState.loading" @click="requestFullReading">
             全盘 AI 解读
           </HdButton>
@@ -340,14 +369,30 @@ const starListOpen = ref(false)
     </AppToolbar>
 
     <EmptyState
-      v-if="!archive || !chart"
+      v-if="!archive"
       title="没有找到这份档案"
       desc="它可能已被删除，或链接不完整。"
       action-label="返回档案库"
       @action="goBack"
     />
 
+    <EmptyState
+      v-else-if="!chart"
+      :title="archive.chartError ? '这张盘重算失败' : '盘面数据尚未生成'"
+      :desc="
+        archive.chartError
+          ? `重算失败原因：${archive.chartError}。可返回档案库后重新打开，或在设置页「重新生成全部图表」重试。`
+          : '可能仍在计算中，请稍候；也可在设置页「重新生成全部图表」重建。'
+      "
+      action-label="返回档案库"
+      @action="goBack"
+    />
+
     <main v-else class="layout" :class="{ mobile: isMobile }">
+      <div v-if="chart.meta?.warning" class="notice warn" role="status">
+        <span class="t-sm">{{ chart.meta.warning }}</span>
+      </div>
+
       <!-- AI 全维度组合解读（电脑端 / 手机端同一组件） -->
       <div class="angle-bar card">
         <span class="t-xs angle-label">AI 综合解读</span>
@@ -505,6 +550,7 @@ const starListOpen = ref(false)
       <HdButton size="sm" variant="ghost" @click="editOpen = true">编辑</HdButton>
       <HdButton size="sm" variant="ghost" @click="router.push(`/chiron/${id}`)">凯龙</HdButton>
       <HdButton size="sm" variant="ghost" @click="router.push(`/compare/${id}`)">对比</HdButton>
+      <HdButton size="sm" variant="danger" @click="askDelete">删除</HdButton>
       <HdButton size="sm" :loading="aiState.loading" @click="requestFullReading">全盘 AI</HdButton>
     </div>
 
@@ -522,16 +568,29 @@ const starListOpen = ref(false)
 
     <ArchiveEditDialog :open="editOpen" :archive="archive ?? null" @close="editOpen = false" />
 
+    <ConfirmDialog
+      :open="confirmDelete"
+      title="删除档案"
+      :desc="archive ? `确定删除「${archive.name}」？删除后可在 5 秒内撤销。` : ''"
+      confirm-text="删除"
+      danger
+      @confirm="doDelete"
+      @cancel="confirmDelete = false"
+    />
+
     <AiReadingPanel
       :open="aiState.open"
       :title="aiState.title"
       :content="aiState.content"
       :loading="aiState.loading"
       :error="aiState.error"
+      :configured="aiConfigured"
       @close="ui.closeAi()"
       @copy="copyAi"
       @save="saveAi"
-      @regenerate="requestFullReading"
+      @regenerate="retryAi"
+      @cancel="abortAi"
+      @settings="goSettings"
     />
   </div>
 </template>
@@ -567,11 +626,23 @@ const starListOpen = ref(false)
   }
 }
 
+/* 全宽提示条（DST 提醒 / 重算失败原因） */
+.notice {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  background: rgba(217, 119, 6, 0.12);
+  color: var(--text-primary);
+}
+
 /* 四列布局（间距 / 留白随设置页布局密度变化） */
 .layout {
   display: grid;
-  padding-top: 8px;
-  grid-template-columns:
+  padding-top: 8px;  grid-template-columns:
     minmax(560px, 1.85fr) minmax(215px, 0.7fr) minmax(215px, 0.7fr)
     minmax(240px, 0.8fr);
   gap: var(--layout-gap, var(--sp-3));
