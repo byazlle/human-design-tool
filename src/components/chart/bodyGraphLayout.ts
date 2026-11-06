@@ -23,12 +23,150 @@ export const TUBE_W = 16
 /** 彩色通道覆盖层宽度 */
 export const CH_W = 14
 
+/* ── 几何工具（旋转 / 重心坐标 / 三角内布点）───────────── */
+
+type Pt = [number, number]
+type Tri = [Pt, Pt, Pt]
+
+/** 绕 (cx,cy) 旋转 deg 度；SVG 的 y 轴向下，正角 = 顺时针 */
+export function rotatePoint(x: number, y: number, deg: number, cx: number, cy: number): Pt {
+  const rad = (deg * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const dx = x - cx
+  const dy = y - cy
+  return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos]
+}
+
+/** 有符号面积（用于重心坐标，符号表示点的内外） */
+function signedArea(a: Pt, b: Pt, c: Pt): number {
+  return ((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2
+}
+
+function dist(a: Pt, b: Pt): number {
+  return Math.hypot(b[0] - a[0], b[1] - a[1])
+}
+
+/** 重心坐标 (α,β,γ)：P = αA + βB + γC；三点共线时返回 null */
+export function barycentricCoords(p: Pt, tri: Tri): [number, number, number] | null {
+  const [A, B, C] = tri
+  const total = signedArea(A, B, C)
+  if (Math.abs(total) < 1e-9) return null
+  return [signedArea(p, B, C) / total, signedArea(A, p, C) / total, signedArea(A, B, p) / total]
+}
+
+/**
+ * 点到三角形三条边的有符号距离（内部为正）。
+ * 某条边的距离 = 该边对面顶点的重心坐标 × 该边上的高。
+ */
+export function triangleEdgeDistances(p: Pt, tri: Tri): [number, number, number] {
+  const bc = barycentricCoords(p, tri)
+  if (!bc) return [0, 0, 0]
+  const [A, B, C] = tri
+  const area = Math.abs(signedArea(A, B, C))
+  const hA = (2 * area) / dist(B, C)
+  const hB = (2 * area) / dist(C, A)
+  const hC = (2 * area) / dist(A, B)
+  return [bc[0] * hA, bc[1] * hB, bc[2] * hC]
+}
+
+/** 点到三条边的最小有符号距离（内部为正；<0 表示在三角外） */
+export function minEdgeDistance(p: Pt, tri: Tri): number {
+  return Math.min(...triangleEdgeDistances(p, tri))
+}
+
+/**
+ * 在三角形内部按重心坐标为若干闸门布点（当前只用于意志力中心 4 枚闸门）。
+ *
+ * 约束有两条：
+ *   1) 每枚闸门到三条边的距离 ≥ margin（圆不压中心描边）；
+ *   2) 任意两枚闸门中心距 ≥ 2R − 2（圆与圆不重叠，见 tests/layout.test.ts）。
+ *
+ * 做法：把三角形三条边各向内平移 margin，得到收缩三角形。取它的三个角点，
+ * 再在收缩三角形内做 1px 网格搜索，挑「到已布点最小距离最大」的位置作为第 4 个点
+ * （对三角形而言，这个位置落在最长收缩边中点附近，最小间距约等于半边长）。
+ */
+export function layoutGatesInTriangle(
+  tri: Tri,
+  gates: number[],
+  margin: number = GATE_R + 10,
+): Record<number, Pt> {
+  const [A, B, C] = tri
+  const area = Math.abs(signedArea(A, B, C))
+  const lenBC = dist(B, C)
+  const lenCA = dist(C, A)
+  const lenAB = dist(A, B)
+  const hA = (2 * area) / lenBC
+  const hB = (2 * area) / lenCA
+  const hC = (2 * area) / lenAB
+
+  // 每个重心坐标的下界（保证到对应边 ≥ margin）；留 5% 余量吸收浮点误差
+  const safe = margin * 1.05
+  const a0 = Math.min(0.3, safe / hA)
+  const b0 = Math.min(0.3, safe / hB)
+  const c0 = Math.min(0.3, safe / hC)
+
+  const toPoint = (a: number, b: number, c: number): Pt => [
+    a * A[0] + b * B[0] + c * C[0],
+    a * A[1] + b * B[1] + c * C[1],
+  ]
+
+  // 收缩三角形的三个角点（每个角点恰好距两条边 = safe）
+  const corners: Pt[] = [
+    toPoint(1 - b0 - c0, b0, c0), // 靠顶点 A
+    toPoint(a0, 1 - a0 - c0, c0), // 靠顶点 B
+    toPoint(a0, b0, 1 - a0 - b0), // 靠顶点 C
+  ]
+
+  // 第 4 点：收缩三角形内网格搜索，最大化到三个角点的最小距离
+  const xs = corners.map((p) => p[0])
+  const ys = corners.map((p) => p[1])
+  const minX = Math.min(...xs)
+  const maxX = Math.max(...xs)
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys)
+
+  let fourth: Pt = corners[0]
+  let bestScore = -Infinity
+  for (let x = minX; x <= maxX; x += 1) {
+    for (let y = minY; y <= maxY; y += 1) {
+      const p: Pt = [x, y]
+      // 比 margin 再多 1px，避免网格取样恰好压在收缩边上
+      if (minEdgeDistance(p, tri) < margin + 1) continue
+      let score = Infinity
+      for (const q of corners) score = Math.min(score, dist(p, q))
+      // 严格大于 → 同分时保留先遍历到的点，结果可复现
+      if (score > bestScore) {
+        bestScore = score
+        fourth = p
+      }
+    }
+  }
+
+  const round2 = (v: number): number => Math.round(v * 100) / 100
+  // 按 x 从左到右分配，保证布点在视觉上有确定顺序（同一输入必然同一输出）
+  const candidates = [...corners, fourth].sort((p, q) => p[0] - q[0])
+
+  const out: Record<number, Pt> = {}
+  gates.forEach((gate, i) => {
+    const p = candidates[i % candidates.length]
+    out[gate] = [round2(p[0]), round2(p[1])]
+  })
+  return out
+}
+
 export interface CenterShape {
   id: CenterId
   polygon: Array<[number, number]>
   cx: number
   cy: number
 }
+
+/** 意志力中心：原三角以自身中心 (768,1149) 顺时针旋转 30°（大小与位置不变，只转角度） */
+export const HEART_ROTATION_DEG = 30
+export const HEART_TRIANGLE: Tri = ([[768, 1084], [660, 1184], [884, 1184]] as Pt[]).map(
+  ([x, y]) => rotatePoint(x, y, HEART_ROTATION_DEG, 768, 1149),
+) as Tri
 
 /** 九中心几何（底图实测） */
 export const CENTER_SHAPES: Record<CenterId, CenterShape> = {
@@ -78,14 +216,10 @@ export const CENTER_SHAPES: Record<CenterId, CenterShape> = {
     cx: 576,
     cy: 1018,
   },
-  // 心（意志）：小三角，尖朝上（底图精扫：顶点 y=1084，底边 y=1182）
+  // 心（意志）：小三角，旋转 30° 后（原顶点 y=1084，底边 y=1184）
   heart: {
     id: 'heart',
-    polygon: [
-      [768, 1084],
-      [660, 1184],
-      [884, 1184],
-    ],
+    polygon: HEART_TRIANGLE.map(([x, y]) => [x, y] as Pt),
     cx: 768,
     cy: 1149,
   },
@@ -137,7 +271,12 @@ export const CENTER_SHAPES: Record<CenterId, CenterShape> = {
   },
 }
 
-/** 64 闸门数字中心坐标（底图实测，锁定不变） */
+/** 意志力中心 4 个闸门：旋转后三角内按重心坐标内缩布点（保证不压边、不出界） */
+export const HEART_GATE_POS: Record<number, Pt> = layoutGatesInTriangle(HEART_TRIANGLE, [
+  51, 21, 26, 40,
+])
+
+/** 64 闸门数字中心坐标（底图实测，锁定不变；意志力中心 4 门为旋转后重算值） */
 const GATE_POS: Record<number, [number, number]> = {
   // 顶轮
   64: [536, 238],
@@ -172,10 +311,7 @@ const GATE_POS: Record<number, [number, number]> = {
   46: [614, 1068],
   2: [576, 1114],
   // 心
-  21: [734, 1135],
-  51: [702, 1166],
-  26: [818, 1168],
-  40: [862, 1166],
+  ...HEART_GATE_POS,
   // 脾
   48: [88, 1288], // 脾中心左上角（与左下角的 18 相对应）
   57: [132, 1322], // 承接原 48 的位置
@@ -254,6 +390,13 @@ export interface ChannelLine {
   internal: boolean
   /** 折线走线（存在时优先于 x1..y2 两端点） */
   points?: Array<[number, number]>
+  /**
+   * 枢纽辐条：该线段由哪些原始通道「共用」。
+   * 任一 key 被激活即着色（避免 10→M 被画 3 次、34→M 被画 2 次）。
+   */
+  spokeOf?: string[]
+  /** 枢纽辐条标记：为 true 时折线终点固定在枢纽 M，不做末端向内延伸 */
+  hub?: boolean
 }
 
 /** 从 p 出发朝向 q，与多边形边界的第一个交点参数 t（0..1） */
@@ -332,11 +475,12 @@ export const CHANNEL_LINES: ChannelLine[] = (() => {
 
   /**
    * 枢纽化走线（用户规格）：
-   * 以「20-57 通道中点 M」为唯一枢纽，10 / 20 / 34 / 57 之间的所有连线都经 M 中转，
-   * 不再直连。收益：中部通道收束成一根主干 + 两条支路，层级清晰、互相不叠。
-   *   主干：20 → M → 57（20-57 本身）
+   * 以「20-57 通道中点 M」为唯一枢纽，10 / 20 / 34 / 57 各自只有**一条**线连到 M，
+   * 闸门之间没有直接连线。原先 5 条（10-20 / 10-34 / 10-57 / 20-34 / 34-57）
+   * 各画 20→M、34→M 会造成重复叠线，这里改为「去重辐条」：
+   *   主干：20 → M → 57（20-57 共线，保留一条）
    *   支路：10 → M、34 → M
-   * 5 条涉及通道（10-20 / 10-34 / 10-57 / 20-34 / 34-57）全部改为经过 M 的折线。
+   * 渲染时按 `spokeOf` 里任一原始通道是否激活来决定该辐条是否着色。
    */
   const spine = byKey.get('20-57')
   if (!spine) return lines
@@ -350,20 +494,48 @@ export const CHANNEL_LINES: ChannelLine[] = (() => {
     return clipPoint([g.x, g.y], M, g.center)
   }
 
-  for (const key of HUB_KEYS) {
-    const l = byKey.get(key)
-    if (!l) continue
-    const [g0, g1] = l.gates
-    const p0 = spoke(g0)
-    const p1 = spoke(g1)
-    l.points = [p0, M, p1]
-    l.x1 = p0[0]
-    l.y1 = p0[1]
-    l.x2 = p1[0]
-    l.y2 = p1[1]
+  // 主干 20 → M → 57（三点共线，视觉上仍是一条直线）
+  const p20 = spoke(20)
+  const p57 = spoke(57)
+  spine.points = [p20, M, p57]
+  spine.x1 = p20[0]
+  spine.y1 = p20[1]
+  spine.x2 = p57[0]
+  spine.y2 = p57[1]
+  spine.spokeOf = ['20-57']
+
+  // 支路 10 → M、34 → M（gates 的另一端仅用于意识判定与点击回退）
+  const p10 = spoke(10)
+  const hub10: ChannelLine = {
+    key: 'hub-10',
+    gates: [10, 20],
+    centers: ['g', 'throat'],
+    x1: p10[0],
+    y1: p10[1],
+    x2: M[0],
+    y2: M[1],
+    internal: false,
+    points: [p10, M],
+    spokeOf: ['10-20', '10-34', '10-57'],
+    hub: true,
+  }
+  const p34 = spoke(34)
+  const hub34: ChannelLine = {
+    key: 'hub-34',
+    gates: [34, 20],
+    centers: ['sacral', 'throat'],
+    x1: p34[0],
+    y1: p34[1],
+    x2: M[0],
+    y2: M[1],
+    internal: false,
+    points: [p34, M],
+    spokeOf: ['10-34', '20-34', '34-57'],
+    hub: true,
   }
 
-  return lines
+  // 5 条原始直连线不再作为独立线段出现
+  return [...lines.filter((l) => !HUB_KEYS.includes(l.key)), hub10, hub34]
 })()
 
 /** 中心形心 */
@@ -406,9 +578,48 @@ export const VIEW_BOX = (() => {
   return { x, y, w, h, str: `${x} ${y} ${w} ${h}` }
 })()
 
+/**
+ * 人体剪影（底板淡剪影）：盘腿打坐的对称剪影。
+ *
+ * 只描绘右半段，左半段用 x → 1152 − x 镜像生成，保证中轴严格在 x=576。
+ * 姿态：头部圆（圆心约 576,250 / 半径约 100）→ 颈 → 肩（宽约 210）→ 躯干收窄至腰
+ * → 盘腿横向铺开（覆盖 x≈52…1100、y≈1150…1560，左右腿分别压住脾/情绪中心三角区域）
+ * → 回到中轴。双手落在腿上，属剪影内部，不另画轮廓（仅一条闭合 path）。
+ */
+const SILHOUETTE_RIGHT: Array<[number, number, number, number, number, number]> = [
+  // 头顶右半 → 头右下 → 颈右
+  [641, 150, 680, 196, 680, 254],
+  [680, 302, 656, 336, 620, 352],
+  // 颈 → 肩（右肩约 x=682）
+  [616, 392, 626, 430, 648, 458],
+  // 肩 → 上臂外缘（自然内收进躯干）
+  [712, 472, 756, 504, 784, 560],
+  // 躯干右侧 → 腰（收窄）
+  [824, 648, 840, 766, 840, 902],
+  [840, 1014, 826, 1096, 810, 1152],
+  // 右腿外缘：覆盖右侧情绪中心三角区域（x 889–1089, y 1262–1486）
+  [902, 1178, 1006, 1222, 1056, 1290],
+  [1100, 1354, 1088, 1424, 1038, 1468],
+  // 腿底 → 回到中轴（盘腿底缘 y≈1548–1560）
+  [972, 1514, 888, 1542, 792, 1548],
+  [688, 1556, 620, 1560, 576, 1560],
+]
+
+function buildSilhouettePath(): string {
+  const parts: string[] = ['M576 150']
+  for (const [c1x, c1y, c2x, c2y, x, y] of SILHOUETTE_RIGHT) {
+    parts.push(`C ${c1x} ${c1y}, ${c2x} ${c2y}, ${x} ${y}`)
+  }
+  // 反向镜像回中轴
+  for (let i = SILHOUETTE_RIGHT.length - 1; i >= 0; i -= 1) {
+    const [c1x, c1y, c2x, c2y] = SILHOUETTE_RIGHT[i]
+    const [sx, sy] =
+      i === 0 ? [576, 150] : [SILHOUETTE_RIGHT[i - 1][4], SILHOUETTE_RIGHT[i - 1][5]]
+    parts.push(`C ${1152 - c2x} ${c2y}, ${1152 - c1x} ${c1y}, ${1152 - sx} ${sy}`)
+  }
+  parts.push('Z')
+  return parts.join(' ')
+}
+
 /** 人体剪影路径（底图淡剪影，用于底板层） */
-export const SILHOUETTE_PATH =
-  'M576 150 c-56 0 -101 45 -101 101 c0 34 17 64 42 82 c-30 12 -54 28 -54 28 ' +
-  'c-64 34 -102 92 -110 168 c-4 42 -6 102 -6 158 h458 c0 -56 -2 -116 -6 -158 ' +
-  'c-8 -76 -46 -134 -110 -168 c0 0 -24 -16 -54 -28 c25 -18 42 -48 42 -82 ' +
-  'c0 -56 -45 -101 -101 -101 Z'
+export const SILHOUETTE_PATH = buildSilhouettePath()

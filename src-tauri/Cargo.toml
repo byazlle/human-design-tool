@@ -1,6 +1,6 @@
 [package]
 name = "humandesign-tool"
-version = "2.0.0"
+version = "2.1.0"
 description = "人类图本地排盘工具"
 authors = ["you"]
 edition = "2021"

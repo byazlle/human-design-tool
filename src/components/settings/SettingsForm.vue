@@ -7,7 +7,7 @@ import { useUiStore } from '../../stores/ui'
 import { DRAWING_ENGINES } from '../chart/layouts'
 import type { GraphSize, LayoutDensity } from '../../stores/settings'
 import { probeAiConfig, validateAiConfig } from '../../services/aiClient'
-import type { AiProfile } from '../../types/hd'
+import type { AiDetailMode, AiProfile } from '../../types/hd'
 import ConfirmDialog from '../base/ConfirmDialog.vue'
 import HdField from '../base/HdField.vue'
 import HdToggle from '../base/HdToggle.vue'
@@ -53,6 +53,30 @@ const editor = ref<EditorState | null>(null)
 const fieldErrors = reactive<Record<string, string>>({})
 const showKey = ref(false)
 const testingId = ref<string | null>(null)
+
+/* ── 解读详细度（AI 提示词两版：规范 AI-PROMPT-v2.0 §2 / §3）── */
+
+const DETAIL_MODES: Array<{ value: AiDetailMode; label: string; hint: string }> = [
+  {
+    value: 'concise',
+    label: '精简版',
+    hint: '600–900 字 · 5 个视角，一屏读完，适合日常查看（默认）',
+  },
+  {
+    value: 'detailed',
+    label: '详细版',
+    hint: '1800–3000 字 · 8 节 + 一页速记，适合收藏回看',
+  },
+]
+
+/** 写入失败（localStorage 不可用）时在这里提示，成功则清空 */
+const detailModeError = ref('')
+
+function setDetailMode(mode: AiDetailMode) {
+  if (settings.aiDetailMode === mode) return
+  const ok = settings.setAiDetailMode(mode)
+  detailModeError.value = ok ? '' : settings.persistError || '保存失败，设置未生效'
+}
 const probeNotes = reactive<Record<string, string>>({})
 const confirmDeleteId = ref<string | null>(null)
 const deleteTarget = computed(() => settings.aiProfiles.find((p) => p.id === confirmDeleteId.value) ?? null)
@@ -447,6 +471,31 @@ function regenerateAll() {
           <span class="t-xs t-muted">快捷键 Ctrl / Cmd + S 保存</span>
         </div>
       </form>
+
+      <!-- 解读详细度：决定 AI 提示词走「精简 5 视角」还是「详细 8 节」 -->
+      <div class="detail-mode">
+        <div class="dm-head">
+          <strong class="t-sm">解读详细度</strong>
+          <span class="t-xs t-muted">
+            精简 600–900 字 · 5 个视角；详细 1800–3000 字 · 8 节。单点解读（闸门/通道/中心）固定为精简。
+          </span>
+        </div>
+        <div class="dm-options">
+          <button
+            v-for="opt in DETAIL_MODES"
+            :key="opt.value"
+            type="button"
+            class="dm-option"
+            :class="{ on: settings.aiDetailMode === opt.value }"
+            :aria-pressed="settings.aiDetailMode === opt.value"
+            @click="setDetailMode(opt.value)"
+          >
+            <strong>{{ opt.label }}</strong>
+            <span class="t-xs">{{ opt.hint }}</span>
+          </button>
+        </div>
+        <p v-if="detailModeError" class="t-xs msg-warning">{{ detailModeError }}</p>
+      </div>
     </section>
 
     <ConfirmDialog
@@ -885,6 +934,61 @@ header p {
   border-radius: 6px;
   background: var(--surface);
   cursor: pointer;
+}
+
+/* ── 解读详细度 ─────────────────────────────── */
+.detail-mode {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+
+.dm-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dm-head strong {
+  color: var(--text-primary);
+}
+
+.dm-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--sp-2);
+}
+
+.dm-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--glass-bg-soft);
+  text-align: left;
+  color: var(--text-secondary);
+  transition:
+    border-color var(--dur-fast) ease,
+    background var(--dur-fast) ease;
+}
+
+.dm-option strong {
+  font-size: calc(var(--fs-sm) * var(--font-scale));
+  color: var(--text-primary);
+}
+
+.dm-option:hover {
+  border-color: var(--border-strong);
+}
+
+.dm-option.on {
+  border-color: var(--action-primary);
+  background: rgba(124, 58, 237, 0.1);
 }
 
 /* ── 多 AI 配置 ─────────────────────────────── */

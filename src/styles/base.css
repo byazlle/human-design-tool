@@ -31,7 +31,10 @@ body {
 
 /* 移动端自适应兜底：任何内容过宽时在页面层截断，绝不出现横向滚动 */
 html,
-body {
+body,
+#app {
+  /* 用 clip 而不是 hidden：两者都能消除横向滚动条，但 hidden 会把 body 变成滚动容器，
+     连带破坏 sticky 工具栏；clip 不影响 sticky。 */
   overflow-x: clip;
   max-width: 100vw;
 }

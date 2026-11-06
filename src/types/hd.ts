@@ -60,6 +60,13 @@ export type CenterId =
   | 'solar'
   | 'root'
 
+/**
+ * AI 解读详细度（规范 `docs/spec/AI-PROMPT-v2.0.md` §2 / §3）：
+ * - `concise`：600–900 字、5 个固定视角；
+ * - `detailed`：1800–3000 字、8 节 + 一页速记。
+ */
+export type AiDetailMode = 'concise' | 'detailed'
+
 export const CENTER_IDS: CenterId[] = [
   'head',
   'ajna',

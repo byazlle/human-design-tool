@@ -34,6 +34,12 @@ export interface LayoutChannel {
   x2: number
   y2: number
   internal: boolean
+  /** 折线走线（有则优先于两端点；v1 枢纽辐条使用） */
+  points?: Array<[number, number]>
+  /** 枢纽辐条：任一原始通道被激活即着色 */
+  spokeOf?: string[]
+  /** 枢纽辐条标记：终点固定在枢纽 M，不做末端内延伸 */
+  hub?: boolean
 }
 
 export interface LayoutPreset {

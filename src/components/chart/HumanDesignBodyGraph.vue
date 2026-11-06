@@ -16,7 +16,7 @@
  */
 import { computed } from 'vue'
 import type { BodyGraph, CenterId, Ownership, UiFilter } from '../../types/hd'
-import { layoutOf, polygonOf, type DrawingEngine } from './layouts'
+import { layoutOf, polygonOf, type DrawingEngine, type LayoutChannel } from './layouts'
 import { SILHOUETTE_PATH } from './bodyGraphLayout'
 
 const props = withDefaults(
@@ -182,6 +182,44 @@ function colorOf(c: Consciousness): string {
 
 const visibleChannels = computed(() => layout.value.channels.filter((l) => !l.internal))
 
+/**
+ * 该线段对应的「原始通道 key」：
+ * - 普通通道 = 自身 key；
+ * - 枢纽辐条 = `spokeOf` 中已定义的那些（任一被激活即着色）。
+ */
+function activeKeysOf(l: LayoutChannel): string[] {
+  const defined = definedChannels.value
+  if (l.spokeOf) return l.spokeOf.filter((k) => defined.has(k))
+  return defined.has(l.key) ? [l.key] : []
+}
+
+/** 线段是否处于激活态（决定线槽是否让位给彩色线） */
+function lineIsOn(l: LayoutChannel): boolean {
+  return activeKeysOf(l).length > 0
+}
+
+/** 线段在当前过滤（仅看共享）下是否可见 */
+function lineVisible(l: LayoutChannel): boolean {
+  const keys = l.spokeOf ?? [l.key]
+  return keys.some((k) => channelVisible(k))
+}
+
+/** 线段点击应上报的通道 key（辐条上报其第一条原始通道） */
+function clickKeyOf(l: LayoutChannel): string {
+  return l.spokeOf?.[0] ?? l.key
+}
+
+function gatesOfKey(key: string): [number, number] {
+  const [a, b] = key.split('-').map(Number)
+  return [a, b]
+}
+
+function widthOf(keys: string[]): number {
+  return keys.some((k) => highlightChannels.value.has(k))
+    ? layout.value.chW + 4
+    : layout.value.chW
+}
+
 /** 通道折线点（无 reroute 时为两端点） */
 function routeOf(l: { x1: number; y1: number; x2: number; y2: number; points?: Array<[number, number]> }) {
   return l.points && l.points.length >= 2 ? l.points : ([[l.x1, l.y1], [l.x2, l.y2]] as Array<[number, number]>)
@@ -265,18 +303,33 @@ function zebraPieces(
 const fullChannels = computed(() => {
   const out: Array<{ key: string; pieces: SegPiece[]; width: number }> = []
   for (const l of visibleChannels.value) {
-    if (!definedChannels.value.has(l.key)) continue
-    if (!channelVisible(l.key)) continue
+    const activeKeys = activeKeysOf(l)
+    if (!activeKeys.length) continue
+    if (!activeKeys.some((k) => channelVisible(k))) continue
+
     const pts = routeOf(l).map((p) => [p[0], p[1]] as [number, number])
-    const a = layout.value.gates.find((g) => g.gate === l.gates[0])!
-    const b = layout.value.gates.find((g) => g.gate === l.gates[1])!
     const t = 0.12
-    // 两端向中心内延伸，贴近数字
-    pts[0] = [pts[0][0] + (a.x - pts[0][0]) * t, pts[0][1] + (a.y - pts[0][1]) * t]
-    const last = pts.length - 1
-    pts[last] = [pts[last][0] + (b.x - pts[last][0]) * t, pts[last][1] + (b.y - pts[last][1]) * t]
+    // 起点向闸门方向内延伸，贴近数字
+    const a = layout.value.gates.find((g) => g.gate === l.gates[0])
+    if (a) {
+      pts[0] = [pts[0][0] + (a.x - pts[0][0]) * t, pts[0][1] + (a.y - pts[0][1]) * t]
+    }
+    // 枢纽辐条的末端固定在枢纽 M，不做内延伸
+    if (!l.hub) {
+      const b = layout.value.gates.find((g) => g.gate === l.gates[1])
+      if (b) {
+        const last = pts.length - 1
+        pts[last] = [
+          pts[last][0] + (b.x - pts[last][0]) * t,
+          pts[last][1] + (b.y - pts[last][1]) * t,
+        ]
+      }
+    }
+
+    // 辐条按「第一条已激活的原始通道」判定意识归属（红/黑/斑马）
+    const colorGates = l.spokeOf ? gatesOfKey(activeKeys[0]) : l.gates
     const consciousness =
-      props.mode === 'composite' ? 'mixed' : channelConsciousness(l.gates[0], l.gates[1])
+      props.mode === 'composite' ? 'mixed' : channelConsciousness(colorGates[0], colorGates[1])
     let pieces: SegPiece[]
     if (props.mode === 'composite') {
       pieces = [
@@ -286,13 +339,13 @@ const fullChannels = computed(() => {
           y1: pts[0][1],
           x2: pts[pts.length - 1][0],
           y2: pts[pts.length - 1][1],
-          stroke: ownerVar(props.channelOwners[l.key]),
+          stroke: ownerVar(props.channelOwners[activeKeys[0]]),
         },
       ]
     } else {
       pieces = zebraPieces(l.key, pts, consciousness, layout.value.chW)
     }
-    out.push({ key: l.key, pieces, width: channelWidth(l.key) })
+    out.push({ key: l.key, pieces, width: widthOf(activeKeys) })
   }
   return out
 })
@@ -300,15 +353,21 @@ const fullChannels = computed(() => {
 const hangingChannels = computed(() => {
   const out: Array<{ key: string; pieces: SegPiece[]; width: number }> = []
   if (sharedOnly.value) return out
+  // 同一闸门只画一条悬挂短段（枢纽辐条与主干可能共享闸门）
+  const drawn = new Set<number>()
   for (const l of visibleChannels.value) {
     const [g0, g1] = l.gates
     const a0 = activated.value.has(g0)
     const a1 = activated.value.has(g1)
     if (a0 === a1) continue
     const gate = a0 ? g0 : g1
-    const p = layout.value.gates.find((g) => g.gate === gate)!
-    const isStart = gate === g0
+    if (drawn.has(gate)) continue
+    const p = layout.value.gates.find((g) => g.gate === gate)
+    if (!p) continue
     const route = routeOf(l)
+    if (route.length < 2) continue
+    drawn.add(gate)
+    const isStart = gate === g0
     const bx = isStart ? route[0][0] : route[route.length - 1][0]
     const by = isStart ? route[0][1] : route[route.length - 1][1]
     const ox = isStart ? route[1][0] : route[route.length - 2][0]
@@ -323,17 +382,13 @@ const hangingChannels = computed(() => {
         ? ownerVar(props.gateOwners[gate])
         : colorOf(gateConsciousness(gate))
     out.push({
-      key: `hang-${l.key}`,
+      key: `hang-${l.key}-${gate}`,
       width: layout.value.chW - 2,
-      pieces: [{ key: `hang-${l.key}`, x1: sx, y1: sy, x2: ex, y2: ey, stroke }],
+      pieces: [{ key: `hang-${l.key}-${gate}`, x1: sx, y1: sy, x2: ex, y2: ey, stroke }],
     })
   }
   return out
 })
-
-function channelWidth(key: string): number {
-  return highlightChannels.value.has(key) ? layout.value.chW + 4 : layout.value.chW
-}
 
 function onGate(gate: number) {
   if (!props.interactive) return
@@ -412,26 +467,26 @@ function centerClickable(id: CenterId): boolean {
     <g class="tubes">
       <template v-for="line in visibleChannels" :key="`t-${line.key}`">
         <polyline
-          v-if="!definedChannels.has(line.key) || !channelVisible(line.key)"
+          v-if="!lineIsOn(line) || !lineVisible(line)"
           :points="polyStr(routeOf(line))"
           fill="none"
           :stroke="isV1 ? 'var(--hd-tube-edge)' : 'var(--hd-tube-edge-v2)'"
           :stroke-width="layout.tubeW + 4"
-          :opacity="channelVisible(line.key) ? 0.85 : 0.12"
+          :opacity="lineVisible(line) ? 0.85 : 0.12"
           stroke-linecap="round"
           stroke-linejoin="round"
         />
         <polyline
-          v-if="!definedChannels.has(line.key) || !channelVisible(line.key)"
+          v-if="!lineIsOn(line) || !lineVisible(line)"
           :points="polyStr(routeOf(line))"
           fill="none"
           :stroke="isV1 ? 'var(--hd-tube)' : 'var(--hd-tube-v2)'"
           :stroke-width="layout.tubeW"
-          :opacity="channelVisible(line.key) ? 1 : 0.14"
+          :opacity="lineVisible(line) ? 1 : 0.14"
           :class="{ 'is-clickable': interactive }"
           stroke-linecap="round"
           stroke-linejoin="round"
-          @click="onChannel(line.key)"
+          @click="onChannel(clickKeyOf(line))"
         />
       </template>
     </g>

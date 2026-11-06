@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { AiConfig, AiProfile, ThemeMode } from '../types/hd'
+import type { AiConfig, AiDetailMode, AiProfile, ThemeMode } from '../types/hd'
 import { clearAiCache, validateAiConfig } from '../services/aiClient'
 import { createId, loadJson, saveJson, SAVE_FAILURE_HINT } from '../utils/storage'
 
@@ -40,6 +40,8 @@ interface SettingsState {
   aiProfiles: AiProfile[]
   /** 当前生效配置 id；'' 表示未配置 */
   activeAiId: string
+  /** AI 解读详细度：精简（5 视角）/ 详细（8 节） */
+  aiDetailMode: AiDetailMode
   appearance: Appearance
   precision: { decimals: 2 }
   /** 最近一次 persist 失败的原因；null 表示最近一次写入成功 */
@@ -58,6 +60,7 @@ const DEFAULTS: SettingsState = {
   ai: DEFAULT_AI,
   aiProfiles: [],
   activeAiId: '',
+  aiDetailMode: 'concise',
   appearance: {
     theme: 'light',
     fontScale: 1,
@@ -108,6 +111,11 @@ function normalizeProfile(raw: unknown): AiProfile | null {
   }
 }
 
+/** 旧数据没有该字段时回落到「精简」（规范 §2 的默认档） */
+function normalizeDetailMode(raw: unknown): AiDetailMode {
+  return raw === 'detailed' ? 'detailed' : 'concise'
+}
+
 export interface AiProfileInput {
   name: string
   baseUrl: string
@@ -144,6 +152,7 @@ export const useSettingsStore = defineStore('settings', {
         ai: aiConfigOf(active),
         aiProfiles: profiles,
         activeAiId,
+        aiDetailMode: normalizeDetailMode(saved.aiDetailMode),
         appearance: { ...DEFAULTS.appearance, ...(saved.appearance ?? {}) },
         precision: { ...DEFAULTS.precision, ...(saved.precision ?? {}) },
         persistError: null,
@@ -163,6 +172,7 @@ export const useSettingsStore = defineStore('settings', {
         ai: aiConfigOf(migrated),
         aiProfiles: [migrated],
         activeAiId: migrated.id,
+        aiDetailMode: normalizeDetailMode(saved.aiDetailMode),
         appearance: { ...DEFAULTS.appearance, ...(saved.appearance ?? {}) },
         precision: { ...DEFAULTS.precision, ...(saved.precision ?? {}) },
         persistError: null,
@@ -173,6 +183,7 @@ export const useSettingsStore = defineStore('settings', {
       ai: legacyAi,
       aiProfiles: [],
       activeAiId: '',
+      aiDetailMode: normalizeDetailMode(saved.aiDetailMode),
       appearance: { ...DEFAULTS.appearance, ...(saved.appearance ?? {}) },
       precision: { ...DEFAULTS.precision, ...(saved.precision ?? {}) },
       persistError: null,
@@ -193,6 +204,7 @@ export const useSettingsStore = defineStore('settings', {
         ai: this.ai,
         aiProfiles: this.aiProfiles,
         activeAiId: this.activeAiId,
+        aiDetailMode: this.aiDetailMode,
         appearance: this.appearance,
         precision: this.precision,
       })
@@ -319,6 +331,14 @@ export const useSettingsStore = defineStore('settings', {
       this.aiProfiles.push(copy)
       this.persist()
       return copy.id
+    },
+
+    /* ── 解读详细度 ──────────────────────────────────── */
+
+    /** @returns 是否写入成功；失败时 persistError 已被置位，由调用方展示 */
+    setAiDetailMode(mode: AiDetailMode): boolean {
+      this.aiDetailMode = mode === 'detailed' ? 'detailed' : 'concise'
+      return this.persist()
     },
 
     /* ── 兼容旧调用点：写当前镜像并同步到生效 profile ── */
