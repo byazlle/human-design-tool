@@ -418,7 +418,8 @@ async function runSmoke(win) {
     channels: document.querySelectorAll('.channel-item').length,
     channelEffect: document.querySelectorAll('.channel-effect').length,
     gates: document.querySelectorAll('.act-gate').length,
-    centers: document.querySelectorAll('.center-chip').length,
+    // v2.1.0 起九中心改为紧凑状态条（.center-strip），不再使用旧的 .center-chip
+    centers: document.querySelectorAll('.center-strip .center-dot-btn').length,
     typeToggle: Boolean(document.querySelector('.detail-toggle')),
   })`)
   check('已激活通道列表可见', lists.channels > 0, `n=${lists.channels}`)
