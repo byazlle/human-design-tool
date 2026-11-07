@@ -107,10 +107,25 @@ def create_blob(raw: bytes) -> str:
     )["sha"]
 
 
+def entry_for_path(path: str):
+    """单个工作区文件 → tree entry；文本直接内联 content，二进制才单独建 blob。"""
+    abs_path = os.path.join(ROOT, path)
+    if not os.path.exists(abs_path):
+        return {"path": path, "mode": "100644", "type": "blob", "sha": None}
+    with open(abs_path, "rb") as fh:
+        raw = fh.read()
+    mode = "100755" if os.access(abs_path, os.X_OK) else "100644"
+    try:
+        text = raw.decode("utf-8").replace("\r\n", "\n")
+        return {"path": path, "mode": mode, "type": "blob", "content": text}
+    except UnicodeDecodeError:
+        print(f"二进制文件单独建 blob：{path}")
+        return {"path": path, "mode": mode, "type": "blob", "sha": create_blob(raw)}
+
+
 def build_entries(changed):
-    """改动列表 → GitHub tree entries；文本走 content，二进制走 blob。"""
+    """改动列表 → GitHub tree entries；重命名先删旧路径，删除项 sha=null。"""
     entries = []
-    binary = []
     for line in changed:
         if not line.strip():
             continue
@@ -119,32 +134,88 @@ def build_entries(changed):
         # 重命名：先删旧路径，再按新路径写入
         if status.startswith("R") and len(parts) >= 3:
             entries.append({"path": parts[1], "mode": "100644", "type": "blob", "sha": None})
-        abs_path = os.path.join(ROOT, path)
-        if status.startswith("D") or not os.path.exists(abs_path):
-            entries.append({"path": path, "mode": "100644", "type": "blob", "sha": None})
-            continue
-        with open(abs_path, "rb") as fh:
-            raw = fh.read()
-        mode = "100755" if os.access(abs_path, os.X_OK) else "100644"
-        try:
-            text = raw.decode("utf-8").replace("\r\n", "\n")
-            entries.append({"path": path, "mode": mode, "type": "blob", "content": text})
-        except UnicodeDecodeError:
-            binary.append({"path": path, "mode": mode, "raw": raw})
-
-    for item in binary:
-        print(f"二进制文件单独建 blob：{item['path']}")
-        entries.append({
-            "path": item["path"],
-            "mode": item["mode"],
-            "type": "blob",
-            "sha": create_blob(item["raw"]),
-        })
+        entries.append(entry_for_path(path))
     return entries
 
 
+def local_tree() -> dict:
+    """本地 HEAD 的 {path: blob_sha}（git blob sha 与 GitHub tree 的 sha 同一算法）。"""
+    out = subprocess.check_output(
+        ["git", "-c", "core.quotepath=false", "ls-tree", "-r", "HEAD"], cwd=ROOT
+    ).decode("utf-8")
+    tree = {}
+    for line in out.splitlines():
+        if not line.strip():
+            continue
+        meta, path = line.split("\t", 1)
+        tree[path] = meta.split()[2]
+    return tree
+
+
+def sync_tree() -> str:
+    """把远端 main 的文件树与本地 HEAD 全量对齐。
+
+    历史 API 推送只写「单次提交 diff」，早期提交新增或改过的文件从未被带到远端，
+    远端因此长期保留旧内容（v2.2.0 CI 先后因缺 src/services/validate.ts 报 TS2307、
+    因 src/engine/mandala.ts 仍是 29.8333 导致盘序与金标准断言失败）。
+    这里按 blob sha 逐文件比对：缺失补齐、内容过期覆盖、远端多余删除。
+    """
+    head = api(f"/repos/{REPO}/git/ref/heads/{BRANCH}")["object"]["sha"]
+    data = api(f"/repos/{REPO}/git/trees/{head}?recursive=1")
+    if data.get("truncated"):
+        raise SystemExit("远端 tree 过大被截断，无法做完整性校验")
+    remote = {x["path"]: x["sha"] for x in data["tree"] if x["type"] == "blob"}
+    local = local_tree()
+
+    stale = [p for p, sha in local.items() if p in remote and remote[p] != sha]
+    missing = [p for p in local if p not in remote]
+    extra = [p for p in remote if p not in local]
+    if not (stale or missing or extra):
+        print(f"远端文件树与本地 HEAD 完全一致（{len(local)} 个文件）")
+        return head
+
+    print(f"需同步 {len(stale) + len(missing) + len(extra)} 个文件："
+          f"内容过期 {len(stale)} / 缺失 {len(missing)} / 远端多余 {len(extra)}")
+    for p in sorted(missing):
+        print("  +", p)
+    for p in sorted(stale):
+        print("  ~", p)
+    for p in sorted(extra):
+        print("  -", p)
+
+    entries = [entry_for_path(p) for p in missing + stale]
+    entries += [{"path": p, "mode": "100644", "type": "blob", "sha": None} for p in extra]
+    tree = api(
+        f"/repos/{REPO}/git/trees",
+        "POST",
+        {"base_tree": data["sha"], "tree": entries},
+    )
+    commit = api(
+        f"/repos/{REPO}/git/commits",
+        "POST",
+        {
+            "message": "chore: 对齐远端文件树（历史 API 推送遗漏）\n\n"
+                       "按 blob sha 补齐缺失、覆盖内容过期文件，修复 CI 的 TS2307 与盘序/金标准断言。",
+            "tree": tree["sha"],
+            "parents": [head],
+        },
+    )
+    api(
+        f"/repos/{REPO}/git/refs/heads/{BRANCH}",
+        "PATCH",
+        {"sha": commit["sha"], "force": False},
+    )
+    print("已对齐，远端 main =", commit["sha"][:8])
+    return commit["sha"]
+
+
 def main() -> None:
-    commit = sys.argv[1] if len(sys.argv) > 1 else "HEAD"
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if "--sync" in sys.argv:
+        sync_tree()
+        return
+
+    commit = args[0] if args else "HEAD"
     sha = git("rev-parse", commit)
     parent = git("rev-parse", f"{commit}~1")
     message = git("log", "-1", "--pretty=%B", commit)
@@ -178,6 +249,8 @@ def main() -> None:
         {"sha": new_commit["sha"], "force": False},
     )
     print("pushed", new_commit["sha"][:8])
+    # 推送后做一次文件树对齐，防止历史遗留的缺文件再次拖垮 CI
+    sync_tree()
 
 
 if __name__ == "__main__":

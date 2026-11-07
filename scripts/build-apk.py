@@ -11,10 +11,12 @@
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import zipfile
+import io
 
 # 强制 UTF-8 输出：Windows 下 Python 默认 stdout 为 cp1252，含中文的打印会抛
 # UnicodeEncodeError 导致构建脚本崩溃；仅影响日志编码，不改变产物。
@@ -59,8 +61,40 @@ def _read_version() -> str:
 
 
 VERSION = _read_version()
-VERSION_CODE = 10
+
+
+def _version_code(version: str) -> int:
+    """语义化版本 → versionCode：major*10000 + minor*100 + patch。"""
+    parts = (version.split('.') + ['0', '0'])[:3]
+    try:
+        major, minor, patch = (int(p) for p in parts)
+    except ValueError:
+        return 1
+    return major * 10000 + minor * 100 + patch
+
+
+VERSION_CODE = _version_code(VERSION)
 APK_NAME = f'HumanDesign-{VERSION}.apk'
+
+
+def _patched_manifest() -> str:
+    """按根 package.json 的版本生成清单副本。
+
+    aapt2 的 --version-code / --version-name 只在清单「缺少」该属性时生效，
+    而本仓库清单是静态写死的，直接传参会静默失效（v1.2.0 曾出现文件名 1.2.0、
+    清单仍为 1.0.1）。因此先改写清单属性，再交给 aapt2。
+    """
+    src = os.path.join(ANDROID_DIR, 'AndroidManifest.xml')
+    with io.open(src, encoding='utf-8') as fh:
+        xml = fh.read()
+    xml = re.sub(r'android:versionCode="[^"]*"', 'android:versionCode="%d"' % VERSION_CODE, xml)
+    xml = re.sub(r'android:versionName="[^"]*"', 'android:versionName="%s"' % VERSION, xml)
+    out = os.path.join(BUILD_DIR, 'AndroidManifest.xml')
+    os.makedirs(BUILD_DIR, exist_ok=True)
+    with io.open(out, 'w', encoding='utf-8') as fh:
+        fh.write(xml)
+    print('清单版本：%s (versionCode %d)' % (VERSION, VERSION_CODE))
+    return out
 
 
 def clean_dir(path):
@@ -204,8 +238,13 @@ def build():
     prepare_res()
 
     aapt2 = tool('aapt2')
-    manifest = os.path.join(ANDROID_DIR, 'AndroidManifest.xml')
     res_dir = os.path.join(ANDROID_DIR, 'res')
+
+    # aapt2 的 --version-code/--version-name 只在清单「没有」对应属性时才生效，
+    # 而本仓库的 AndroidManifest.xml 是静态写死的 —— 直接传参会静默失效
+    # （v1.2.0 打包时曾出现文件名 1.2.0 但清单仍是 1.0.1）。
+    # 因此这里按 package.json 生成一份补丁清单，再交给 aapt2。
+    manifest = _patched_manifest()
 
     # 1) 编译资源
     compiled = os.path.join(BUILD_DIR, 'compiled.zip')
@@ -224,7 +263,6 @@ def build():
         '--java', gen_java,
         '--min-sdk-version', '24',
         '--target-sdk-version', '34',
-        '--version-code', '2',
         '--version-name', VERSION,
         '--version-code', str(VERSION_CODE),
         compiled,

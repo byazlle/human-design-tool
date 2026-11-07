@@ -88,8 +88,16 @@ const CHANNEL_NAMES: Record<string, [string, string]> = {
   '47-64': ['Abstraction', '抽象'],
 }
 
-export function channelKey(a: number, b: number): string {
-  return a < b ? `${a}-${b}` : `${b}-${a}`
+/**
+ * 通道 key 归一化（内部使用）。
+ *
+ * 已从公共 API 移除：它接受任意两个整数并返回形似合法的 `"a-b"`，
+ * 一旦被外部调用即可"凭空造出"不在 36 组之内的通道。
+ * 现在只保留严格查表版本，不在表内返回 null。
+ */
+export function channelKeyOf(a: number, b: number): string | null {
+  const key = a < b ? `${a}-${b}` : `${b}-${a}`
+  return CHANNEL_BY_KEY[key] ? key : null
 }
 
 export const CHANNELS: ChannelDef[] = CHANNEL_GATE_PAIRS.map(([a, b]) => {
