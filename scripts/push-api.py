@@ -10,7 +10,8 @@
   再创建 commit 并快进 ref，绕开历史 LF/CRLF 造成的非快进分叉。
 - 文本改动直接放在 tree entry 的 `content` 里（GitHub 自行落 blob），
   一次 POST 即可完成，避免上百次 blob 请求被代理截断；二进制才单独建 blob。
-- 上传统一转成 LF，与 git 仓库里保存的树一致，不再制造新的行尾分叉。
+- 按工作区原始字节上传：本仓库 git blob 里存的是 CRLF，转成 LF 会让上传后的
+  blob sha 与本地 HEAD 永久不一致，导致每次推送都误判「内容过期」。
 """
 import base64
 import json
@@ -116,7 +117,9 @@ def entry_for_path(path: str):
         raw = fh.read()
     mode = "100755" if os.access(abs_path, os.X_OK) else "100644"
     try:
-        text = raw.decode("utf-8").replace("\r\n", "\n")
+        # 保持原始行尾：本仓库 git blob 里存的就是 CRLF，若在这里转成 LF，
+        # 上传后的 blob sha 会与本地 HEAD 永久不一致，每次推送都误判「内容过期」。
+        text = raw.decode("utf-8")
         return {"path": path, "mode": mode, "type": "blob", "content": text}
     except UnicodeDecodeError:
         print(f"二进制文件单独建 blob：{path}")
