@@ -108,17 +108,33 @@ def create_blob(raw: bytes) -> str:
     )["sha"]
 
 
+def head_blob(path: str):
+    """读取 HEAD 中该文件的原始字节；不在 HEAD 时返回 None。
+
+    必须用 HEAD 的字节而不是工作区：commit 时 git 可能做过行尾归一化，
+    工作区内容与 blob 不完全相同，上传后 sha 会永久不一致、每次推送都误判「内容过期」。
+    """
+    try:
+        return subprocess.check_output(
+            ["git", "cat-file", "blob", f"HEAD:{path}"],
+            cwd=ROOT,
+            stderr=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError:
+        return None
+
+
 def entry_for_path(path: str):
-    """单个工作区文件 → tree entry；文本直接内联 content，二进制才单独建 blob。"""
+    """单个文件 → tree entry；内容取 HEAD blob（与 git 树逐字节一致），文本内联、二进制建 blob。"""
+    raw = head_blob(path)
     abs_path = os.path.join(ROOT, path)
-    if not os.path.exists(abs_path):
-        return {"path": path, "mode": "100644", "type": "blob", "sha": None}
-    with open(abs_path, "rb") as fh:
-        raw = fh.read()
+    if raw is None:
+        if not os.path.exists(abs_path):
+            return {"path": path, "mode": "100644", "type": "blob", "sha": None}
+        with open(abs_path, "rb") as fh:
+            raw = fh.read()
     mode = "100755" if os.access(abs_path, os.X_OK) else "100644"
     try:
-        # 保持原始行尾：本仓库 git blob 里存的就是 CRLF，若在这里转成 LF，
-        # 上传后的 blob sha 会与本地 HEAD 永久不一致，每次推送都误判「内容过期」。
         text = raw.decode("utf-8")
         return {"path": path, "mode": mode, "type": "blob", "content": text}
     except UnicodeDecodeError:
