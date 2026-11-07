@@ -21,7 +21,7 @@ import { CHANNELS, GATE_CENTER } from '../engine/gateData'
 import { ENGINE_VERSION } from '../engine/version'
 
 /** 提示词版本：提示词正文一改就必须 +1（同时进入缓存键，见 cacheKey） */
-export const PROMPT_VERSION = '3.0'
+export const PROMPT_VERSION = '3.1'
 
 export interface AiExplainArgs {
   cfg: AiConfig
@@ -187,13 +187,27 @@ export interface RequestParams {
 }
 
 /**
+ * 输出被 max_tokens 截断（finish_reason === 'length'）时，自动续写的最大段数。
+ * 续写把已生成内容作为 assistant 消息回传，要求从中断处继续，拼接后返回完整内容；
+ * 这样即使模型上限低于提示词要求（完整版融合契约 2900–4500 字），也不会静默丢结尾。
+ */
+export const MAX_CONTINUATIONS = 2
+
+const CONTINUE_PROMPT =
+  '你的上一段输出因长度上限被截断。请严格从中断处继续写完，不要重复已经写过的内容，' +
+  '不要重新开头、不要复述标题、不要加「继续」之类的过渡语。'
+
+/**
  * 采样参数：max_tokens ≥ 目标字数 × 1.8。
  * 完整版分项（full-*）与融合（full-fusion）单独给额度；其余按 mode。
  */
 export function resolveRequestParams(scope: string, mode?: AiDetailMode): RequestParams {
   const effective = resolveDetailMode(scope, mode)
-  if (scope === 'full-fusion') return { mode: effective, temperature: 0.6, maxTokens: 6000 }
-  if (scope.startsWith('full-')) return { mode: effective, temperature: 0.65, maxTokens: 3000 }
+  // 融合契约要求 2900–4500 字（整合分析 + 分水岭 + 优势卡点 + 行动纲领 + 总结论），
+  // 6000 tokens 会在第 4/5 节前被截断；分项契约 900–1400 字，3000 也偏紧。
+  // 超出模型上限时由 explain() 的续写机制兜底，不会静默丢内容。
+  if (scope === 'full-fusion') return { mode: effective, temperature: 0.6, maxTokens: 8000 }
+  if (scope.startsWith('full-')) return { mode: effective, temperature: 0.65, maxTokens: 4000 }
   if (scope.startsWith('composite-')) {
     return { mode: effective, temperature: 0.6, maxTokens: 4500 }
   }
@@ -534,44 +548,69 @@ export async function explain(args: AiExplainArgs): Promise<string> {
   args.signal?.addEventListener('abort', onAbort)
 
   try {
-    const response = await fetch(resolveEndpoint(cfg.baseUrl), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${cfg.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: cfg.model,
-        temperature: params.temperature,
-        max_tokens: params.maxTokens,
-        messages: [
-          { role: 'system', content: systemPromptOf(params.mode, args.scope) },
-          { role: 'user', content: buildUserPrompt(args) },
-        ],
-      }),
-      signal: controller.signal,
-    })
+    type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
+    const messages: ChatMessage[] = [
+      { role: 'system', content: systemPromptOf(params.mode, args.scope) },
+      { role: 'user', content: buildUserPrompt(args) },
+    ]
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => '')
-      throw new AiError(
-        `接口返回 ${response.status}${text ? `：${text.slice(0, 200)}` : ''}`,
-        'http',
-      )
-    }
+    let content = ''
+    for (let round = 0; round <= MAX_CONTINUATIONS; round += 1) {
+      const response = await fetch(resolveEndpoint(cfg.baseUrl), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${cfg.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: cfg.model,
+          temperature: params.temperature,
+          max_tokens: params.maxTokens,
+          messages,
+        }),
+        signal: controller.signal,
+      })
 
-    let data: { choices?: Array<{ message?: { content?: string } }> }
-    try {
-      data = (await response.json()) as typeof data
-    } catch (err) {
-      if ((err as Error)?.name === 'SyntaxError') {
-        // 接口返回了非 JSON（例如网关错误页），属于格式问题而非网络问题。
-        throw new AiError(`接口返回的不是合法 JSON：${(err as Error).message}`, 'format')
+      if (!response.ok) {
+        const text = await response.text().catch(() => '')
+        throw new AiError(
+          `接口返回 ${response.status}${text ? `：${text.slice(0, 200)}` : ''}`,
+          'http',
+        )
       }
-      throw err
+
+      let data: {
+        choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
+      }
+      try {
+        data = (await response.json()) as typeof data
+      } catch (err) {
+        if ((err as Error)?.name === 'SyntaxError') {
+          // 接口返回了非 JSON（例如网关错误页），属于格式问题而非网络问题。
+          throw new AiError(`接口返回的不是合法 JSON：${(err as Error).message}`, 'format')
+        }
+        throw err
+      }
+      const choice = data.choices?.[0]
+      const piece = choice?.message?.content?.trim()
+      if (!piece) throw new AiError('接口未返回可用的解读内容', 'format')
+      content = content ? `${content}\n\n${piece}` : piece
+
+      // finish_reason='length'：输出被 max_tokens 截断，继续向模型要剩余部分，
+      // 而不是把半句话当成完整解读返回（完整版融合最容易触发）。
+      if (choice?.finish_reason !== 'length') break
+      if (round === MAX_CONTINUATIONS) {
+        console.warn(
+          `[AI] 已续写 ${MAX_CONTINUATIONS} 次仍触顶（scope=${args.scope} / ${params.mode}），输出可能不完整`,
+        )
+        break
+      }
+      console.warn(
+        `[AI] 输出达到 max_tokens，自动续写第 ${round + 1} 段（scope=${args.scope} / ${params.mode}）`,
+      )
+      messages.push({ role: 'assistant', content })
+      messages.push({ role: 'user', content: CONTINUE_PROMPT })
     }
-    const content = data.choices?.[0]?.message?.content?.trim()
-    if (!content) throw new AiError('接口未返回可用的解读内容', 'format')
 
     // 防幻觉：只告警不阻断——内容仍原样展示，便于用户自行核对
     const invented = validateAiReplyFacts(

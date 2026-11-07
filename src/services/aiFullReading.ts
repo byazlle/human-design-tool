@@ -251,7 +251,11 @@ export function buildFusionInput(sections: FullReportSection[], skipped: string[
 
 /** 从融合输出里拆出「最终总结论」，不新增任何内容 */
 export function splitFusion(raw: string): { fusion: string; summary: string } {
-  const match = raw.match(/^#{1,4}\s*(?:[0-9]+[.、]?\s*)?最终总结论\s*$/m)
+  // 模型常把标题写成「## 五、最终总结论」或加粗，序号阿拉伯/中文都要认，
+  // 否则总结论会被并进整合分析，导出里看不到独立一节。
+  const match = raw.match(
+    /^#{1,4}\s*(?:[0-9一二三四五六七八九十]+[.、．]?\s*)?[*_]{0,2}最终总结论[*_]{0,2}\s*$/m,
+  )
   if (!match || match.index === undefined) return { fusion: raw.trim(), summary: '' }
   return {
     fusion: raw.slice(0, match.index).trim(),
