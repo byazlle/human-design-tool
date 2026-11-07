@@ -6,6 +6,7 @@
 做法：把 dist 装进预组装目录 resources/app，再让 electron-builder 走 --prepackaged
 只做 NSIS 封装 —— 这样绕开本机 electron-builder 解压 Electron 时的 EPERM 重命名问题。
 """
+import json
 import os
 import shutil
 import subprocess
@@ -30,6 +31,14 @@ APP_DIR = os.path.join(STAGE, 'resources', 'app')
 NODE = os.path.dirname(shutil.which('node') or '')
 if not NODE:
     NODE = r'C:\Users\cat\.workbuddy\binaries\node\versions\22.22.2-6'
+
+# NSIS 的快捷方式目标由 productName 决定（$INSTDIR\<productName>.exe）。
+# 本脚本用 --prepackaged 复用自举目录，主程序名必须与 productName 完全一致，
+# 否则安装后快捷方式会指向不存在的 exe（v2.2.0 CI 产物即此问题）。
+with open(os.path.join(DESKTOP, 'package.json'), encoding='utf-8') as _fh:
+    _pkg = json.load(_fh)
+PRODUCT_NAME = (_pkg.get('build') or {}).get('productName') or _pkg.get('name') or 'HumanDesign'
+APP_EXE = f'{PRODUCT_NAME}.exe'
 
 
 def clean_dir(path):
@@ -66,13 +75,27 @@ def ensure_stage():
         else:
             shutil.copy2(src, dst)
 
-    # Electron 主程序改名为产品名
-    for candidate in ('electron.exe', 'electron'):
+    print('已从 electron 运行时自举 win-unpacked')
+    ensure_app_exe()
+
+
+def ensure_app_exe():
+    """保证 stage 里的主程序名 = productName（NSIS 快捷方式据此定位 $INSTDIR\\<name>.exe）。
+
+    自举得到的是 electron.exe；历史版本写死改成 HumanDesign.exe，与 productName
+    「人类图排盘」不一致，安装后快捷方式指向不存在的文件。这里统一按 productName 命名，
+    并顺带纠正旧缓存里遗留的 HumanDesign.exe。
+    """
+    target = os.path.join(STAGE, APP_EXE)
+    if os.path.exists(target):
+        return
+    for candidate in ('electron.exe', 'electron', 'HumanDesign.exe'):
         old = os.path.join(STAGE, candidate)
         if os.path.exists(old):
-            os.rename(old, os.path.join(STAGE, 'HumanDesign.exe'))
-            break
-    print('已从 electron 运行时自举 win-unpacked')
+            os.rename(old, target)
+            print(f'主程序已命名为 {APP_EXE}')
+            return
+    raise SystemExit(f'找不到 Electron 主程序，无法按 productName 命名为 {APP_EXE}')
 
 
 def stage_app():
@@ -80,6 +103,7 @@ def stage_app():
         print('缺少 dist，请先执行 npm run build')
         sys.exit(1)
     ensure_stage()
+    ensure_app_exe()
 
     os.makedirs(APP_DIR, exist_ok=True)
 

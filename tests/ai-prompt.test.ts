@@ -173,9 +173,9 @@ describe('采样参数：按 mode / scope 取值', () => {
     expect(resolveDetailMode('single', 'detailed')).toBe('detailed')
   })
 
-  it('完整版分项 / 融合的采样额度', () => {
-    expect(resolveRequestParams('full-gate', 'full').maxTokens).toBe(3000)
-    expect(resolveRequestParams('full-fusion', 'full').maxTokens).toBe(6000)
+  it('完整版分项 / 融合的采样额度（覆盖字数契约，截断由续写兜底）', () => {
+    expect(resolveRequestParams('full-gate', 'full').maxTokens).toBe(4000)
+    expect(resolveRequestParams('full-fusion', 'full').maxTokens).toBe(8000)
     expect(resolveRequestParams('full-channel', 'full').mode).toBe('full')
     expect(resolveRequestParams('single', 'full').maxTokens).toBe(8000)
   })
@@ -233,7 +233,7 @@ describe('提示词的关键契约（字数 / 结构）', () => {
   })
 
   it('提示词版本为 3.0（旧 p2.0 缓存不得串档）', () => {
-    expect(PROMPT_VERSION).toBe('3.0')
+    expect(PROMPT_VERSION).toBe('3.1')
   })
 })
 
