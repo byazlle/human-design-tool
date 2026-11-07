@@ -101,11 +101,11 @@
 | 中心形状 | 三角 / 倒三角 / 矩形 / 菱形 / 小三角 | 圆角三角 / 方形 / **八角星** / 心形三角 |
 | 闸门字号 | 24 | 14（偏移 ×0.78 内收，避免数字出形） |
 | 底板 | 青色渐变 + 剪影 + 白管 | 无 |
-| 注册表 | `layouts.ts` → `LAYOUT_PRESETS` | 同上 |
+| 注册表 | `layouts.ts` → `layoutOf()`（v2.2 起恒返回 v1） | — |
 
-切换入口：**设置 → 绘图程序**（`settings.appearance.drawingEngine`）。
-切换是响应式的，所有视图（单盘 / 对比 / 合盘 / 多盘 / 新建预览）立即重绘；
-「重新生成全部图表」调用 `archiveStore.regenerateAll()` 逐份重算并持久化。
+> **历史说明**：v2.1 及更早提供「绘图程序 v1 / v2」切换（`settings.appearance.drawingEngine`）；
+> v2.2.0 按用户确认删除版式二，所有视图统一使用 v1 底图对齐版式。
+> 「重新生成全部图表」按钮已移至 设置 → 数据，调用 `archiveStore.regenerateAll()` 逐份重算并持久化。
 
 ## 6. 坐标维护须知
 

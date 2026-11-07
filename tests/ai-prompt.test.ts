@@ -10,12 +10,15 @@ import type { AiConfig } from '../src/types/hd'
 import {
   PROMPT_SYSTEM_CONCISE,
   PROMPT_SYSTEM_DETAILED,
+  PROMPT_SYSTEM_FULL,
+  PROMPT_SYSTEM_FUSION,
   PROMPT_VERSION,
   buildUserPrompt,
   cacheKey,
   resolveDetailMode,
   resolveRequestParams,
   systemPromptOf,
+  validateAiConfig,
   validateAiReplyFacts,
 } from '../src/services/aiClient'
 
@@ -52,10 +55,18 @@ describe('缓存键：详细度与提示词版本必须隔离', () => {
     expect(key.split(':')[1]).toBe(`p${PROMPT_VERSION}`)
   })
 
-  it('单点 scope 即使选了 detailed，键也回到 concise（不产生假详细的缓存）', () => {
-    const asIs = cacheKey(CFG, { ...ARGS, scope: 'gate', ref: '41', detailMode: 'detailed' })
-    const forced = cacheKey(CFG, { ...ARGS, scope: 'gate', ref: '41', detailMode: 'concise' })
-    expect(asIs).toBe(forced)
+  it('v3.0 解除单点强制精简：gate + detailed 与 concise 的键不同', () => {
+    const detailed = cacheKey(CFG, { ...ARGS, scope: 'gate', ref: '41', detailMode: 'detailed' })
+    const concise = cacheKey(CFG, { ...ARGS, scope: 'gate', ref: '41', detailMode: 'concise' })
+    expect(detailed).not.toBe(concise)
+    expect(detailed).toContain(':detailed:')
+  })
+
+  it('完整版（full）有独立缓存键，融合 scope 也隔离', () => {
+    const full = cacheKey(CFG, { ...ARGS, detailMode: 'full' })
+    expect(full).toContain(':full:')
+    expect(full).not.toBe(cacheKey(CFG, { ...ARGS, detailMode: 'detailed' }))
+    expect(cacheKey(CFG, { ...ARGS, scope: 'full-fusion', detailMode: 'full' })).not.toBe(full)
   })
 
   it('换盘面事实 / 换 ref 都会换键', () => {
@@ -99,9 +110,18 @@ describe('user 提示词：四段固定顺序', () => {
     expect(concise).toContain('角度：综合解读')
   })
 
-  it('单点 scope 的【用户选择】写的是「精简」（口径与 system 一致）', () => {
+  it('v3.0 单点 scope 不再强制精简：【用户选择】与 system 都按所选档位', () => {
     const prompt = buildUserPrompt({ ...ARGS, scope: 'channel', ref: '1-8', detailMode: 'detailed' })
-    expect(prompt).toContain('详细度：精简')
+    expect(prompt).toContain('详细度：详细')
+    expect(systemPromptOf('detailed', 'channel')).toBe(PROMPT_SYSTEM_DETAILED)
+  })
+
+  it('完整版分项与融合有专属【本次任务】指令', () => {
+    const part = buildUserPrompt({ ...ARGS, scope: 'full-gate', ref: '41', detailMode: 'full' })
+    expect(part).toContain('详细度：完整')
+    expect(part).toContain('只写【用户选择】指定的这一项专项解读')
+    const fusion = buildUserPrompt({ ...ARGS, scope: 'full-fusion', detailMode: 'full' })
+    expect(fusion).toContain('全盘融合分析与最终总结论')
   })
 
   it('没有盘面事实时不出现空的【盘面事实】块', () => {
@@ -142,15 +162,22 @@ describe('采样参数：按 mode / scope 取值', () => {
     expect(detailed.temperature).toBeCloseTo(0.65)
   })
 
-  it('单点 scope 强制 concise + 0.50/900', () => {
+  it('v3.0 单点 scope 不再强制降级，按所选档位给参数', () => {
     for (const scope of ['gate', 'channel', 'center']) {
       const p = resolveRequestParams(scope, 'detailed')
-      expect(p.mode).toBe('concise')
-      expect(p.temperature).toBeCloseTo(0.5)
-      expect(p.maxTokens).toBe(900)
+      expect(p.mode).toBe('detailed')
+      expect(p.temperature).toBeCloseTo(0.65)
+      expect(p.maxTokens).toBe(6000)
     }
-    expect(resolveDetailMode('gate', 'detailed')).toBe('concise')
+    expect(resolveDetailMode('gate', 'detailed')).toBe('detailed')
     expect(resolveDetailMode('single', 'detailed')).toBe('detailed')
+  })
+
+  it('完整版分项 / 融合的采样额度', () => {
+    expect(resolveRequestParams('full-gate', 'full').maxTokens).toBe(3000)
+    expect(resolveRequestParams('full-fusion', 'full').maxTokens).toBe(6000)
+    expect(resolveRequestParams('full-channel', 'full').mode).toBe('full')
+    expect(resolveRequestParams('single', 'full').maxTokens).toBe(8000)
   })
 
   it('合盘按 0.60/4500，凯龙按 0.55/1500', () => {
@@ -162,14 +189,17 @@ describe('采样参数：按 mode / scope 取值', () => {
     expect(chiron.maxTokens).toBe(1500)
   })
 
-  it('system 提示词与 mode 一对一绑定', () => {
+  it('system 提示词按档位与 scope 选（四套一对一绑定）', () => {
     expect(systemPromptOf('concise')).toBe(PROMPT_SYSTEM_CONCISE)
     expect(systemPromptOf('detailed')).toBe(PROMPT_SYSTEM_DETAILED)
+    expect(systemPromptOf('full')).toBe(PROMPT_SYSTEM_FULL)
+    expect(systemPromptOf('full', 'full-fusion')).toBe(PROMPT_SYSTEM_FUSION)
+    expect(systemPromptOf('concise', 'full-fusion')).toBe(PROMPT_SYSTEM_FUSION)
     expect(PROMPT_SYSTEM_CONCISE).not.toBe(PROMPT_SYSTEM_DETAILED)
   })
 })
 
-describe('两版提示词的关键契约（字数 / 结构）', () => {
+describe('提示词的关键契约（字数 / 结构）', () => {
   it('精简版声明 5 个视角与 600–900 字', () => {
     expect(PROMPT_SYSTEM_CONCISE).toContain('必须覆盖的 5 个视角')
     expect(PROMPT_SYSTEM_CONCISE).toContain('600–900 字')
@@ -187,15 +217,30 @@ describe('两版提示词的关键契约（字数 / 结构）', () => {
     }
   })
 
-  it('两版全文与规范文档的代码块逐字一致（改提示词必须同时改文档）', () => {
+  it('四套全文与规范文档的代码块逐字一致（改提示词必须同时改文档）', () => {
     const md = readFileSync('docs/spec/AI-PROMPT-v2.0.md', 'utf8')
     const codeBlocks: string[] = []
     const re = /```text\n([\s\S]*?)```/g
     let m: RegExpExecArray | null
     while ((m = re.exec(md))) codeBlocks.push(m[1].replace(/\s+$/, ''))
-    // 文档里依次是：1.3 事实块模板、2.1 精简全文、3.1 详细全文、4.6 验收夹具
-    expect(codeBlocks).toHaveLength(4)
+    // 文档里依次是：1.3 事实块模板、2.1 精简全文、3.1 详细全文、4.6 验收夹具、
+    //               5.1 完整版分项全文、5.2 完整版融合全文
+    expect(codeBlocks).toHaveLength(6)
     expect(PROMPT_SYSTEM_CONCISE).toBe(codeBlocks[1])
     expect(PROMPT_SYSTEM_DETAILED).toBe(codeBlocks[2])
+    expect(PROMPT_SYSTEM_FULL).toBe(codeBlocks[4])
+    expect(PROMPT_SYSTEM_FUSION).toBe(codeBlocks[5])
+  })
+
+  it('提示词版本为 3.0（旧 p2.0 缓存不得串档）', () => {
+    expect(PROMPT_VERSION).toBe('3.0')
+  })
+})
+
+describe('超时上限（#11：3–3600 秒三处校验一致）', () => {
+  it('3600000ms 合法、3600001ms 与 2999ms 被拒', () => {
+    expect(validateAiConfig({ ...CFG, timeoutMs: 3600000 })).toBeNull()
+    expect(validateAiConfig({ ...CFG, timeoutMs: 3600001 })).toContain('3–3600 秒')
+    expect(validateAiConfig({ ...CFG, timeoutMs: 2999 })).toContain('3–3600 秒')
   })
 })

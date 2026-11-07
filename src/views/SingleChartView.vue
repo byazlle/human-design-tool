@@ -22,7 +22,7 @@ import EmptyState from '../components/base/EmptyState.vue'
 import IconButton from '../components/base/IconButton.vue'
 import HdToggle from '../components/base/HdToggle.vue'
 import { CENTER_TEXT } from '../services/interpretations'
-import { AUTHORITY_LABELS, CENTER_LABELS, DEFINITION_LABELS, TYPE_LABELS, type CenterId } from '../types/hd'
+import { AUTHORITY_LABELS, CENTER_LABELS, DEFINITION_LABELS, TYPE_LABELS, type AiDetailMode, type CenterId } from '../types/hd'
 import { gateInsightOf } from '../services/gateInsight'
 import { angleOf } from '../services/readingAngles'
 import { crossReadingOf } from '../services/crossData'
@@ -35,6 +35,8 @@ import CrossPanel from '../components/chart/CrossPanel.vue'
 import AiComposer, { type DimKey } from '../components/panel/AiComposer.vue'
 import ArchiveEditDialog from '../components/archive/ArchiveEditDialog.vue'
 import ConfirmDialog from '../components/base/ConfirmDialog.vue'
+import CustomLayoutCanvas from '../components/layout/CustomLayoutCanvas.vue'
+import { usePageLayoutStore } from '../stores/pageLayout'
 
 const route = useRoute()
 const router = useRouter()
@@ -42,6 +44,7 @@ const archiveStore = useArchiveStore()
 const ui = useUiStore()
 const settings = useSettingsStore()
 const { isMobile } = useBreakpoint()
+const layout = usePageLayoutStore()
 const {
   state: aiState,
   run: runAi,
@@ -173,7 +176,13 @@ async function requestUnifiedAi(payload: {
   if (!chart.value || !archive.value) return
   angleKey.value = payload.angleKey
   const angleInfo = angleOf(payload.angleKey)
-  const modeLabel = settings.aiDetailMode === 'detailed' ? '详细' : '精简'
+  // 三档（Q3.1）：精简 / 详细 / 完整；完整档走 #9 多轮分步编排
+  const AI_MODE_LABELS: Record<AiDetailMode, string> = {
+    concise: '精简',
+    detailed: '详细',
+    full: '完整',
+  }
+  const modeLabel = AI_MODE_LABELS[settings.aiDetailMode]
   const direction = payload.customDirection
     ? `【自定义解读方向】用户希望重点从「${payload.customDirection}」的角度解读，请围绕该方向展开，同时保持术语准确。`
     : `【解读角度】${angleInfo.label}：${angleInfo.prompt}`
@@ -187,6 +196,8 @@ async function requestUnifiedAi(payload: {
     offline: `${buildUnifiedOffline(payload.dimensions)}\n\n${direction}\n\n请把以上所有勾选维度作为一个整体来综合解读：先给出整体画像结论，再分别说明各维度如何相互影响，最后给落地建议。`,
     chart: chart.value,
     detailMode: settings.aiDetailMode,
+    full: settings.aiDetailMode === 'full',
+    stepMode: settings.aiStepMode,
     angle: payload.customDirection || angleInfo.label,
   })
 }
@@ -395,17 +406,21 @@ const starListOpen = ref(false)
       @action="goBack"
     />
 
-    <main v-else class="layout" :class="{ mobile: isMobile }">
+    <main v-else class="layout" :class="{ mobile: isMobile, 'layout-custom': !isMobile && layout.preset !== 'single' }">
       <div v-if="chart.meta?.warning" class="notice warn" role="status">
         <span class="t-sm">{{ chart.meta.warning }}</span>
       </div>
 
+      <CustomLayoutCanvas :mobile="isMobile">
+        <template #angles>
       <!-- AI 全维度组合解读（电脑端 / 手机端同一组件） -->
       <div class="angle-bar card">
         <span class="t-xs angle-label">AI 综合解读</span>
         <AiComposer :loading="aiState.loading" @run="requestUnifiedAi" />
       </div>
 
+        </template>
+        <template #chart>
       <!-- ① 人体图（星列在图上方的内侧左右） -->
       <div v-if="isMobile" class="card mobile-planets">
         <PlanetColumn
@@ -489,11 +504,15 @@ const starListOpen = ref(false)
         </div>
       </section>
 
+        </template>
+        <template #meta>
       <!-- ② 盘面信息（类型 / 权威 / 定义 / 角色） -->
       <section class="card module-card">
         <BoardMeta :chart="chart" />
       </section>
 
+        </template>
+        <template #activation>
       <!-- ③ 激活通道 / 闸门 / 九中心 -->
       <ActivationPanels
         :chart="chart"
@@ -504,11 +523,15 @@ const starListOpen = ref(false)
         @center-click="ui.openCenter($event, 'single')"
       />
 
+        </template>
+        <template #cross>
       <!-- ④ 轮回交叉 -->
       <section class="card module-card">
         <CrossPanel :chart="chart" />
       </section>
 
+        </template>
+        <template #destiny>
       <!-- ⑤ 人生轨迹 -->
       <section class="card module-card">
         <h3 class="t-title destiny-title">人生轨迹</h3>
@@ -528,6 +551,8 @@ const starListOpen = ref(false)
         </div>
       </section>
 
+        </template>
+        <template #detail>
       <!-- 详情（点击闸门/通道/中心后在下方展开） -->
       <DetailCard
         :selection="ui.panel"
@@ -535,6 +560,8 @@ const starListOpen = ref(false)
         @close="ui.closePanel()"
         @request-ai="requestAiForSelection"
       />
+        </template>
+      </CustomLayoutCanvas>
     </main>
 
     <!-- 手机：底部固定操作 -->
@@ -577,6 +604,10 @@ const starListOpen = ref(false)
       :loading="aiState.loading"
       :error="aiState.error"
       :configured="aiConfigured"
+      :mode="settings.aiDetailMode"
+      :report="aiState.report"
+      :progress="aiState.progress"
+      :meta="{ chartName: archive?.name }"
       @close="ui.closeAi()"
       @copy="copyAi"
       @save="saveAi"
@@ -642,6 +673,11 @@ const starListOpen = ref(false)
   margin: 0 auto;
   padding: 8px var(--layout-pad, var(--sp-4)) 96px;
   box-sizing: border-box;
+}
+
+/* 自定义布局（双列 / 三列 / 手动调整）放宽画布宽度 */
+.layout.layout-custom {
+  max-width: min(1400px, 100%);
 }
 
 /* AI 角度条 */

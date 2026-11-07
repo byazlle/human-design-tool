@@ -61,11 +61,17 @@ export type CenterId =
   | 'root'
 
 /**
- * AI 解读详细度（规范 `docs/spec/AI-PROMPT-v2.0.md` §2 / §3）：
+ * AI 解读详细度（规范 `docs/spec/AI-PROMPT-v2.0.md` §2 / §3 / §5）：
  * - `concise`：600–900 字、5 个固定视角；
- * - `detailed`：1800–3000 字、8 节 + 一页速记。
+ * - `detailed`：1800–3000 字、8 节 + 一页速记；
+ * - `full`：多轮分步完整版（八大维度 + 逐闸门 + 逐通道 + 全盘融合），整套 15000–25000 字。
+ *
+ * v3.0 起解除「单点强制精简」：单独选闸门 / 通道 / 中心时同样按所选档位生效（用户 Q3.3）。
  */
-export type AiDetailMode = 'concise' | 'detailed'
+export type AiDetailMode = 'concise' | 'detailed' | 'full'
+
+/** 完整版多轮编排的执行方式：串行 / 并发（并发失败时自动转串行，用户 Q3.4） */
+export type AiStepMode = 'serial' | 'parallel'
 
 export const CENTER_IDS: CenterId[] = [
   'head',

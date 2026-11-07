@@ -17,7 +17,7 @@
 import { computed } from 'vue'
 import type { BodyGraph, CenterId, Ownership, UiFilter } from '../../types/hd'
 import { layoutOf, polygonOf, type DrawingEngine, type LayoutChannel } from './layouts'
-import { SILHOUETTE_PATH } from './bodyGraphLayout'
+import { SILHOUETTE_PATH, hangingEndRatio } from './bodyGraphLayout'
 
 const props = withDefaults(
   defineProps<{
@@ -375,8 +375,11 @@ const hangingChannels = computed(() => {
     const t = 0.12
     const sx = bx + (p.x - bx) * t
     const sy = by + (p.y - by) * t
-    const ex = sx + (ox - sx) * 0.45
-    const ey = sy + (oy - sy) * 0.45
+    // 悬挂闸门必须连到「本通道的中点」。枢纽路线的相邻点就是中点 M，
+    // 再折半会只剩 1/4（历史 bug），比例统一由 hangingEndRatio 决定。
+    const ratio = hangingEndRatio(l)
+    const ex = sx + (ox - sx) * ratio
+    const ey = sy + (oy - sy) * ratio
     const stroke =
       props.mode === 'composite'
         ? ownerVar(props.gateOwners[gate])

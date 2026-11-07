@@ -9,7 +9,13 @@ import { computed, onScopeDispose, watch } from 'vue'
 import { useUiStore } from '../stores/ui'
 import { useSettingsStore } from '../stores/settings'
 import { AiError, chartSummaryOf, explain, validateAiConfig } from '../services/aiClient'
-import type { AiDetailMode, BodyGraph } from '../types/hd'
+import {
+  runFullReading,
+  type FullReadingPlan,
+  type FullReadingUpdate,
+} from '../services/aiFullReading'
+import { serializeFullReport } from '../services/aiExport'
+import type { AiDetailMode, AiStepMode, BodyGraph } from '../types/hd'
 
 interface RunOptions {
   scope: string
@@ -23,6 +29,19 @@ interface RunOptions {
   detailMode?: AiDetailMode
   /** 解读角度标签，注入【用户选择】 */
   angle?: string
+  /**
+   * #9：是否走「完整版」多轮分步编排。
+   * 整盘类请求（单人整盘 / 合盘 / 双盘对比 / 凯龙回归盘）置 true；
+   * 单点闸门/通道/中心仍按三档做单次解读（Q3.3）。
+   */
+  full?: boolean
+  /** 完整版串行 / 并发；不传跟随全局设置 */
+  stepMode?: AiStepMode
+  /**
+   * 关系场（合盘 / 双盘对比）的完整版编排计划：注入合规任务清单与事实块。
+   * 不传时走单人整盘默认编排，行为不变。
+   */
+  fullPlan?: FullReadingPlan
 }
 
 /** 上一次请求参数：仅用于「重试」，不写入 ui 状态 */
@@ -55,6 +74,56 @@ export function useAiReading() {
   // 组件卸载 → 取消在途请求
   onScopeDispose(abort)
 
+  /**
+   * #9 完整版编排：进度与「已完成分项快照」实时写入 UI，取消 / 失败都不写伪造内容。
+   * 完成后 content 仍是完整 Markdown（复制 / 保存到本地记录继续可用），
+   * 面板的模块化展示则由 report 承担。
+   */
+  async function runFull(options: RunOptions, own: AbortController) {
+    const chart = options.chart!
+    const title = options.title
+    const generatedAt = new Date().toISOString()
+    const publish = (update: FullReadingUpdate) => {
+      ui.setAiProgress(update.progress)
+      ui.setAiReport({
+        title,
+        sections: update.sections,
+        fusion: update.fusion,
+        summary: update.summary,
+        totalChars:
+          update.sections.reduce((n, s) => n + s.content.replace(/\s/g, '').length, 0) +
+          update.fusion.replace(/\s/g, '').length,
+        skipped: update.skipped,
+        generatedAt,
+      })
+    }
+    try {
+      const report = await runFullReading({
+        cfg: { ...settings.ai },
+        chart,
+        title,
+        stepMode: options.stepMode ?? settings.aiStepMode,
+        signal: own.signal,
+        onUpdate: publish,
+        ...(options.fullPlan ?? {}),
+      })
+      if (own.signal.aborted) {
+        ui.setAiLoading(false)
+        return
+      }
+      ui.setAiReport(report)
+      ui.setAiContent(serializeFullReport(report))
+    } catch (err) {
+      if (own.signal.aborted) {
+        ui.setAiLoading(false)
+        return
+      }
+      const message =
+        err instanceof AiError ? err.message : `调用失败：${(err as Error).message ?? '未知错误'}`
+      ui.setAiError(message)
+    }
+  }
+
   async function run(options: RunOptions, externalSignal?: AbortSignal) {
     lastOptions = { ...options }
 
@@ -86,6 +155,16 @@ export function useAiReading() {
 
     // abort() 可能把 loading 置回 false（取消旧请求），这里统一重新进入 loading
     ui.setAiLoading(true)
+
+    // 完整版：整盘类请求才走多轮编排；单点解读仍按三档做单次请求
+    if (options.full && options.chart) {
+      try {
+        await runFull(options, own)
+      } finally {
+        if (controller === own) controller = null
+      }
+      return
+    }
 
     try {
       const content = await explain({

@@ -7,14 +7,19 @@ import { describe, expect, it } from 'vitest'
 import {
   CENTER_SHAPES,
   CHANNEL_LINES,
+  GATE_FONT,
   GATE_POINTS,
   GATE_R,
+  HEART_CX,
+  HEART_CY,
   HEART_ROTATION_DEG,
+  HEART_SHIFT_Y,
   HEART_TRIANGLE,
   SILHOUETTE_PATH,
   VIEW_H,
   VIEW_W,
   barycentricCoords,
+  hangingEndRatio,
   minEdgeDistance,
   triangleEdgeDistances,
 } from '../src/components/chart/bodyGraphLayout'
@@ -22,15 +27,17 @@ import {
 const heartTri = HEART_TRIANGLE
 const HEART_GATES = [21, 51, 26, 40]
 
-describe('意志力中心：顺时针旋转 30° + 闸门三角内布点', () => {
+describe('意志力中心：顺时针旋转 55° + 整体下移 28px + 闸门三角内布点', () => {
   it('三角以自身中心旋转，边长/半径不变，顶点与预期一致', () => {
-    const centroid: [number, number] = [768, 1149]
+    const centroid: [number, number] = [HEART_CX, HEART_CY]
     const originals: Array<[number, number]> = [
-      [768, 1084],
-      [660, 1184],
-      [884, 1184],
+      [768, 1084 + HEART_SHIFT_Y],
+      [660, 1184 + HEART_SHIFT_Y],
+      [884, 1184 + HEART_SHIFT_Y],
     ]
-    expect(HEART_ROTATION_DEG).toBe(30)
+    expect(HEART_ROTATION_DEG).toBe(55)
+    expect(HEART_SHIFT_Y).toBe(GATE_FONT)
+    expect(HEART_CY).toBe(1149 + GATE_FONT)
 
     // 到中心距离保持不变（只转角度）
     const radii = heartTri.map(([x, y]) => Math.hypot(x - centroid[0], y - centroid[1]))
@@ -39,13 +46,18 @@ describe('意志力中心：顺时针旋转 30° + 闸门三角内布点', () =>
     )
     radii.forEach((r, i) => expect(r).toBeCloseTo(originalRadii[i], 6))
 
-    // 三个顶点：顺时针 30° 后的坐标
-    expect(heartTri[0][0]).toBeCloseTo(800.5, 2)
-    expect(heartTri[0][1]).toBeCloseTo(1092.71, 2)
-    expect(heartTri[1][0]).toBeCloseTo(656.97, 2)
-    expect(heartTri[1][1]).toBeCloseTo(1125.31, 2)
-    expect(heartTri[2][0]).toBeCloseTo(850.96, 2)
-    expect(heartTri[2][1]).toBeCloseTo(1237.31, 2)
+    // 三个顶点：先下移 28px、再顺时针 55° 后的坐标
+    expect(heartTri[0][0]).toBeCloseTo(821.24, 2)
+    expect(heartTri[0][1]).toBeCloseTo(1139.72, 2)
+    expect(heartTri[1][0]).toBeCloseTo(677.38, 2)
+    expect(heartTri[1][1]).toBeCloseTo(1108.61, 2)
+    expect(heartTri[2][0]).toBeCloseTo(805.86, 2)
+    expect(heartTri[2][1]).toBeCloseTo(1292.1, 2)
+
+    // 相对上一版（顺时针 30°）的形心，整体下移约一个字符高度
+    const cy = heartTri.reduce((sum, p) => sum + p[1], 0) / 3
+    const prevCy = (1092.71 + 1125.31 + 1237.31) / 3
+    expect(cy - prevCy).toBeCloseTo(HEART_SHIFT_Y, 0)
   })
 
   it('21/51/26/40 全部落在三角内部，且到三条边距离 > 26', () => {
@@ -157,5 +169,58 @@ describe('背景剪影：盘腿打坐', () => {
 
   it('左右对称（包围盒关于 x=576 镜像）', () => {
     expect(Math.min(...xs) + Math.max(...xs)).toBeCloseTo(1152, 6)
+  })
+})
+
+/** 用户口语称「43-23 通道」，代码里的通道 key 为 '23-43' */
+describe('通道平行：17-62 / 11-56 与 43-23（key 23-43）', () => {
+  const lineOf = (key: string) => {
+    const l = CHANNEL_LINES.find((x) => x.key === key)
+    expect(l, `channel ${key} missing`).toBeTruthy()
+    return l!
+  }
+
+  it('三条通道同为竖直（dx ≈ 0），斜率一致', () => {
+    for (const key of ['17-62', '11-56', '23-43']) {
+      const l = lineOf(key)
+      expect(Math.abs(l.x2 - l.x1), key).toBeLessThan(0.01)
+      expect(Math.abs(l.y2 - l.y1), key).toBeGreaterThan(6)
+    }
+  })
+
+  it('17/11 与对端闸门 62/56 同 x，43 与 23 同 x', () => {
+    expect(GATE_POINTS[17].x).toBe(GATE_POINTS[62].x)
+    expect(GATE_POINTS[11].x).toBe(GATE_POINTS[56].x)
+    expect(GATE_POINTS[43].x).toBe(GATE_POINTS[23].x)
+  })
+})
+
+describe('心中心四条通道：端点与对应闸门数字共线（无误连）', () => {
+  it('21-45 / 26-44 / 37-40 / 25-51 的裁剪端点落在两闸门连线上', () => {
+    for (const key of ['21-45', '26-44', '37-40', '25-51']) {
+      const l = CHANNEL_LINES.find((x) => x.key === key)
+      expect(l, key).toBeTruthy()
+      const a = GATE_POINTS[l!.gates[0]]
+      const b = GATE_POINTS[l!.gates[1]]
+      const cross1 = (b.x - a.x) * (l!.y1 - a.y) - (b.y - a.y) * (l!.x1 - a.x)
+      const cross2 = (b.x - a.x) * (l!.y2 - a.y) - (b.y - a.y) * (l!.x2 - a.x)
+      expect(Math.abs(cross1), key).toBeLessThan(1)
+      expect(Math.abs(cross2), key).toBeLessThan(1)
+    }
+  })
+})
+
+describe('悬挂闸门终点比例（「只连 1/4」回归）', () => {
+  it('枢纽主干/辐条直达中点 M，普通通道到两端点中点', () => {
+    const spine = CHANNEL_LINES.find((l) => l.key === '20-57')!
+    const hub10 = CHANNEL_LINES.find((l) => l.hub && l.gates[0] === 10)!
+    const normal = CHANNEL_LINES.find((l) => l.key === '23-43')!
+    expect(spine.points).toHaveLength(3)
+    expect(hub10.points).toHaveLength(2)
+    expect(hangingEndRatio(spine)).toBe(1)
+    expect(hangingEndRatio(hub10)).toBe(1)
+    expect(hangingEndRatio(normal)).toBe(0.5)
+    // 直达 M 后，悬挂段是整条支路的一半，不再二次折半成 1/4
+    expect(Math.hypot(hub10.x2 - hub10.x1, hub10.y2 - hub10.y1)).toBeGreaterThan(6)
   })
 })

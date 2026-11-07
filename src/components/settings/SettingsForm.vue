@@ -4,27 +4,18 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useSettingsStore } from '../../stores/settings'
 import { useArchiveStore } from '../../stores/archive'
 import { useUiStore } from '../../stores/ui'
-import { DRAWING_ENGINES } from '../chart/layouts'
-import type { GraphSize, LayoutDensity } from '../../stores/settings'
 import { probeAiConfig, validateAiConfig } from '../../services/aiClient'
-import type { AiDetailMode, AiProfile } from '../../types/hd'
+import type { AiDetailMode, AiProfile, AiStepMode } from '../../types/hd'
 import ConfirmDialog from '../base/ConfirmDialog.vue'
 import HdField from '../base/HdField.vue'
 import HdToggle from '../base/HdToggle.vue'
 import HdButton from '../base/HdButton.vue'
+import CustomLayoutEditor from './CustomLayoutEditor.vue'
 
 const FONT_STEPS = [0.85, 0.92, 1, 1.1, 1.2, 1.35] as const
 const FONT_LABELS = ['特小', '偏小', '标准', '稍大', '大', '特大'] as const
-const DENSITIES: Array<{ value: LayoutDensity; label: string }> = [
-  { value: 'compact', label: '紧凑' },
-  { value: 'standard', label: '标准' },
-  { value: 'spacious', label: '宽松' },
-]
-const GRAPH_SIZES: Array<{ value: GraphSize; label: string }> = [
-  { value: 'small', label: '小' },
-  { value: 'normal', label: '标准' },
-  { value: 'large', label: '大' },
-]
+/** 超时预设档位（秒）：用户 Q4.3 确认 60/300/900/1800/3600 + 可手填 */
+const TIMEOUT_PRESETS = [60, 300, 900, 1800, 3600] as const
 
 const emit = defineEmits<{
   export: []
@@ -54,19 +45,30 @@ const fieldErrors = reactive<Record<string, string>>({})
 const showKey = ref(false)
 const testingId = ref<string | null>(null)
 
-/* ── 解读详细度（AI 提示词两版：规范 AI-PROMPT-v2.0 §2 / §3）── */
+/* ── 解读详细度（AI 提示词三档：规范 AI-PROMPT-v2.0 §2 / §3 / §5）── */
 
 const DETAIL_MODES: Array<{ value: AiDetailMode; label: string; hint: string }> = [
   {
     value: 'concise',
-    label: '精简版',
+    label: '精简',
     hint: '600–900 字 · 5 个视角，一屏读完，适合日常查看（默认）',
   },
   {
     value: 'detailed',
-    label: '详细版',
+    label: '详细',
     hint: '1800–3000 字 · 8 节 + 一页速记，适合收藏回看',
   },
+  {
+    value: 'full',
+    label: '完整',
+    hint: '15000–25000 字 · 多轮分步生成；整盘走八大维度 + 逐闸门 + 逐通道，合盘走关系场专用维度',
+  },
+]
+
+/** 多步编排方式（用户 Q3.4：串行 / 并发可切，并发失败自动转串行） */
+const STEP_MODES: Array<{ value: AiStepMode; label: string; hint: string }> = [
+  { value: 'serial', label: '串行', hint: '逐项依次请求，稳定、便于观察进度' },
+  { value: 'parallel', label: '并发', hint: '多项同时请求，更快；失败自动转回串行' },
 ]
 
 /** 写入失败（localStorage 不可用）时在这里提示，成功则清空 */
@@ -75,6 +77,12 @@ const detailModeError = ref('')
 function setDetailMode(mode: AiDetailMode) {
   if (settings.aiDetailMode === mode) return
   const ok = settings.setAiDetailMode(mode)
+  detailModeError.value = ok ? '' : settings.persistError || '保存失败，设置未生效'
+}
+
+function setStepMode(mode: AiStepMode) {
+  if (settings.aiStepMode === mode) return
+  const ok = settings.setAiStepMode(mode)
   detailModeError.value = ok ? '' : settings.persistError || '保存失败，设置未生效'
 }
 const probeNotes = reactive<Record<string, string>>({})
@@ -153,8 +161,8 @@ function validateField(key: 'name' | 'baseUrl' | 'apiKey' | 'model' | 'timeoutSe
   }
   if (key === 'timeoutSec') {
     const sec = Number(e.timeoutSec)
-    if (!Number.isFinite(sec) || sec < 3 || sec > 600) {
-      fieldErrors.timeoutSec = '超时需在 3–600 秒之间'
+    if (!Number.isFinite(sec) || sec < 3 || sec > 3600) {
+      fieldErrors.timeoutSec = '超时需在 3–3600 秒之间'
     }
     return
   }
@@ -171,10 +179,16 @@ const editorValid = computed(() => {
   if (!e) return false
   if (!e.name.trim()) return false
   const sec = Number(e.timeoutSec)
-  if (!Number.isFinite(sec) || sec < 3 || sec > 600) return false
+  if (!Number.isFinite(sec) || sec < 3 || sec > 3600) return false
   const config = editorConfig()
   return config ? validateAiConfig(config) === null : false
 })
+
+function setTimeoutPreset(sec: number) {
+  if (!editor.value) return
+  editor.value.timeoutSec = String(sec)
+  delete fieldErrors.timeoutSec
+}
 
 function submitEditor() {
   const e = editor.value
@@ -185,8 +199,8 @@ function submitEditor() {
     return
   }
   const sec = Number(e.timeoutSec)
-  if (!Number.isFinite(sec) || sec < 3 || sec > 600) {
-    fieldErrors.timeoutSec = '超时需在 3–600 秒之间'
+  if (!Number.isFinite(sec) || sec < 3 || sec > 3600) {
+    fieldErrors.timeoutSec = '超时需在 3–3600 秒之间'
     return
   }
   const input = {
@@ -320,7 +334,7 @@ function onFile(event: Event) {
 function regenerateAll() {
   const { total, failed } = archiveStore.regenerateAll()
   const ok = total - failed
-  const message = `已按当前绘图程序重新生成：成功 ${ok} 份 / 失败 ${failed} 份`
+  const message = `已按当前内核重新生成：成功 ${ok} 份 / 失败 ${failed} 份`
   const storageError = archiveStore.persistError
   ui.notify(storageError ? `${message}；${storageError}` : message, failed || storageError ? 'error' : 'success')
 }
@@ -450,10 +464,25 @@ function regenerateAll() {
             label="超时（秒）"
             type="number"
             inputmode="numeric"
-            hint="范围 3–600 秒"
+            hint="范围 3–3600 秒；完整版多轮解读建议 ≥900 秒"
             :error="fieldErrors.timeoutSec"
             @blur="validateField('timeoutSec')"
           />
+          <div class="field timeout-presets">
+            <span class="t-xs">常用档位（秒）</span>
+            <div class="preset-row">
+              <button
+                v-for="s in TIMEOUT_PRESETS"
+                :key="s"
+                type="button"
+                class="preset-btn"
+                :class="{ on: Number(editor.timeoutSec) === s }"
+                @click="setTimeoutPreset(s)"
+              >
+                {{ s }}
+              </button>
+            </div>
+          </div>
           <div class="field">
             <span class="t-xs">本地缓存</span>
             <HdToggle
@@ -472,12 +501,14 @@ function regenerateAll() {
         </div>
       </form>
 
-      <!-- 解读详细度：决定 AI 提示词走「精简 5 视角」还是「详细 8 节」 -->
+      <!-- 解读详细度：精简 / 详细 / 完整三档 + 完整版编排方式 -->
       <div class="detail-mode">
         <div class="dm-head">
           <strong class="t-sm">解读详细度</strong>
           <span class="t-xs t-muted">
-            精简 600–900 字 · 5 个视角；详细 1800–3000 字 · 8 节。单点解读（闸门/通道/中心）固定为精简。
+            精简 600–900 字 · 5 个视角；详细 1800–3000 字 · 8 节；完整 15000–25000 字 · 多轮分步。
+            「完整」档覆盖单人整盘、合盘与双盘对比；合盘按关系场口径编排（不输出类型 / 权威 / 轮回交叉）。
+            凯龙回归盘与闸门 / 通道 / 中心单点解读三档均生效，但只发单次请求，不启动整套多轮报告。
           </span>
         </div>
         <div class="dm-options">
@@ -493,6 +524,24 @@ function regenerateAll() {
             <strong>{{ opt.label }}</strong>
             <span class="t-xs">{{ opt.hint }}</span>
           </button>
+        </div>
+        <div v-if="settings.aiDetailMode !== 'concise'" class="step-mode">
+          <span class="t-sm">多步编排方式</span>
+          <span class="t-xs t-muted">仅影响「完整」版的多轮请求；并发失败会自动转回串行。</span>
+          <div class="dm-options">
+            <button
+              v-for="opt in STEP_MODES"
+              :key="opt.value"
+              type="button"
+              class="dm-option"
+              :class="{ on: settings.aiStepMode === opt.value }"
+              :aria-pressed="settings.aiStepMode === opt.value"
+              @click="setStepMode(opt.value)"
+            >
+              <strong>{{ opt.label }}</strong>
+              <span class="t-xs">{{ opt.hint }}</span>
+            </button>
+          </div>
         </div>
         <p v-if="detailModeError" class="t-xs msg-warning">{{ detailModeError }}</p>
       </div>
@@ -565,7 +614,7 @@ function regenerateAll() {
     <section class="group">
       <header>
         <h2 class="t-title">样式设置</h2>
-        <p class="t-sm">九中心状态、专业关键字配色与布局全局生效，立即应用。</p>
+        <p class="t-sm">九中心状态与专业关键字配色全局生效，立即应用；页面模块排布请在「自定义页面布局」中调整。</p>
       </header>
 
       <!-- 九中心定义 / 开放 -->
@@ -635,68 +684,18 @@ function regenerateAll() {
         </div>
       </div>
 
-      <!-- 布局密度 -->
-      <div class="seg">
-        <span class="t-sm seg-label">完整盘布局</span>
-        <div class="seg-ctl" role="group" aria-label="布局密度">
-          <button
-            v-for="d in DENSITIES"
-            :key="d.value"
-            type="button"
-            :class="{ on: settings.appearance.layoutDensity === d.value }"
-            @click="settings.setStyle({ layoutDensity: d.value })"
-          >
-            {{ d.label }}
-          </button>
-        </div>
-      </div>
-
-      <!-- 图幅档位 -->
-      <div class="seg">
-        <span class="t-sm seg-label">人体图幅面</span>
-        <div class="seg-ctl" role="group" aria-label="图幅档位">
-          <button
-            v-for="g in GRAPH_SIZES"
-            :key="g.value"
-            type="button"
-            :class="{ on: settings.appearance.graphSize === g.value }"
-            @click="settings.setStyle({ graphSize: g.value })"
-          >
-            {{ g.label }}
-          </button>
-        </div>
-      </div>
     </section>
 
-    <!-- 绘图程序（多版本一键切换） -->
+    <!-- 自定义页面布局（#4：唯一布局入口，替代原「完整盘布局 / 人体图幅面 / 首页缩放」） -->
     <section class="group">
       <header>
-        <h2 class="t-title">绘图程序</h2>
+        <h2 class="t-title">自定义页面布局</h2>
         <p class="t-sm">
-          切换后所有已生成的人类图会立即按新版本重绘；可再点「重新生成全部图表」按新版本重建全部档案数据。
+          自由摆放、缩放并固定单盘页的 7 个模块；配置全局一份、保存在本机，电脑端所有盘面统一生效。
+          手机端固定退化为单列流，自定义坐标不生效。
         </p>
       </header>
-
-      <div class="engine-list">
-        <button
-          v-for="e in DRAWING_ENGINES"
-          :key="e.id"
-          type="button"
-          class="engine"
-          :class="{ on: settings.appearance.drawingEngine === e.id }"
-          @click="settings.setDrawingEngine(e.id)"
-        >
-          <strong>{{ e.label }}</strong>
-          <span class="t-xs">{{ e.note }}</span>
-        </button>
-      </div>
-
-      <div class="engine-actions">
-        <HdButton size="sm" variant="ghost" @click="regenerateAll">
-          重新生成全部图表
-        </HdButton>
-        <span class="t-xs t-muted">共 {{ archiveStore.archives.length }} 份档案</span>
-      </div>
+      <CustomLayoutEditor />
     </section>
 
     <!-- 数据 -->
@@ -711,6 +710,7 @@ function regenerateAll() {
       <div class="actions">
         <HdButton variant="ghost" @click="emit('export')">导出备份</HdButton>
         <HdButton variant="ghost" @click="pickFile">导入备份</HdButton>
+        <HdButton size="sm" variant="ghost" @click="regenerateAll">重新生成全部图表</HdButton>
         <HdButton variant="danger" @click="emit('clear-all')">清空全部档案</HdButton>
         <input ref="fileInput" type="file" accept="application/json" hidden @change="onFile" />
       </div>
@@ -854,51 +854,6 @@ header p {
   }
 }
 
-.engine-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--sp-2);
-}
-
-.engine {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: var(--sp-3);
-  text-align: left;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--glass-border);
-  background: var(--glass-bg-soft);
-  transition:
-    border-color var(--dur-fast) ease,
-    background var(--dur-fast) ease;
-}
-
-.engine:hover {
-  border-color: var(--border-strong);
-}
-
-.engine.on {
-  border-color: var(--owner-shared);
-  background: rgba(124, 58, 237, 0.1);
-}
-
-.engine strong {
-  font-size: calc(var(--fs-sm) * var(--font-scale));
-}
-
-.engine .t-xs {
-  color: var(--text-muted);
-  line-height: 1.5;
-}
-
-.engine-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  flex-wrap: wrap;
-}
-
 /* 样式设置 */
 .style-rows {
   display: flex;
@@ -988,6 +943,40 @@ header p {
 
 .dm-option.on {
   border-color: var(--action-primary);
+  background: rgba(124, 58, 237, 0.1);
+}
+
+.step-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--sp-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+
+.timeout-presets {
+  gap: 6px;
+}
+
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.preset-btn {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-size: calc(var(--fs-xs) * var(--font-scale));
+}
+
+.preset-btn.on {
+  border-color: var(--action-primary);
+  color: var(--text-primary);
   background: rgba(124, 58, 237, 0.1);
 }
 

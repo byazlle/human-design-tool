@@ -3,6 +3,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import type { Archive } from '../../types/hd'
 import ArchiveCard from './ArchiveCard.vue'
+import { CARD_H, ensureCanvasLayout, type CanvasPoint } from './canvasLayout'
 import { loadJson, saveJson } from '../../utils/storage'
 
 const props = withDefaults(
@@ -19,31 +20,25 @@ const emit = defineEmits<{
 }>()
 
 const POS_KEY = 'hdt.canvas.v1'
-const CARD_W = 260
-const CARD_H = 340
-const GAP_X = 32
-const GAP_Y = 32
 
-const positions = reactive<Record<string, { x: number; y: number }>>(
-  loadJson<Record<string, { x: number; y: number }>>(POS_KEY, {}),
+const positions = reactive<Record<string, CanvasPoint>>(
+  loadJson<Record<string, CanvasPoint>>(POS_KEY, {}),
 )
 
 const canvas = ref<HTMLElement | null>(null)
 
-/** 新出现的档案自动排布（按列优先，避免与已有卡片重叠） */
+/**
+ * 新出现的档案自动排布：纯算法在 ./canvasLayout.ts（有独立回归测试），
+ * 这里只负责把结果同步回 reactive 对象并持久化。
+ * 修复 #7：新增档案不再按数组下标取坐标，避免与第一个卡片重叠。
+ */
 function ensureLayout() {
-  const cols = 4
-  props.archives.forEach((a, index) => {
-    if (!positions[a.id]) {
-      positions[a.id] = {
-        x: 24 + (index % cols) * (CARD_W + GAP_X),
-        y: 24 + Math.floor(index / cols) * (CARD_H + GAP_Y),
-      }
-    }
-  })
-  const ids = new Set(props.archives.map((a) => a.id))
+  const next = ensureCanvasLayout(positions, props.archives.map((a) => a.id))
   Object.keys(positions).forEach((id) => {
-    if (!ids.has(id)) delete positions[id]
+    if (!(id in next)) delete positions[id]
+  })
+  Object.entries(next).forEach(([id, p]) => {
+    positions[id] = p
   })
   saveJson(POS_KEY, { ...positions })
 }

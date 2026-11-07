@@ -11,8 +11,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { useArchiveStore } from '../stores/archive'
 import { useCompositeStore } from '../stores/board'
 import { useUiStore } from '../stores/ui'
+import { useSettingsStore } from '../stores/settings'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { useAiReading } from '../composables/useAiReading'
+import { relationshipFullPlan, relationshipSummary } from '../services/aiRelationshipReading'
 import { copyAiResult, saveAiResult } from '../composables/useAiResultActions'
 import {
   COMPOSITE_DIMENSIONS,
@@ -41,6 +43,7 @@ const router = useRouter()
 const archiveStore = useArchiveStore()
 const compositeStore = useCompositeStore()
 const ui = useUiStore()
+const settings = useSettingsStore()
 const { isMobile } = useBreakpoint()
 const {
   state: aiState,
@@ -117,21 +120,15 @@ const filters = computed(() => compositeStore.filters)
  * 中心四象限 / 共享·独有闸门通道数 / 四类关系通道计数 / 双方各自 profile。
  * 严禁出现合图类型、权威、定义型、轮回交叉。
  */
+const pairNames = computed(() => ({
+  a: archiveA.value?.name ?? 'A',
+  b: archiveB.value?.name ?? 'B',
+}))
+
 const compositeSummary = computed(() => {
   const r = result.value
   if (!r) return ''
-  const quadCount = (state: string) => r.centerQuadrant.filter((c) => c.state === state).length
-  const sharedChannelCount = r.sharedChannels.length
-  const onlyA = r.merged.channels.filter((c) => c.owners.length === 1 && c.owners[0] === 'a').length
-  const onlyB = r.merged.channels.filter((c) => c.owners.length === 1 && c.owners[0] === 'b').length
-  const relCount = (type: string) => r.relationshipChannels.filter((c) => c.type === type).length
-  return [
-    `双方人生角色：A ${r.a.profile} × B ${r.b.profile}`,
-    `中心四象限：双方都定义 ${quadCount('both')} · 仅 A 定义 ${quadCount('onlyA')} · 仅 B 定义 ${quadCount('onlyB')} · 双方都开放 ${quadCount('open')}`,
-    `通道：共享 ${sharedChannelCount} 条 · A 独有 ${onlyA} 条 · B 独有 ${onlyB} 条`,
-    `共享闸门：${r.sharedGates.length} 个`,
-    `关系通道：电磁 ${relCount('electromagnetic')} · 同伴 ${relCount('companionship')} · 主导 ${relCount('dominance')} · 妥协 ${relCount('compromise')}`,
-  ].join('\n')
+  return relationshipSummary(r, pairNames.value)
 })
 
 /** 手机端当前 Tab */
@@ -247,6 +244,7 @@ async function requestFullAi() {
     `【输出要求】${dim.prompt}`,
   ].join('\n')
 
+  const isFull = settings.aiDetailMode === 'full'
   await runAi({
     scope: `composite-${dim.key}`,
     ref: dim.key === 'custom' ? customTopic.value.trim() || 'custom' : dim.key,
@@ -254,6 +252,17 @@ async function requestFullAi() {
     offline,
     chartSummary: compositeSummary.value,
     chart: mergedChart.value ?? undefined,
+    detailMode: settings.aiDetailMode,
+    angle: dim.label,
+    // 用户确认：合盘在「完整」档同样允许多轮编排，走关系场专用合规任务清单
+    full: isFull,
+    stepMode: settings.aiStepMode,
+    fullPlan: isFull
+      ? relationshipFullPlan(r, {
+          pairNames: pairNames.value,
+          extraDimensions: dim.key === 'custom' ? [dim] : [],
+        })
+      : undefined,
   })
 }
 
@@ -557,6 +566,10 @@ function saveAi() {
       :loading="aiState.loading"
       :error="aiState.error"
       :configured="aiConfigured"
+      :mode="settings.aiDetailMode"
+      :report="aiState.report"
+      :progress="aiState.progress"
+      :meta="{ chartName: `${pairNames.a} × ${pairNames.b}` }"
       @close="ui.closeAi()"
       @copy="copyAi"
       @save="saveAi"

@@ -353,25 +353,9 @@ svg {
   padding-top: calc(var(--sp-2) + env(safe-area-inset-top, 0px));
 }
 
-/* ---- 用户可调布局（设置页「样式设置」） ---- */
-:root[data-density='compact'] {
-  --layout-gap: 8px;
-  --layout-pad: 8px;
-}
-:root[data-density='standard'] {
+/* ---- 页面布局基线（v2.2 起由「自定义页面布局」统一管理；保留旧默认档视觉） ---- */
+:root {
   --layout-gap: 12px;
   --layout-pad: 16px;
-}
-:root[data-density='spacious'] {
-  --layout-gap: 20px;
-  --layout-pad: 24px;
-}
-:root[data-graph-size='small'] {
-  --graph-max-width: 560px;
-}
-:root[data-graph-size='normal'] {
   --graph-max-width: 780px;
-}
-:root[data-graph-size='large'] {
-  --graph-max-width: 1000px;
 }

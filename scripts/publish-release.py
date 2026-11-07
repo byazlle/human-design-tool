@@ -6,15 +6,16 @@
     python scripts/publish-release.py
 
 依赖：仓库根目录 .env 中的 GITHUB_TOKEN（需要 repo 权限）。
-说明：本机 schannel 的证书吊销检查会阻断 git/curl，Python 走 OpenSSL 不受影响，
-      因此发布走 API 而不是 git push。
+说明：本机 TLS 拦截代理会让 Python urllib 直连 api.github.com 报 SSL EOF，
+      所有 HTTP 调用统一走系统 curl（与 push-api.py 一致），响应体写临时文件再解析。
 """
 import io
 import json
 import os
+import re
+import subprocess
 import sys
-import urllib.error
-import urllib.request
+import tempfile
 
 # 强制 UTF-8 输出：Windows 下 Python 默认 stdout 为 cp1252，含中文的打印会抛
 # UnicodeEncodeError；仅影响日志编码，不改变产物。
@@ -27,8 +28,10 @@ for _s in (sys.stdout, sys.stderr):
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 REPO = 'byazlle/human-design-tool'
+
+
 def _read_version() -> str:
-    with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'package.json'), encoding='utf-8') as fh:
+    with open(os.path.join(ROOT, 'package.json'), encoding='utf-8') as fh:
         return json.load(fh)['version']
 
 
@@ -42,54 +45,49 @@ ARTIFACTS = [
     (f'release/android/HumanDesign-{VERSION}.apk', 'application/vnd.android.package-archive'),
 ]
 
-BODY = f"""## 本次更新
+BODY = f"""## v{VERSION} 本次更新
 
-**界面**
-- 人体图几何重写：闸门沿九中心边界按弧长定位（最大空隙断开 + 双向 clamp 求最小位移），
-  彻底修复同方位闸门叠成一团的问题；九中心纵向间距统一 40px，通道为边界到边界的短直线。
-- 卡通化描边 + 整体加粗：已定义通道 7px 带白色描边、未定义 2.4px 虚线；闸门半径 14、字号提升。
-- 未激活闸门改为「外部圆圈 + 内部底色」，只有真实激活才点亮（修复点击未激活闸门误亮的缺陷）。
-- 液态玻璃视觉：背景光斑层 + `backdrop-filter` + 内侧高光描边，浅色/深色各一套令牌；
-  新增悬浮操作坞、自绘窗口标题栏、路由过渡与弹性动效。
+**AI 解读**
 
-**内容**
-- 类型解析补全为七段：能量机制 / 策略 / 签名 / 非自我主题 / 权威提示 / 常见误区 / 落地建议。
-- 星体数据每行可展开「这个数据代表什么」，13 个星体各有意识面与无意识面解释。
-- 完整盘常驻「已激活通道 / 闸门 / 九中心」清单，通道直接写出作用，无需点击侧栏。
-- 支持勾选任意多个闸门·通道·中心，一次性发起 AI 解读；选择集相同即命中本地缓存。
-- 合盘新增 爱情 / 事业 / 工作 / 朋友 / 父母 + 自定义 六个维度，各自独立提示词与缓存键。
+- 三档解读：精简 / 详细 / 完整；提示词版本升 `3.0`，解除单点解读强制精简，主动取消不再误报超时。
+- 「完整」档多轮编排：单人整盘走 8 大维度 + 逐闸门 + 逐通道 + 融合；合盘与双盘对比走关系场专用清单
+  （合盘五维度 + 四类连接动力学 + 逐共享闸门 + 逐合并通道），按规范 §3.8 不输出类型 / 权威 / 轮回交叉。
+- 串行 / 并发可切，并发失败自动转串行，单项失败重试 1 次后跳过，全程可取消；面板显示进度、ETA、
+  模块化分项（每条通道独立展开收起）与失败清单，绝不伪造内容。
+- AI 超时上限 600 → **3600 秒**。
 
-**打包**
-- 桌面端改为 Electron 壳，用自定义 `app://` 协议替代 `file://`，解决 localStorage 被禁与 ES module 被 CORS 阻断。
-- 安卓端为原生 WebView 壳，用 `aapt2 → javac → d8 → zipalign → apksigner` 手工链路构建，零第三方依赖。
+**报告导出**
+
+- 一键导出 **MD / Word / HTML / PDF**；桌面端原生另存为 + `printToPDF`，浏览器 / 安卓退化为下载或打印。
+- Word 用 `docx@9` 动态加载（不进主 bundle），PDF 走 Chromium 系统字体避免中文乱码。
+
+**界面与设置**
+
+- 自定义页面布局：7 模块拖拽 / 改尺寸 / 8px 吸附 / 缩放 / 锁定 / 显隐 / 重置，手机端固定退化为单列流。
+- 设置页去重、按来源动态返回、档案画布碰撞排布；清理版式二、Tauri 残留与无用依赖，
+  凯龙回归盘 / 双盘对比 / 多盘 / 合盘均保留。
+- 人体图三处图形收尾（小三角旋转、通道平行、悬挂段 1/4）；17 / 11 闸门方向与 43-23 严格平行。
+- 盘序偏移 `MANDALA_OFFSET = 29.875`、Gate 41 起于 `302.000°` 保持不变。
 
 ## 产物
 
 | 平台 | 文件 | 说明 |
 | --- | --- | --- |
 | Windows | `HumanDesign-Setup-{VERSION}.exe` | NSIS 安装包，可选安装目录、创建快捷方式、自带卸载 |
-| Android | `HumanDesign-{VERSION}.apk` | minSdk 24 / targetSdk 34，自签名（v2+v3），安装即用 |
+| Android | `HumanDesign-{VERSION}.apk` | minSdk 24 / targetSdk 34，自签名（v2 + v3 校验通过） |
 
 ## 验证
 
-- 排盘内核 15 项单元测试全通过（含 26 个激活点与权威实现逐项对齐、2600 点星历交叉校验）。
-- 桌面壳端到端自检 **29/29 通过**：安全 origin、localStorage 读写、示例档案、人体图点亮/外圈、
-  通道与闸门清单、类型详解分节、星体含义、未激活闸门不误亮回归、批量解读、AI 未配置提示、
-  深色模式、合盘三栏与维度切换、设置页、新建页。
-- 安装包实测：静默安装后运行安装版程序，同一套自检同样全通过。
+- `npx vue-tsc --noEmit` 无错；`npm test` **14 文件 / 138 项全绿**（含关系场完整版编排、报告四格式导出、
+  提示词逐字一致性、几何与星历对照回归）；`npm run build` 通过。
+- 桌面端与手机端各做一次目检；无 AI 配置时面板只提示去设置，不生成任何伪造解读内容。
+- AI 接口地址 / Key 由用户自行在设置页配置；真实端点联调与安装包实机目检未在本轮执行。
 """
 
 
-def token():
-    """读取 .env 中的 GitHub Token。
-
-    兼容多种写法（历史 .env 曾用 `githubAPI：ghp_xxx` 全角冒号、单行无换行）：
-      1) GITHUB_TOKEN=xxx / GITHUB_TOKEN: xxx
-      2) 任意含 ghp_ / github_pat_ 前缀的行（兜底提取）
-    """
-    import re
-    path = os.path.join(ROOT, '.env')
-    with io.open(path, encoding='utf-8') as fh:
+def token() -> str:
+    """读取 .env 中的 GitHub Token（兼容历史全角冒号 / 裸 ghp_ 行）。"""
+    with io.open(os.path.join(ROOT, '.env'), encoding='utf-8') as fh:
         text = fh.read()
     m = re.search(r'(ghp_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})', text)
     if m:
@@ -97,34 +95,72 @@ def token():
     raise SystemExit('未找到 GitHub Token（.env 中需含 GITHUB_TOKEN=... 或 ghp_ 开头的密钥）')
 
 
-def api(path, method='GET', data=None, headers=None):
-    url = 'https://api.github.com' + path
-    body = json.dumps(data).encode('utf-8') if data is not None else None
-    req = urllib.request.Request(url, data=body, method=method)
-    req.add_header('Authorization', 'Bearer ' + token())
-    req.add_header('Accept', 'application/vnd.github+json')
-    req.add_header('User-Agent', 'hd-tool-release')
-    if body:
-        req.add_header('Content-Type', 'application/json')
-    for k, v in (headers or {}).items():
-        req.add_header(k, v)
+TOKEN = token()
+
+
+def curl(url, method='GET', payload=None, extra_headers=None, binary_path=None,
+         timeout=120):
+    """返回 (http_code, parsed_json)。请求体走临时文件 / --data-binary，避免命令行长度限制。"""
+    fd, out_path = tempfile.mkstemp(prefix='hd-rel-', suffix='.out')
+    os.close(fd)
+    body_path = None
+    cmd = [
+        'curl', '-sS', '-m', str(timeout),
+        '--retry', '5', '--retry-delay', '2', '--retry-all-errors',
+        '-X', method, '-o', out_path, '-w', '%{http_code}', url,
+        '-H', f'Authorization: Bearer {TOKEN}',
+        '-H', 'Accept: application/vnd.github+json',
+        '-H', 'User-Agent: hd-tool-release',
+    ]
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            return resp.status, json.loads(resp.read().decode('utf-8') or '{}')
-    except urllib.error.HTTPError as e:
-        return e.code, json.loads(e.read().decode('utf-8') or '{}')
+        if payload is not None:
+            fd, body_path = tempfile.mkstemp(prefix='hd-rel-', suffix='.json')
+            with os.fdopen(fd, 'wb') as fh:
+                fh.write(json.dumps(payload, ensure_ascii=False).encode('utf-8'))
+            cmd += ['-H', 'Content-Type: application/json', '--data-binary', '@' + body_path.replace('\\', '/')]
+        if binary_path is not None:
+            cmd += [
+                '-H', 'Content-Type: ' + (extra_headers or {}).get('Content-Type', 'application/octet-stream'),
+                '-H', 'Expect:',
+                '--data-binary', '@' + binary_path.replace('\\', '/'),
+            ]
+        for k, v in (extra_headers or {}).items():
+            if k.lower() != 'content-type':
+                cmd += ['-H', f'{k}: {v}']
+        code = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True).strip()[-3:]
+        with open(out_path, 'rb') as fh:
+            raw = fh.read()
+        try:
+            return int(code), json.loads(raw.decode('utf-8') or '{}')
+        except (ValueError, UnicodeDecodeError):
+            return int(code), {'raw': raw.decode('utf-8', 'replace')[:500]}
+    except subprocess.CalledProcessError as e:
+        raise SystemExit(f'curl {method} {url} 失败：{(e.output or "")[:600]}')
+    finally:
+        for p in (out_path, body_path):
+            if p and os.path.exists(p):
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
+
+
+def api(path, method='GET', payload=None):
+    return curl('https://api.github.com' + path, method, payload)
 
 
 def ensure_release():
     status, data = api(f'/repos/{REPO}/releases/tags/{TAG}')
     if status == 200:
         print(f'复用已有 Release #{data["id"]}')
+        # 幂等：把说明同步到本版本文案
+        api(f'/repos/{REPO}/releases/{data["id"]}', 'PATCH', {'name': TITLE, 'body': BODY})
         return data['id']
 
     status, data = api(
         f'/repos/{REPO}/releases',
         method='POST',
-        data={
+        payload={
             'tag_name': TAG,
             'target_commitish': BRANCH,
             'name': TITLE,
@@ -142,7 +178,7 @@ def ensure_release():
 
 def existing_assets(release_id):
     status, data = api(f'/repos/{REPO}/releases/{release_id}/assets')
-    if status != 200:
+    if status != 200 or not isinstance(data, list):
         return {}
     return {a['name']: a for a in data}
 
@@ -155,25 +191,16 @@ def upload(release_id, rel_path, content_type):
         return None
 
     size = os.path.getsize(full)
-    with open(full, 'rb') as fh:
-        payload = fh.read()
-
     url = f'https://uploads.github.com/repos/{REPO}/releases/{release_id}/assets?name={name}'
-    req = urllib.request.Request(url, data=payload, method='POST')
-    req.add_header('Authorization', 'Bearer ' + token())
-    req.add_header('Accept', 'application/vnd.github+json')
-    req.add_header('Content-Type', content_type)
-    req.add_header('User-Agent', 'hd-tool-release')
-
     print(f'上传 {name}  {size / 1048576:.2f} MB ...')
-    try:
-        with urllib.request.urlopen(req, timeout=600) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-            print(f'  已完成，asset id={data["id"]}')
-            return data
-    except urllib.error.HTTPError as e:
-        print('  上传失败：', e.code, e.read().decode('utf-8')[:300])
+    status, data = curl(url, 'POST',
+                        extra_headers={'Content-Type': content_type},
+                        binary_path=full, timeout=900)
+    if status not in (200, 201):
+        print(f'  上传失败：HTTP {status} {str(data)[:300]}')
         return None
+    print(f'  已完成，asset id={data.get("id")}')
+    return data
 
 
 def verify(release_id, expected):
@@ -193,7 +220,7 @@ def verify(release_id, expected):
               f'本地 {size} / 远端 {remote} / state={state}')
         if not (match and state == 'uploaded'):
             ok = False
-    return ok, assets
+    return ok
 
 
 def main():
@@ -220,7 +247,7 @@ def main():
         upload(release_id, rel_path, ctype)
 
     print('\n== 上传结果校验 ==')
-    ok, final_assets = verify(release_id, expected)
+    ok = verify(release_id, expected)
 
     status, release = api(f'/repos/{REPO}/releases/tags/{TAG}')
     if status == 200:

@@ -1,7 +1,7 @@
 {
   "name": "humandesign-tool",
   "private": true,
-  "version": "2.1.0",
+  "version": "2.2.0",
   "type": "module",
   "description": "人类图（Human Design）本地排盘与合盘工具",
   "scripts": {
@@ -13,12 +13,12 @@
   },
   "dependencies": {
     "astronomy-engine": "^2.1.19",
+    "docx": "^9.15.3",
     "pinia": "^2.2.6",
     "vue": "^3.5.13",
     "vue-router": "^4.4.5"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.1.0",
     "@types/node": "^26.6.5",
     "@vitejs/plugin-vue": "^5.2.1",
     "astronomia": "^4.2.0",

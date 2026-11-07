@@ -1,19 +1,14 @@
 import { defineStore } from 'pinia'
-import type { AiConfig, AiDetailMode, AiProfile, ThemeMode } from '../types/hd'
+import type { AiConfig, AiDetailMode, AiProfile, AiStepMode, ThemeMode } from '../types/hd'
 import { clearAiCache, validateAiConfig } from '../services/aiClient'
 import { createId, loadJson, saveJson, SAVE_FAILURE_HINT } from '../utils/storage'
 
 const KEY = 'hdt.settings.v1'
 
-export type LayoutDensity = 'compact' | 'standard' | 'spacious'
-export type GraphSize = 'small' | 'normal' | 'large'
-
 export interface Appearance {
   theme: ThemeMode
   fontScale: number
   bodyGraphPalette: 'default' | 'high-contrast'
-  /** 绘图程序版本：v1 底图对齐版 / v2 Free Human Design 版 */
-  drawingEngine: 'v1' | 'v2'
   /* ── 样式自定义 ── */
   /** 九中心「已定义」字体颜色 */
   centerDefinedColor: string
@@ -25,10 +20,6 @@ export interface Appearance {
   centerOpenBold: boolean
   /** 全局专业关键字（策略 / 内在权威 等）字体颜色 */
   keywordColor: string
-  /** 完整盘布局密度 */
-  layoutDensity: LayoutDensity
-  /** 人体图幅面档位 */
-  graphSize: GraphSize
 }
 
 const FONT_SCALE_STEPS = [0.85, 0.92, 1, 1.1, 1.2, 1.35] as const
@@ -40,8 +31,10 @@ interface SettingsState {
   aiProfiles: AiProfile[]
   /** 当前生效配置 id；'' 表示未配置 */
   activeAiId: string
-  /** AI 解读详细度：精简（5 视角）/ 详细（8 节） */
+  /** AI 解读详细度：精简（5 视角）/ 详细（8 节）/ 完整（多轮分步） */
   aiDetailMode: AiDetailMode
+  /** 完整版多轮编排方式：串行 / 并发 */
+  aiStepMode: AiStepMode
   appearance: Appearance
   precision: { decimals: 2 }
   /** 最近一次 persist 失败的原因；null 表示最近一次写入成功 */
@@ -61,18 +54,16 @@ const DEFAULTS: SettingsState = {
   aiProfiles: [],
   activeAiId: '',
   aiDetailMode: 'concise',
+  aiStepMode: 'serial',
   appearance: {
     theme: 'light',
     fontScale: 1,
     bodyGraphPalette: 'default',
-    drawingEngine: 'v1',
     centerDefinedColor: '#1a1d23',
     centerOpenColor: '#8a909c',
     centerDefinedBold: true,
     centerOpenBold: false,
     keywordColor: '#5b616e',
-    layoutDensity: 'standard',
-    graphSize: 'normal',
   },
   precision: { decimals: 2 },
   persistError: null,
@@ -91,7 +82,8 @@ export function aiConfigOf(profile: AiConfig): AiConfig {
 
 function clampTimeout(ms: number): number {
   if (!Number.isFinite(ms)) return DEFAULT_AI.timeoutMs
-  return Math.min(600000, Math.max(3000, Math.round(ms)))
+  // 上限 3600 秒（1 小时）：完整版多轮解读单步可能很长
+  return Math.min(3600000, Math.max(3000, Math.round(ms)))
 }
 
 function normalizeProfile(raw: unknown): AiProfile | null {
@@ -113,7 +105,13 @@ function normalizeProfile(raw: unknown): AiProfile | null {
 
 /** 旧数据没有该字段时回落到「精简」（规范 §2 的默认档） */
 function normalizeDetailMode(raw: unknown): AiDetailMode {
-  return raw === 'detailed' ? 'detailed' : 'concise'
+  if (raw === 'detailed' || raw === 'full') return raw
+  return 'concise'
+}
+
+/** 旧数据没有该字段时回落到「串行」 */
+function normalizeStepMode(raw: unknown): AiStepMode {
+  return raw === 'parallel' ? 'parallel' : 'serial'
 }
 
 export interface AiProfileInput {
@@ -153,6 +151,7 @@ export const useSettingsStore = defineStore('settings', {
         aiProfiles: profiles,
         activeAiId,
         aiDetailMode: normalizeDetailMode(saved.aiDetailMode),
+        aiStepMode: normalizeStepMode(saved.aiStepMode),
         appearance: { ...DEFAULTS.appearance, ...(saved.appearance ?? {}) },
         precision: { ...DEFAULTS.precision, ...(saved.precision ?? {}) },
         persistError: null,
@@ -173,6 +172,7 @@ export const useSettingsStore = defineStore('settings', {
         aiProfiles: [migrated],
         activeAiId: migrated.id,
         aiDetailMode: normalizeDetailMode(saved.aiDetailMode),
+        aiStepMode: normalizeStepMode(saved.aiStepMode),
         appearance: { ...DEFAULTS.appearance, ...(saved.appearance ?? {}) },
         precision: { ...DEFAULTS.precision, ...(saved.precision ?? {}) },
         persistError: null,
@@ -184,6 +184,7 @@ export const useSettingsStore = defineStore('settings', {
       aiProfiles: [],
       activeAiId: '',
       aiDetailMode: normalizeDetailMode(saved.aiDetailMode),
+      aiStepMode: normalizeStepMode(saved.aiStepMode),
       appearance: { ...DEFAULTS.appearance, ...(saved.appearance ?? {}) },
       precision: { ...DEFAULTS.precision, ...(saved.precision ?? {}) },
       persistError: null,
@@ -205,6 +206,7 @@ export const useSettingsStore = defineStore('settings', {
         aiProfiles: this.aiProfiles,
         activeAiId: this.activeAiId,
         aiDetailMode: this.aiDetailMode,
+        aiStepMode: this.aiStepMode,
         appearance: this.appearance,
         precision: this.precision,
       })
@@ -217,9 +219,6 @@ export const useSettingsStore = defineStore('settings', {
       const root = document.documentElement
       root.dataset.theme = this.appearance.theme
       root.dataset.palette = this.appearance.bodyGraphPalette
-      root.dataset.drawingEngine = this.appearance.drawingEngine
-      root.dataset.density = this.appearance.layoutDensity
-      root.dataset.graphSize = this.appearance.graphSize
       root.style.setProperty('--font-scale', String(this.appearance.fontScale))
       root.style.setProperty('--center-defined-color', this.appearance.centerDefinedColor)
       root.style.setProperty('--center-open-color', this.appearance.centerOpenColor)
@@ -337,7 +336,13 @@ export const useSettingsStore = defineStore('settings', {
 
     /** @returns 是否写入成功；失败时 persistError 已被置位，由调用方展示 */
     setAiDetailMode(mode: AiDetailMode): boolean {
-      this.aiDetailMode = mode === 'detailed' ? 'detailed' : 'concise'
+      this.aiDetailMode = normalizeDetailMode(mode)
+      return this.persist()
+    },
+
+    /** 完整版多轮编排方式（串行 / 并发） */
+    setAiStepMode(mode: AiStepMode): boolean {
+      this.aiStepMode = normalizeStepMode(mode)
       return this.persist()
     },
 
@@ -371,13 +376,6 @@ export const useSettingsStore = defineStore('settings', {
       this.applyToDom()
     },
 
-    /** 切换绘图程序：写入设置后所有已渲染的图立即按新版本重绘 */
-    setDrawingEngine(engine: 'v1' | 'v2') {
-      this.appearance.drawingEngine = engine
-      this.persist()
-      this.applyToDom()
-    },
-
     /** 字号多档（6 档） */
     setFontStep(step: number) {
       const i = Math.min(FONT_SCALE_STEPS.length - 1, Math.max(0, step))
@@ -393,7 +391,7 @@ export const useSettingsStore = defineStore('settings', {
       return idx >= 0 ? idx : 2
     },
 
-    /** 样式自定义：九中心颜色 / 加粗、关键字颜色、布局密度、图幅档位 */
+    /** 样式自定义：九中心颜色 / 加粗、关键字颜色 */
     setStyle(patch: Partial<Appearance>) {
       this.appearance = { ...this.appearance, ...patch }
       this.persist()

@@ -22,7 +22,6 @@ const composite = useCompositeStore()
 const ui = useUiStore()
 const { isMobile } = useBreakpoint()
 
-const zoom = ref(1)
 const list = computed(() => archiveStore.filtered)
 const selected = computed(() => archiveStore.selectedIds)
 
@@ -153,13 +152,6 @@ function confirmRemove() {
       @settings="goSettings"
       @help="ui.notify('点击卡片「加入合盘」，选两份即可生成合盘。双击卡片打开完整盘。')"
     >
-      <template #left>
-        <div v-if="!isMobile" class="zoom">
-          <button v-for="z in [1, 1.5, 2]" :key="z" type="button" :class="{ on: zoom === z }" @click="zoom = z">
-            {{ z }}×
-          </button>
-        </div>
-      </template>
     </AppToolbar>
 
     <main class="content">
@@ -188,7 +180,6 @@ function confirmRemove() {
           v-if="!isMobile"
           :archives="list"
           :selected-ids="selected"
-          :zoom="zoom"
           @open="open"
           @add-to-composite="addToComposite"
           @close="closeCard"
@@ -249,30 +240,6 @@ function confirmRemove() {
   max-width: 1400px;
   margin: 0 auto;
   padding: var(--sp-3) var(--sp-4) 96px;
-}
-
-.zoom {
-  display: inline-flex;
-  gap: 2px;
-  padding: 2px;
-  background: var(--glass-bg-soft);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-sm);
-}
-
-.zoom button {
-  min-width: 34px;
-  height: 26px;
-  border-radius: 4px;
-  font-size: calc(var(--fs-xs) * var(--font-scale));
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-}
-
-.zoom button.on {
-  background: var(--glass-bg-float);
-  color: var(--text-primary);
-  box-shadow: 0 2px 8px -4px rgba(16, 24, 40, 0.4);
 }
 
 .bulk-dock {
