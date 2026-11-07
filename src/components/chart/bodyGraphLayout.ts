@@ -162,10 +162,25 @@ export interface CenterShape {
   cy: number
 }
 
-/** 意志力中心：原三角以自身中心 (768,1149) 顺时针旋转 30°（大小与位置不变，只转角度） */
-export const HEART_ROTATION_DEG = 30
-export const HEART_TRIANGLE: Tri = ([[768, 1084], [660, 1184], [884, 1184]] as Pt[]).map(
-  ([x, y]) => rotatePoint(x, y, HEART_ROTATION_DEG, 768, 1149),
+/**
+ * 意志力中心（中间菱形下方右侧的小三角）：
+ * - 在 v2.1.0 的顺时针 30° 基础上再顺时针旋转 25°，共 55°；
+ * - 整体下移「一个字符高度」= GATE_FONT = 28px；
+ * - 旋转/下移后 51/21/26/40 仍由 layoutGatesInTriangle 按重心坐标重新布点，
+ *   GATE_POINTS 与通道裁剪端点随之自动重算，故四条通道始终连到对应数字（不再误连）。
+ */
+export const HEART_ROTATION_DEG = 55
+export const HEART_SHIFT_Y = GATE_FONT
+export const HEART_CX = 768
+export const HEART_CY = 1149 + HEART_SHIFT_Y
+const HEART_BASE: Tri = [
+  [768, 1084],
+  [660, 1184],
+  [884, 1184],
+]
+/** 先把基底整体下移 28px，再绕下移后的中心旋转 55°（等价于「在原 30° 上追加 25°」） */
+export const HEART_TRIANGLE: Tri = HEART_BASE.map(([x, y]) =>
+  rotatePoint(x, y + HEART_SHIFT_Y, HEART_ROTATION_DEG, HEART_CX, HEART_CY),
 ) as Tri
 
 /** 九中心几何（底图实测） */
@@ -216,12 +231,12 @@ export const CENTER_SHAPES: Record<CenterId, CenterShape> = {
     cx: 576,
     cy: 1018,
   },
-  // 心（意志）：小三角，旋转 30° 后（原顶点 y=1084，底边 y=1184）
+  // 心（意志）：小三角，顺时针 55° + 整体下移 28px
   heart: {
     id: 'heart',
     polygon: HEART_TRIANGLE.map(([x, y]) => [x, y] as Pt),
-    cx: 768,
-    cy: 1149,
+    cx: HEART_CX,
+    cy: HEART_CY,
   },
   // 脾：三角，尖朝右
   spleen: {
@@ -286,8 +301,10 @@ const GATE_POS: Record<number, [number, number]> = {
   47: [537, 348],
   24: [575, 348],
   4: [613, 348],
-  17: [552, 440],
-  11: [601, 440],
+  // 通道平行：17/11 的 x 分别与 62/56 对齐，并各上移 16px，
+  // 使 17-62、11-56 与 43-23 三条通道同为竖直、严格平行。
+  17: [540, 424],
+  11: [606, 424],
   43: [574, 486],
   // 喉咙
   62: [540, 636],
@@ -537,6 +554,22 @@ export const CHANNEL_LINES: ChannelLine[] = (() => {
   // 5 条原始直连线不再作为独立线段出现
   return [...lines.filter((l) => !HUB_KEYS.includes(l.key)), hub10, hub34]
 })()
+
+/**
+ * 悬挂闸门短段的终点比例（相对「闸门边界 → 路线相邻点」这一段）。
+ *
+ * 背景：枢纽化后 20-57 主干 route = [20边界, M, 57边界]，10/34 辐条 route = [闸门边界, M]，
+ * 其中 M 就是「20 与 57 的中点」，本身已是每条支路的半程终点。若再统一乘 0.45，
+ * 等于「半条通道的一半」≈ 整条通道的 1/4（用户反馈的「只连了 1/4」）。
+ * 因此：经枢纽的路线直达 M（1），普通通道走到两端点中点（0.5）。
+ */
+export function hangingEndRatio(line: {
+  hub?: boolean
+  points?: Array<[number, number]>
+}): number {
+  const viaHub = line.hub === true || (line.points?.length ?? 0) > 2
+  return viaHub ? 1 : 0.5
+}
 
 /** 中心形心 */
 export function centerAnchor(id: CenterId): { x: number; y: number } {

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import type { CenterId } from '../types/hd'
+import type { AiProgress, FullReport } from '../types/report'
 
 export type PanelKind = 'gate' | 'channel' | 'center'
 export type PanelSource = 'a' | 'b' | 'merged' | 'single'
@@ -18,6 +19,10 @@ export interface AiReadingState {
   content: string
   loading: boolean
   error: string | null
+  /** 完整版多轮编排的实时进度（#9）；精简/详细恒为 null */
+  progress: AiProgress | null
+  /** 完整版结构化报告（#9）；生成中即为已完成分项的快照 */
+  report: FullReport | null
 }
 
 export interface ToastAction {
@@ -51,6 +56,8 @@ export const useUiStore = defineStore('ui', {
       content: '',
       loading: false,
       error: null,
+      progress: null,
+      report: null,
     },
     toast: null,
   }),
@@ -82,6 +89,8 @@ export const useUiStore = defineStore('ui', {
         content: '',
         loading: false,
         error: null,
+        progress: null,
+        report: null,
       }
     },
     setAiLoading(loading: boolean) {
@@ -94,6 +103,15 @@ export const useUiStore = defineStore('ui', {
     beginRegenerate() {
       this.aiReading.loading = true
       this.aiReading.error = null
+      this.aiReading.progress = null
+      this.aiReading.report = null
+    },
+    /** 完整版：进度与「已完成分项快照」一起更新，面板可边生成边看 */
+    setAiProgress(progress: AiProgress | null) {
+      this.aiReading.progress = progress
+    },
+    setAiReport(report: FullReport | null) {
+      this.aiReading.report = report
     },
     setAiContent(content: string) {
       this.aiReading.content = content

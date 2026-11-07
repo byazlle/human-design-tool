@@ -125,7 +125,7 @@ describe('多 AI 配置', () => {
     expect(settings.addAiProfile({ ...base, baseUrl: 'ftp://a.example.com' }).ok).toBe(false)
     expect(settings.addAiProfile({ ...base, apiKey: 'short' }).ok).toBe(false)
     expect(settings.addAiProfile({ ...base, timeoutMs: 1000 }).ok).toBe(false)
-    expect(settings.addAiProfile({ ...base, timeoutMs: 600001 }).ok).toBe(false)
+    expect(settings.addAiProfile({ ...base, timeoutMs: 3600001 }).ok).toBe(false)
     expect(settings.addAiProfile({ ...base, name: '   ' }).ok).toBe(false)
   })
 

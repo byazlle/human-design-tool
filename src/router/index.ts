@@ -52,7 +52,45 @@ const router = createRouter({
       redirect: '/',
     },
   ],
-  scrollBehavior: () => ({ top: 0 }),
+  // 从设置页返回（含浏览器后退）时恢复原来的滚动位置
+  scrollBehavior: (_to, _from, savedPosition) => savedPosition ?? { top: 0 },
 })
+
+/** 进入设置页前的来源路由：让「返回」回到完整盘而不是强制回档案库 */
+const SETTINGS_RETURN_KEY = 'hdt.settings.returnTo'
+
+router.beforeEach((to, from) => {
+  if (to.name !== 'settings') return
+  try {
+    if (from.name && from.name !== 'settings') {
+      sessionStorage.setItem(SETTINGS_RETURN_KEY, from.fullPath)
+    } else if (!from.name) {
+      // 直接打开 / 刷新设置页：清掉旧来源，避免「返回」串到上一次的盘面
+      sessionStorage.removeItem(SETTINGS_RETURN_KEY)
+    }
+  } catch {
+    /* 隐私模式下不可写时忽略，返回按钮回退到档案库 */
+  }
+})
+
+/** 只读来源（用于返回按钮文案，不消费） */
+export function peekSettingsReturn(): string {
+  try {
+    return sessionStorage.getItem(SETTINGS_RETURN_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+/** 读取并清除来源（只消费一次，避免之后从别处进设置时串到旧来源） */
+export function consumeSettingsReturn(): string {
+  try {
+    const value = sessionStorage.getItem(SETTINGS_RETURN_KEY) ?? ''
+    sessionStorage.removeItem(SETTINGS_RETURN_KEY)
+    return value
+  } catch {
+    return ''
+  }
+}
 
 export default router

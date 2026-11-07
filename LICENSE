@@ -24,6 +24,6 @@ SOFTWARE.
 
 第三方组件（依赖库与衍生作品）的版权与许可见 [THIRD-PARTY.md](THIRD-PARTY.md)。
 
-本仓库的绘图程序「版式二」（`src/components/chart/bodyGraphLayoutV2.ts`）部分衍生于
-[adamblvck/free-human-design](https://github.com/adamblvck/free-human-design)（MIT 许可），
-其原始版权声明与许可同样适用于相应部分。
+历史说明：绘图程序「版式二」（`src/components/chart/bodyGraphLayoutV2.ts`，v2.2.0 起已移除）
+曾衍生于 [adamblvck/free-human-design](https://github.com/adamblvck/free-human-design)（MIT 许可），
+其原始版权声明与许可作为历史记录保留在 THIRD-PARTY.md 第二节。

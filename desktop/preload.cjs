@@ -26,5 +26,8 @@ contextBridge.exposeInMainWorld('hdDesktop', {
   file: {
     save: (payload) => ipcRenderer.invoke('file:save', payload),
     open: () => ipcRenderer.invoke('file:open'),
+    // 需求 #10：报告导出（按扩展名 filters / base64 二进制 / PDF 打印）
+    saveReport: (payload) => ipcRenderer.invoke('file:save-report', payload),
+    savePdf: (payload) => ipcRenderer.invoke('file:save-pdf', payload),
   },
 })

@@ -206,6 +206,80 @@ ipcMain.handle('file:save', async (_e, { defaultName, content }) => {
   }
 })
 
+/**
+ * 解读报告另存为（需求 #10）：按扩展名给 filters，支持 UTF-8 文本与 base64 二进制。
+ * 原有 file:save 保持 JSON 备份语义不变，避免影响导入/导出备份链路。
+ */
+const REPORT_FILTERS = {
+  md: { name: 'Markdown 报告', extensions: ['md'] },
+  docx: { name: 'Word 文档', extensions: ['docx'] },
+  html: { name: 'HTML 报告', extensions: ['html', 'htm'] },
+  pdf: { name: 'PDF 文档', extensions: ['pdf'] },
+  json: { name: 'JSON 备份', extensions: ['json'] },
+}
+
+function reportFilters(defaultName) {
+  const ext = String(defaultName || '').split('.').pop().toLowerCase()
+  return [
+    REPORT_FILTERS[ext] || { name: '全部文件', extensions: ['*'] },
+    { name: '全部文件', extensions: ['*'] },
+  ]
+}
+
+ipcMain.handle('file:save-report', async (_e, { defaultName, content, encoding } = {}) => {
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: '导出解读报告',
+    defaultPath: defaultName || 'human-design-reading.md',
+    filters: reportFilters(defaultName),
+  })
+  if (canceled || !filePath) return { ok: false, canceled: true }
+  try {
+    if (encoding === 'base64') {
+      // Word（docx）是二进制，渲染层以 base64 文本过 IPC
+      await fs.writeFile(filePath, Buffer.from(String(content ?? ''), 'base64'))
+    } else {
+      await fs.writeFile(filePath, String(content ?? ''), 'utf8')
+    }
+    return { ok: true, filePath }
+  } catch (error) {
+    return { ok: false, error: String(error && error.message ? error.message : error) }
+  }
+})
+
+/**
+ * PDF：离屏窗口加载可打印 HTML → webContents.printToPDF() → 写二进制。
+ * 走 Chromium 的系统字体渲染，中文不会像 jsPDF 内置字体那样乱码。
+ */
+ipcMain.handle('file:save-pdf', async (_e, { defaultName, html } = {}) => {
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: '导出 PDF 报告',
+    defaultPath: defaultName || 'human-design-reading.pdf',
+    filters: [{ name: 'PDF 文档', extensions: ['pdf'] }, { name: '全部文件', extensions: ['*'] }],
+  })
+  if (canceled || !filePath) return { ok: false, canceled: true }
+
+  const tmpFile = path.join(app.getPath('temp'), `hdt-report-${Date.now()}-${process.pid}.html`)
+  let win = null
+  try {
+    // 用临时文件而非 data: URL：完整版报告可达数万字，避免 URL 长度限制
+    await fs.writeFile(tmpFile, String(html ?? ''), 'utf8')
+    win = new BrowserWindow({
+      show: false,
+      webPreferences: { nodeIntegration: false, contextIsolation: true },
+    })
+    await win.loadFile(tmpFile)
+    const data = await win.webContents.printToPDF({ printBackground: true, pageSize: 'A4' })
+    if (!data || !data.length) throw new Error('printToPDF 返回空内容')
+    await fs.writeFile(filePath, data)
+    return { ok: true, filePath }
+  } catch (error) {
+    return { ok: false, error: String(error && error.message ? error.message : error) }
+  } finally {
+    if (win && !win.isDestroyed()) win.destroy()
+    await fs.unlink(tmpFile).catch(() => {})
+  }
+})
+
 ipcMain.handle('file:open', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
     title: '导入备份',

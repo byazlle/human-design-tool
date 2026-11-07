@@ -50,8 +50,7 @@ BirthInput ──computeChart()──► BodyGraph
 | 盘面判定 | 通道→中心→类型/权威/定义型、悬挂闸门 | `src/engine/bodygraph.ts` |
 | 合盘 | A/B/merged 与归属色 | `src/engine/composite.ts` |
 | 几何 v1 | 底图 1:1 坐标、通道裁剪、20-57 枢纽走线 | `src/components/chart/bodyGraphLayout.ts` |
-| 几何 v2 | 参考实现布局与渐变 | `bodyGraphLayoutV2.ts` |
-| 版式注册表 | 两版统一为 `LayoutPreset` | `layouts.ts` |
+| 版式注册表 | 单一版式 `LayoutPreset`（v2.2 起移除版式二） | `layouts.ts` |
 | 渲染 | 底板 + 数据两层 SVG | `HumanDesignBodyGraph.vue` |
 | 解读内容 | 闸门/通道/中心/类型/星体/闸门洞察/人生轨迹/角度 | `src/services/*` |
 | AI | 请求、缓存（选择集/角度入 key）、错误护栏 | `services/aiClient.ts` `composables/useAiReading.ts` |
@@ -98,7 +97,7 @@ MainActivity 通过 shouldInterceptRequest 从 assets/www 读取
 
 | 层级 | 命令 | 覆盖 |
 | --- | --- | --- |
-| 单元 | `npm test` | 盘序边界、通道路由、合盘归属、时区、几何 4 项、Markdown 5 项 |
+| 单元 | `npm test` | 14 个文件 / 138 项：盘序边界、通道路由、合盘归属、星历对照、几何、Markdown、提示词契约、画布排布、页面布局、报告导出、完整版编排、关系场编排 |
 | 端到端 | `HD_SMOKE=1 <exe>` | 29 项：加载、渲染、清单、详情、批量、AI 护栏、深色、合盘、设置、新建 |
 | 安装验证 | NSIS `/S` 静默安装 → 运行安装后程序 | 同一套 29 项 |
 | APK | 静态服务模拟 `appassets` 加载 | ES module + localStorage 正常 |
@@ -111,8 +110,44 @@ MainActivity 通过 shouldInterceptRequest 从 assets/www 读取
 | 数据 | 来源 |
 | --- | --- |
 | 闸门↔中心、36 通道拓扑 | Jovian Archive / Ra Uru Hu 标准人体图（与 rave-engine、free-human-design 一致） |
-| 64 卦盘序与偏移 29.8333° | Jovian 标准 Mandala |
+| 64 卦盘序与偏移 **29.875°**（Gate 41 起于 302.000°） | Jovian 标准 Mandala；已由 Rave New Year 实测锁定 |
 | 星历 | `astronomy-engine`（VSOP87，MIT） |
 | 交点 | Meeus《Astronomical Algorithms》第 47 章 |
-| 版式二布局 | [adamblvck/free-human-design](https://github.com/adamblvck/free-human-design) `site/charts.min.js` |
+| 版式二布局（历史，v2.2.0 起已移除） | [adamblvck/free-human-design](https://github.com/adamblvck/free-human-design) `site/charts.min.js` |
 | 解读文案 | 项目内编写（通行人类图解释整理），非第三方授权文本 |
+
+## 8. AI 解读报告导出（v2.2.0）
+
+`src/services/aiExport.ts` 是唯一入口：三档解读先由 `reportToMarkdown()` 统一序列化
+（精简 / 详细 = 单篇 Markdown；完整 = `FullReport` 按「维度 → 闸门 → 通道 → 整合 → 结论」展开），
+之后四种格式都从这一份文本出图，避免排版逻辑分叉。
+
+| 格式 | 生成方式 | 保存位置 |
+| --- | --- | --- |
+| MD | 序列化后的 Markdown 原文 | 桌面端 `file:save-report` 原生另存为；浏览器 `Blob + a.download` |
+| Word | `docx@9` **动态 import()**，`Packer.toBlob()`，不进主 bundle | 同上（`encoding: 'base64'` 传二进制） |
+| HTML | 独立可离线打开的文档，CSS 内联；表格由导出侧补 `<table>` 渲染 | 同上 |
+| PDF | 桌面端 `file:save-pdf`：临时 HTML → 隐藏 `BrowserWindow.loadFile()` → `webContents.printToPDF()`；浏览器/安卓为打印专用页 + `window.print()` | 桌面端原生另存为；浏览器由用户在打印对话框选「另存为 PDF」并指定文件夹 |
+
+- PDF 走 Chromium 系统字体，不用 jsPDF 内置字体（中文会乱码）。
+- `file:save-report` 按扩展名给 filters，支持 UTF-8 文本与 base64 二进制；原有 `file:save`
+  仍只服务 JSON 备份，语义不变。
+- 旧版壳若缺少 `saveReport` / `savePdf`，渲染层自动退化为浏览器下载，不报错。
+- `renderMarkdown` 本身不支持表格；导出侧 `markdownToHtml()` 把表格块单独转成 `<table>`，
+  Word 则降级为以 `｜` 分隔的纯文本行。
+
+## 9. 关系场完整版编排（v2.2.0）
+
+合盘（`CompositeView`）与双盘对比（`CompareView`）在「完整」档同样走多轮编排，但**不能**套用单人整盘的八大维度：
+
+| 环节 | 单人整盘 | 关系场（合盘 / 双盘对比） |
+| --- | --- | --- |
+| 事实块 | `baseFacts(chart)`：类型 / 权威 / 人生角色 / 九中心 / 闸门 / 通道 | `relationshipFactBlock()`：双方人生角色、中心四象限、四类关系通道、共享与独有通道闸门、合并盘离线释义 |
+| 维度 | `READING_ANGLES` 八项 | `COMPOSITE_DIMENSIONS` 五项（自定义议题可追加）+ 四类连接动力学 |
+| 逐项 | `chart.gates` / `chart.channels` | `sharedGates` / `merged.channels`（带归属） |
+| 融合 | 全盘整合分析与最终总结论 | 关系场整合分析与最终总结论 |
+
+- `src/services/aiFullReading.ts` 的 `FullReadingPlan` 支持注入 `tasks / factBlock / summary / fusionAngle`；不注入时行为与 v2.2.0 单人整盘完全一致。
+- `src/services/aiRelationshipReading.ts` 只消费 `CompositeResult` 已有字段与 `compositeDimensions` / `interpretations` / `gateData` 的既有离线释义，不新增任何人类图判定。
+- 规范 §3.8 合规：`mergedAsChart()` 的 `type / authority / definition` 只是渲染占位，`baseFacts()` 对 `personality` 与 `design` 均为空的合图自动切为关系场事实块，绝不写入 `【类型】` / `【内在权威】` / `定义型：`；`tests/aiRelationshipReading.test.ts` 对此有回归。
+- 覆盖边界：整盘类（单人整盘 / 合盘 / 双盘对比）在「完整」档走多轮；凯龙回归盘（§3.9 扩展层）与闸门 / 通道 / 中心单点解读仍只发单次请求。

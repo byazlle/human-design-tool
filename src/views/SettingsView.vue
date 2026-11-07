@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /** 设置页：单栏分节，桌面与手机同一套（DESIGN.md §5.5） */
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { consumeSettingsReturn, peekSettingsReturn } from '../router'
 import { useArchiveStore } from '../stores/archive'
 import { useSettingsStore } from '../stores/settings'
 import { useUiStore } from '../stores/ui'
@@ -14,6 +15,17 @@ const router = useRouter()
 const archiveStore = useArchiveStore()
 const settings = useSettingsStore()
 const ui = useUiStore()
+
+/** 返回按钮文案跟随来源页（#6：从完整盘进设置应「返回完整盘」） */
+const returnLabel = computed(() => {
+  const to = peekSettingsReturn()
+  if (to.startsWith('/archive/')) return '返回完整盘'
+  if (to.startsWith('/chiron/')) return '返回凯龙盘'
+  if (to.startsWith('/composite/')) return '返回合盘'
+  if (to.startsWith('/compare')) return '返回双盘对比'
+  if (to === '/boards') return '返回多盘'
+  return '返回档案库'
+})
 
 function exportAll() {
   const payload = {
@@ -103,7 +115,7 @@ function clearCache() {
 }
 
 function goBack() {
-  router.push('/')
+  router.push(consumeSettingsReturn() || '/')
 }
 function goNew() {
   router.push('/new')
@@ -112,7 +124,7 @@ function goNew() {
 
 <template>
   <div class="page">
-    <AppToolbar title="设置" back-label="档案库" @back="goBack" @new="goNew" @help="ui.notify('AI 配置仅保存在本机；不填也能正常排盘与查看离线释义。')" />
+    <AppToolbar title="设置" :back-label="returnLabel" @back="goBack" @new="goNew" @help="ui.notify('AI 配置仅保存在本机；不填也能正常排盘与查看离线释义。')" />
     <main class="content">
       <SettingsForm
         @export="exportAll"

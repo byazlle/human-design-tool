@@ -24,13 +24,12 @@
 | vite | 5.4.21 | MIT | Evan You | https://github.com/vitejs/vite |
 | vitest | 2.1.9 | MIT | Anthony Fu | https://github.com/vitest-dev/vitest |
 | vue-tsc | 2.2.12 | MIT | — | https://github.com/vuejs/language-tools |
-| @tauri-apps/cli | 2.12.3 | Apache-2.0 OR MIT | — | https://github.com/tauri-apps/tauri |
 | electron | 33.4.11 | MIT | Electron Community | https://github.com/electron/electron |
 | electron-builder | 26.15.3 | MIT | Vladimir Krivosheev | https://github.com/electron-userland/electron-builder |
 
 ### 许可说明
 - 标注 **MIT** 的组件适用下方「MIT License」标准文本；其各自版权方如上表，完整版权声明保留在对应仓库中。
-- 标注 **Apache-2.0** 的组件（`typescript`、`@tauri-apps/cli`）适用 Apache License 2.0，
+- 标注 **Apache-2.0** 的组件（`typescript`）适用 Apache License 2.0，
   其完整文本见 https://www.apache.org/licenses/LICENSE-2.0 。
 - Electron 运行时本身及其捆绑的 Chromium / Node.js 等遵循各自许可，完整许可随发布产物（安装包 / APK）一并分发，
   并可在 `node_modules/electron/LICENSE` 查看。
@@ -39,9 +38,12 @@
 
 ## 二、衍生作品（需署名）
 
-### 绘图程序「版式二」— 衍生于 free-human-design
+### 绘图程序「版式二」— 衍生于 free-human-design（v2.2.0 起已移除）
 
-`src/components/chart/bodyGraphLayoutV2.ts` 的中心坐标、形状、渐变与闸门偏移数据，
+> 历史说明：v2.2.0 按用户确认删除了「绘图程序版式二」，`src/components/chart/bodyGraphLayoutV2.ts`
+> 与 Tauri 残留目录均已从仓库移除；以下署名与许可文本作为历史衍生记录保留。
+
+原 `src/components/chart/bodyGraphLayoutV2.ts` 的中心坐标、形状、渐变与闸门偏移数据，
 取自 [adamblvck/free-human-design](https://github.com/adamblvck/free-human-design)
 仓库站点绘图数据（`site/charts.min.js`），并做了本地校准。该上游项目以 **MIT 许可** 发布。
 
@@ -80,8 +82,9 @@ SOFTWARE.
 - **星历（行星黄经）**：采用 `astronomy-engine`（VSOP87 理论）进行高精度星历计算。
 - **真交点（月亮南北交）**：依据 Jean Meeus《Astronomical Algorithms》第 47 章的解析公式
   （平交点 + 5 项周期改正 + 章动）实现。
-- **闸门盘序**：采用 Jovian Archive 标准的 64 卦盘序，整体偏移 29.8333°（即「闸门 1 起于白羊 28.83°」），
-  而非「闸门 1 起于白羊 0°」的简化模型。
+- **闸门盘序**：采用 Jovian Archive 标准的 64 卦盘序，整体偏移 **29.875°**（`MANDALA_OFFSET`；
+  Gate 41 起于 302.000°，已由 Jovian 公布的 Rave New Year 时刻实测锁定），
+  而非「闸门 1 起于白羊 0°」的简化模型。v1.2.0 之前文档曾写 29.8333°，属未同步的旧值。
 - **人类图体系**：类型 / 权威 / 定义型 / 轮回交叉等概念源自 Ra Uru Hu 创立的 Human Design System；
   本项目仅作本地计算与可视化呈现，未包含任何受版权保护的专有文本（如 192 个轮回交叉专有名称映射）。
 

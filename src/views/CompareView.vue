@@ -2,6 +2,7 @@
 /**
  * 双完整盘对比视图：左右并排展示两份完整盘（手机端上下堆叠）。
  * 数据与单盘完全一致，仅布局不同；闸门/通道/中心点击释义复用同一套弹层。
+ * v2.2.0：新增双盘 AI 解读，「完整」档走关系场专用多轮编排（规范 §3.8 口径）。
  */
 import { computed, ref, watch } from 'vue'
 
@@ -12,14 +13,33 @@ import AppToolbar from '../components/base/AppToolbar.vue'
 import EmptyState from '../components/base/EmptyState.vue'
 import HdButton from '../components/base/HdButton.vue'
 import HumanDesignBodyGraph from '../components/chart/HumanDesignBodyGraph.vue'
+import AiReadingPanel from '../components/panel/AiReadingPanel.vue'
 import { useArchiveStore } from '../stores/archive'
 import { useUiStore } from '../stores/ui'
+import { useSettingsStore } from '../stores/settings'
+import { useAiReading } from '../composables/useAiReading'
+import { copyAiResult, saveAiResult } from '../composables/useAiResultActions'
+import { chartSummaryOf } from '../services/aiClient'
+import {
+  relationshipFactBlock,
+  relationshipFullPlan,
+  relationshipSummary,
+} from '../services/aiRelationshipReading'
+import { composite, mergedAsChart } from '../engine/composite'
 import { TYPE_LABELS, AUTHORITY_LABELS } from '../types/hd'
 
 const route = useRoute()
 const router = useRouter()
 const archiveStore = useArchiveStore()
 const ui = useUiStore()
+const settings = useSettingsStore()
+const {
+  state: aiState,
+  run: runAi,
+  retry: retryAi,
+  abort: abortAi,
+  configured: aiConfigured,
+} = useAiReading()
 
 const all = computed(() => archiveStore.archives)
 
@@ -47,6 +67,22 @@ function syncRoute() {
 
 const archiveA = computed(() => all.value.find((a) => a.id === aId.value) ?? null)
 const archiveB = computed(() => all.value.find((a) => a.id === bId.value) ?? null)
+
+/** 双盘对比的 AI 解读以「两人关系场」为对象；同人时不构造合图（composite 会抛错）。 */
+const pairNames = computed(() => ({
+  a: archiveA.value?.name ?? 'A',
+  b: archiveB.value?.name ?? 'B',
+}))
+
+const pairResult = computed(() => {
+  const a = archiveA.value?.chart
+  const b = archiveB.value?.chart
+  if (!a || !b || !aId.value || !bId.value || aId.value === bId.value) return null
+  return composite(a, b, { aId: aId.value, bId: bId.value })
+})
+
+const mergedChart = computed(() => (pairResult.value ? mergedAsChart(pairResult.value) : null))
+const canRead = computed(() => Boolean(pairResult.value && mergedChart.value))
 
 /** 缺盘面的档案在这里补算，避免左右栏出现空白 */
 watch(
@@ -78,6 +114,58 @@ function goBack() {
 function goSettings() {
   router.push('/settings')
 }
+
+/**
+ * 双盘对比解读：
+ * - 单次档：给模型两份单人盘既有摘要 + 关系场合规事实块，一次成文；
+ * - 「完整」档：注入关系场专用任务清单（合盘维度 + 四类动力学 + 逐共享闸门
+ *   + 逐合并通道 + 融合），由 aiFullReading 统一编排，绝不输出合盘个体结论。
+ */
+async function requestCompareAi() {
+  const r = pairResult.value
+  const chart = mergedChart.value
+  const a = archiveA.value
+  const b = archiveB.value
+  if (!r || !chart || !a || !b) {
+    ui.notify('请先选择两份可用的人类图档案。')
+    return
+  }
+  const isFull = settings.aiDetailMode === 'full'
+  const offline = [
+    `【双盘对比】左：${a.name}，右：${b.name}。请把两人作为一组关系来解读。`,
+    '【口径说明】以下 A / B 盘摘要只用于说明两份单人盘的差异；关系场结论不输出类型、内在权威、定义型或轮回交叉等个体结论。',
+    '',
+    `【A 盘摘要】\n${chartSummaryOf(r.a)}`,
+    '',
+    `【B 盘摘要】\n${chartSummaryOf(r.b)}`,
+    '',
+    relationshipFactBlock(r, pairNames.value),
+    '',
+    '【输出要求】先说明两份盘面在能量节奏上的主要差异，再说明这些差异在关系里的互补与摩擦点，最后给出可执行的相处建议。',
+  ].join('\n')
+
+  await runAi({
+    scope: 'compare',
+    ref: `${aId.value}:${bId.value}`,
+    title: `双盘对比解读 · ${a.name} × ${b.name}`,
+    offline,
+    chartSummary: relationshipSummary(r, pairNames.value),
+    chart,
+    detailMode: settings.aiDetailMode,
+    angle: '双盘对比',
+    full: isFull,
+    stepMode: settings.aiStepMode,
+    fullPlan: isFull ? relationshipFullPlan(r, { pairNames: pairNames.value }) : undefined,
+  })
+}
+
+function copyAi() {
+  void copyAiResult(aiState.value.content)
+}
+
+function saveAi() {
+  saveAiResult({ title: aiState.value.title, content: aiState.value.content })
+}
 </script>
 
 <template>
@@ -89,7 +177,13 @@ function goSettings() {
       @new="router.push('/new')"
       @settings="goSettings"
       @help="ui.notify('左右两列各选一份档案，即可并排对比两份完整盘；点击闸门可查看释义。')"
-    />
+    >
+      <template #right>
+        <HdButton size="sm" :loading="aiState.loading" :disabled="!canRead" @click="requestCompareAi">
+          双盘 AI 解读
+        </HdButton>
+      </template>
+    </AppToolbar>
 
     <EmptyState
       v-if="all.length < 2"
@@ -154,6 +248,25 @@ function goSettings() {
         </p>
       </section>
     </main>
+
+    <AiReadingPanel
+      :open="aiState.open"
+      :title="aiState.title"
+      :content="aiState.content"
+      :loading="aiState.loading"
+      :error="aiState.error"
+      :configured="aiConfigured"
+      :mode="settings.aiDetailMode"
+      :report="aiState.report"
+      :progress="aiState.progress"
+      :meta="{ chartName: `${pairNames.a} × ${pairNames.b}` }"
+      @close="ui.closeAi()"
+      @copy="copyAi"
+      @save="saveAi"
+      @regenerate="retryAi"
+      @cancel="abortAi"
+      @settings="goSettings"
+    />
   </div>
 </template>
 

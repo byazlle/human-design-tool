@@ -225,6 +225,8 @@ function goSettings() {
       :loading="aiState.loading"
       :error="aiState.error"
       :configured="aiConfigured"
+      :report="aiState.report"
+      :progress="aiState.progress"
       @close="ui.closeAi()"
       @copy="copyAi"
       @save="saveAi"
