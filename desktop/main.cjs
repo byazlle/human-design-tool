@@ -500,12 +500,21 @@ async function runSmoke(win) {
     return 'clicked'
   })()`)
   await wait(900)
-  const aiPanel = await js(`({
-    open: Boolean(document.querySelector('.panel[role="dialog"]')),
-    text: (document.querySelector('.panel .error-state')?.textContent || '').slice(0, 60),
-  })`)
-  check('AI 未配置时打开面板并提示', aiPanel.open || aiGuard === 'no-run', aiPanel.text)
-  await js(`document.querySelector('.panel .actions button[aria-label="关闭"]')?.click()`)
+  // v2.3.0 五区重构后面板根为 .ai-panel、错误区为 [data-zone="E"]；
+  // 保留旧 .panel 选择器做向后兼容，断言强度不变（面板已打开且确有提示文案）。
+  const aiPanel = await js(`(() => {
+    const panel = document.querySelector('.ai-panel[role="dialog"], .panel[role="dialog"]')
+    const err = panel?.querySelector('.error-state, [data-zone="E"]')
+    return { open: Boolean(panel), text: (err?.textContent || '').trim().slice(0, 80) }
+  })()`)
+  check('AI 未配置时打开面板并提示', aiPanel.open && Boolean(aiPanel.text), aiPanel.text)
+  await js(`(() => {
+    const panel = document.querySelector('.ai-panel[role="dialog"], .panel[role="dialog"]')
+    const btn = panel?.querySelector('button[aria-label="关闭"]')
+    if (!btn) return false
+    btn.click()
+    return true
+  })()`)
   await wait(400)
 
   // 10) 深色模式
