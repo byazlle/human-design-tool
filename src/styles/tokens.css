@@ -100,7 +100,17 @@
   --z-drawer-mask: 40;
   --z-drawer: 41;
   --z-dialog: 50;
+  /* v2.3.0 新增：确认框位于 dialog(50) 与 toast(60) 之间 */
+  --z-confirm: 55;
   --z-toast: 60;
+
+  /* v2.3.0 新增：AI 面板五区与放大态尺寸变量（只新增，不改动既有值） */
+  --ai-panel-w: 520px;
+  --ai-panel-expanded-inset-x: 4vw;
+  --ai-panel-expanded-inset-y: 2vh;
+  --ai-zone-gap: var(--sp-2);
+  --ai-hit: 44px;
+  --page-max-w: 1400px;
 
   /* 用户可调字号（设置页） */
   --font-scale: 1;

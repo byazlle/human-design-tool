@@ -64,12 +64,15 @@ const settings = useSettingsStore()
   top: 0;
   z-index: var(--z-toolbar);
   height: 56px;
+  box-sizing: border-box;
+  flex: none;
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5), 0 6px 24px -18px rgba(16, 24, 40, 0.4);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-3);
   padding: 0 var(--sp-4);
+  padding-top: env(safe-area-inset-top, 0px);
   background: var(--glass-bg-strong);
   border-bottom: 1px solid var(--glass-border);
 }
@@ -79,12 +82,17 @@ const settings = useSettingsStore()
   align-items: center;
   gap: var(--sp-3);
   min-width: 0;
+  flex: 1 1 auto;
 }
 
+/* SK-2 / AC-7：标题单行省略，不换行、不挤压右侧操作 */
 .title {
   font-size: calc(var(--fs-display) * var(--font-scale));
   font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .back {
@@ -105,10 +113,10 @@ const settings = useSettingsStore()
 .right {
   display: flex;
   align-items: center;
-  gap: var(--sp-1);
+  gap: var(--sp-2);
   flex: none;
   max-width: 70%;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
 }
 
@@ -116,6 +124,10 @@ const settings = useSettingsStore()
   .toolbar {
     padding: 0 var(--sp-3);
     height: 52px;
+    gap: var(--sp-2);
+  }
+  .title {
+    max-width: 40vw;
   }
   .search-slot {
     display: none;

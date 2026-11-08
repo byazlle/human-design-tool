@@ -236,10 +236,10 @@ function goSettings() {
 </script>
 
 <template>
-  <div class="page">
+  <div class="page page-shell">
     <AppToolbar title="新建档案" back-label="返回" :search-value="''" @back="goBack" @settings="goSettings" @help="ui.notify('填写出生日期与时间即可生成人类图；时间越准确，结果越可靠。')" />
 
-    <main class="content" :class="{ mobile: isMobile }">
+    <main class="content content-shell" :class="{ mobile: isMobile }">
       <div class="form-col">
         <div class="mode-switch">
           <button type="button" :class="{ on: mode === 'id' }" @click="mode = 'id'">身份证快捷</button>

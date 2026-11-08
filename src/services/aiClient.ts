@@ -23,6 +23,30 @@ import { ENGINE_VERSION } from '../engine/version'
 /** 提示词版本：提示词正文一改就必须 +1（同时进入缓存键，见 cacheKey） */
 export const PROMPT_VERSION = '3.1'
 
+/**
+ * 客户端可观测阶段（v2.3.0 · T-5 新增，仅用于 UI 状态区）。
+ * 全部为本地事实，禁止表述服务端内部状态。
+ */
+export type AiStage =
+  | 'config-validated'
+  | 'request-sent'
+  | 'response-received'
+  | 'completed'
+  | 'failed'
+  | 'timeout'
+  | 'cancelled'
+
+export interface AiStageEvent {
+  stage: AiStage
+  at: number
+  elapsedMs: number
+  timeoutMs: number
+  /** 仅 response-received：finish_reason='length' 续写轮次 */
+  round?: number
+  /** 仅终态；复用既有 6 类分类 */
+  errorKind?: AiError['kind']
+}
+
 export interface AiExplainArgs {
   cfg: AiConfig
   /** 解读范围：single / unified / selection / composite-* / gate / channel / center / chiron */
@@ -38,6 +62,8 @@ export interface AiExplainArgs {
   /** 解读角度标签（如「整体解读」「成长方向」），注入【用户选择】 */
   angle?: string
   signal?: AbortSignal
+  /** v2.3.0：可选阶段回调，仅用于 UI 状态区。★ 不传时行为与 v2.2.1 逐字一致 */
+  onStage?: (event: AiStageEvent) => void
 }
 
 /* ── 提示词正文（逐字取自规范 §2.1 / §3.1，不要随手改写）──────── */
@@ -530,15 +556,41 @@ export function resolveEndpoint(baseUrl: string): string {
 
 export async function explain(args: AiExplainArgs): Promise<string> {
   const { cfg } = args
+  const startedAt = Date.now()
+  /** 6 个客户端观测点统一出口；回调抛错不得影响请求结果 */
+  const emit = (stage: AiStage, extra?: Partial<AiStageEvent>) => {
+    try {
+      args.onStage?.({
+        stage,
+        at: Date.now(),
+        elapsedMs: Date.now() - startedAt,
+        timeoutMs: cfg.timeoutMs,
+        ...extra,
+      })
+    } catch {
+      /* UI 层错误不应破坏业务请求 */
+    }
+  }
   // 编排层在取消后不会再把已 abort 的 signal 发进来；这里提前拦一道，避免误报超时
-  if (args.signal?.aborted) throw new AiError('已取消', 'cancelled')
+  if (args.signal?.aborted) {
+    emit('cancelled', { errorKind: 'cancelled' })
+    throw new AiError('已取消', 'cancelled')
+  }
   const configError = validateAiConfig(cfg)
-  if (configError) throw new AiError(configError, 'config')
+  if (configError) {
+    emit('failed', { errorKind: 'config' })
+    throw new AiError(configError, 'config')
+  }
+  emit('config-validated')
 
   const key = cacheKey(cfg, args)
   if (cfg.cacheEnabled) {
     const hit = readCache(key)
-    if (hit) return hit
+    // ★ 命中缓存时确实没有发请求，不能谎报 request-sent
+    if (hit) {
+      emit('completed')
+      return hit
+    }
   }
 
   const params = resolveRequestParams(args.scope, args.detailMode)
@@ -556,6 +608,8 @@ export async function explain(args: AiExplainArgs): Promise<string> {
 
     let content = ''
     for (let round = 0; round <= MAX_CONTINUATIONS; round += 1) {
+      // 仅第一轮发 request-sent；续写轮不再重复
+      if (round === 0) emit('request-sent')
       const response = await fetch(resolveEndpoint(cfg.baseUrl), {
         method: 'POST',
         headers: {
@@ -595,6 +649,7 @@ export async function explain(args: AiExplainArgs): Promise<string> {
       const piece = choice?.message?.content?.trim()
       if (!piece) throw new AiError('接口未返回可用的解读内容', 'format')
       content = content ? `${content}\n\n${piece}` : piece
+      emit('response-received', { round })
 
       // finish_reason='length'：输出被 max_tokens 截断，继续向模型要剩余部分，
       // 而不是把半句话当成完整解读返回（完整版融合最容易触发）。
@@ -624,8 +679,21 @@ export async function explain(args: AiExplainArgs): Promise<string> {
     }
 
     if (cfg.cacheEnabled) writeCache(key, content)
+    emit('completed')
     return content
   } catch (err) {
+    // 终态分类只复用既有 AiError.kind，不新增分类、不改异常类型
+    const kind: AiError['kind'] =
+      err instanceof AiError
+        ? err.kind
+        : (err as Error)?.name === 'AbortError'
+          ? args.signal?.aborted
+            ? 'cancelled'
+            : 'timeout'
+          : 'network'
+    emit(kind === 'cancelled' ? 'cancelled' : kind === 'timeout' ? 'timeout' : 'failed', {
+      errorKind: kind,
+    })
     if (err instanceof AiError) throw err
     if ((err as Error)?.name === 'AbortError') {
       // 主动取消（编排层 AbortSignal）与内部超时都会触发 abort，必须区分：

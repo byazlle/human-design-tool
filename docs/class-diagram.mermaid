@@ -1,0 +1,195 @@
+classDiagram
+    direction TB
+
+    class NavigationSource {
+        <<utility · 新增>>
+        +SETTINGS_RETURN_KEY: string = "hdt.settings.returnTo"
+        +SOURCE_KEYS: Record~SourceKind,string~
+        +recordSource(key, fromFullPath) void
+        +peekSource(key) string
+        +consumeSource(key) string
+        +clearSource(key) void
+        +sourceReturnLabel(path, fallback, variant) string
+        +putNotice(kind, payload) void
+        +takeNotice(kind) NavNotice|null
+        +isDerivedRoute(name) boolean
+    }
+    class NavNotice {
+        <<type · UI 局部>>
+        +kind: "mobile-boards-downgrade"
+        +text: string
+        +createdAt: number
+    }
+    class RouterIndex {
+        <<existing · 限定改动>>
+        +createWebHashHistory() FROZEN
+        +scrollBehavior() FROZEN
+        +beforeEach(to, from) void
+        +peekSettingsReturn() string
+        +consumeSettingsReturn() string
+    }
+
+    class AiStageEvent {
+        <<type · 仅函数签名用途>>
+        +stage: AiStage
+        +at: number
+        +elapsedMs: number
+        +timeoutMs: number
+        +round: number?
+        +errorKind: AiErrorKind?
+    }
+    class AiClient {
+        <<service · 唯一改动>>
+        +PROMPT_VERSION = "3.1" FROZEN
+        +validateAiConfig(cfg) string|null
+        +cacheKey(cfg,args) string FROZEN
+        +explain(args: AiExplainArgs) Promise~string~
+        -emitStage(event) void
+    }
+    class AiExplainArgs {
+        <<existing + 1 optional>>
+        +cfg: AiConfig
+        +scope: string
+        +offline: string
+        +signal: AbortSignal?
+        +onStage: (e: AiStageEvent) => void?
+    }
+
+    class useAiStatus {
+        <<composable · 单例 · 新增>>
+        -snapshot: Ref~AiStatusSnapshot~
+        -timer: number|null
+        +begin(mode, timeoutMs) void
+        +applyStage(e: AiStageEvent) void
+        +applyProgress(p: AiProgress) void
+        +finish(phase, kind?) void
+        +reset() void
+        +snapshot$ Readonly~Ref~AiStatusSnapshot~~
+    }
+    class AiStatusSnapshot {
+        <<UI 局部状态 · 不入库>>
+        +phase: AiStatusPhase
+        +startedAt: number|null
+        +elapsedMs: number
+        +timeoutMs: number
+        +lastActivityAt: number|null
+        +mode: AiDetailMode
+        +progress: AiProgress|null
+        +terminal: boolean
+        +terminalAt: number|null
+        +label: string
+    }
+    class useAiReading {
+        <<composable · 修改>>
+        -lastOptions: RunOptions|null
+        -controller: AbortController|null
+        +state: Computed~AiReadingState~
+        +configured: Computed~boolean~
+        +run(options, signal?) Promise~void~
+        +runFull(options, own) Promise~void~
+        +retry(signal?) Promise~void~
+        +abort() void
+        +clearError() void
+    }
+
+    class AiReadingPanel {
+        <<component · B9 唯一实现 · 重构>>
+        +props: open,title,content,loading,error,configured,mode,report,progress,meta
+        +emits: close,copy,save,regenerate,cancel,settings
+        -expanded: Ref~boolean~
+        -toggles: Ref~Record~string,boolean~~
+        -bodyEl: Ref~HTMLElement~
+        -confirm: Ref~ConfirmKind|null~
+        +toggleExpanded() void
+        +toggleSection(s) void
+        +setAll(open) void
+        +requestClose() void
+        +requestCancel() void
+        +requestRegenerate() void
+        +doExport(format) void
+    }
+    class AiConfigBadge {
+        <<component · 新增>>
+        +props: compact?
+        +emits: settings
+        +configured: Computed~boolean~
+    }
+    class ConfirmDialog {
+        <<existing · z-index 调整>>
+        +props: open,title,desc,confirmText,cancelText,danger
+        +emits: confirm,cancel
+        -onKeydown(e) void
+    }
+    class AppToolbar {
+        <<existing · 骨架调整>>
+        +props: title,showSearch,searchValue,backLabel
+        +emits: new,settings,help,back,update:searchValue
+    }
+
+    class UiStore {
+        <<Pinia · 结构冻结>>
+        +aiReading: AiReadingState
+        +openAi() void
+        +setAiProgress() void
+        +setAiReport() void
+        +setAiContent() void
+        +setAiError() void
+        +closeAi() void
+        +notify() void
+    }
+    class AiReadingState {
+        <<FROZEN · 禁止加字段>>
+        +open: boolean
+        +content: string
+        +loading: boolean
+        +error: string|null
+        +progress: AiProgress|null
+        +report: FullReport|null
+    }
+    class SettingsStore {
+        <<Pinia · 只读复用>>
+        +aiConfigured: boolean
+        +aiDetailMode: AiDetailMode
+        +aiStepMode: AiStepMode
+        +ai: AiConfig
+        +timeoutMs: number
+    }
+    class AiProgress {
+        <<types/report.ts · FROZEN>>
+        +done: number
+        +total: number
+        +current: string
+        +phase: string
+        +elapsedMs: number
+        +etaMs: number|null
+        +skipped: string[]
+        +failed: string[]
+    }
+    class EngineTypes {
+        <<FROZEN · 禁止改动>>
+        BodyGraph
+        AiConfig
+        AiDetailMode
+        FullReport
+        MANDALA_OFFSET
+    }
+
+    RouterIndex ..> NavigationSource : 委托（签名不变）
+    NavigationSource --> NavNotice : 产生/消费
+    AiReadingPanel ..> NavigationSource : 去设置路径由视图处理
+    AiClient ..> AiExplainArgs : 参数
+    AiClient ..> AiStageEvent : 回调发出
+    AiExplainArgs o-- AiStageEvent : onStage 可选
+    useAiReading --> AiClient : explain(onStage)
+    useAiReading --> useAiStatus : begin/applyStage/finish
+    useAiReading --> UiStore : 写业务状态
+    useAiReading ..> AiProgress : runFullReading.onUpdate
+    useAiStatus o-- AiStatusSnapshot : 持有
+    useAiStatus ..> AiProgress : 完整档合并展示（只读）
+    AiReadingPanel ..> useAiStatus : 直接 import 单例读取
+    AiReadingPanel --> ConfirmDialog : 三种确认
+    AiConfigBadge ..> SettingsStore : 读 aiConfigured
+    UiStore o-- AiReadingState : 冻结
+    UiStore ..> AiProgress : 引用（不改）
+    AiClient ..> EngineTypes : 只读引用
+    useAiReading ..> SettingsStore : 读 cfg / mode

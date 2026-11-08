@@ -359,3 +359,89 @@ svg {
   --layout-pad: 16px;
   --graph-max-width: 780px;
 }
+
+/* ── v2.3.0 全站骨架基线（T-2 / SK-1～SK-5；只新增，不改既有值）────── */
+
+/** 唯一滚动区：各页根节点追加 page-shell，主内容区追加 content-shell */
+.page-shell {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.content-shell {
+  width: 100%;
+  max-width: var(--page-max-w, 1400px);
+  margin: 0 auto;
+  box-sizing: border-box;
+  /* 底部固定条 + 安全区：主区留足 padding，内容不被遮挡 */
+  padding-bottom: calc(var(--sp-4) + env(safe-area-inset-bottom, 0px));
+}
+
+/** SK-5 全宽横幅：紧贴工具栏下方，不覆盖、不自动消失、不随内容滚动 */
+.sk-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: calc(var(--fs-sm) * var(--font-scale));
+  line-height: 1.5;
+}
+
+.sk-banner__action {
+  flex: none;
+  min-height: 36px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: calc(var(--fs-sm) * var(--font-scale));
+}
+
+/** 底部固定操作条（手机） */
+.fixed-bottom-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-toolbar);
+  flex: none;
+  box-sizing: border-box;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+/** FB-1 加载骨架：≤1s 可见，>1s 由状态区承接 */
+.skeleton-line {
+  height: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (max-width: 768px) {
+  .sk-banner {
+    flex-wrap: wrap;
+  }
+  .sk-banner__action {
+    min-height: 44px;
+  }
+}

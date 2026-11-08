@@ -136,5 +136,10 @@ const emit = defineEmits<{ click: [] }>()
     width: 44px;
     height: 44px;
   }
+  /* 特异性必须 ≥ 基础规则里的 .icon-btn.sm(28×28)，否则手机热区仍是 28px */
+  .icon-btn.sm {
+    width: 44px;
+    height: 44px;
+  }
 }
 </style>

@@ -1,10 +1,15 @@
 <script setup lang="ts">
 /** 设置面板：AI 配置（多套）/ 外观 / 数据 / 计算精度（DESIGN.md §4.12） */
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { useSettingsStore } from '../../stores/settings'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useSettingsStore, takeConcurrencyMigrationNotice } from '../../stores/settings'
 import { useArchiveStore } from '../../stores/archive'
 import { useUiStore } from '../../stores/ui'
 import { probeAiConfig, validateAiConfig } from '../../services/aiClient'
+import {
+  CONCURRENCY_MAX,
+  CONCURRENCY_MIN,
+  validateConcurrencyPair,
+} from '../../services/aiConcurrency'
 import type { AiDetailMode, AiProfile, AiStepMode } from '../../types/hd'
 import ConfirmDialog from '../base/ConfirmDialog.vue'
 import HdField from '../base/HdField.vue'
@@ -27,6 +32,107 @@ const emit = defineEmits<{
 const settings = useSettingsStore()
 const archiveStore = useArchiveStore()
 const ui = useUiStore()
+
+/* ── 并发设置（v2.3.0 · T-C3）──────────────────────────
+ * 两个全局设置项：aiConcurrency（AI 并发数）/ aiConcurrencyLimit（并发上限）。
+ * 条件 ① 在此做 UI 反馈，唯一写入闸门仍是 stores/settings.ts 的两个 setter。
+ */
+
+const RANGE_HINT = `${CONCURRENCY_MIN}–${CONCURRENCY_MAX} 的整数`
+
+/** 仅「非精简 + 并发」档可编辑；其余显示但禁用，不隐藏（AC-C16） */
+const canEditConcurrency = computed(
+  () => settings.aiDetailMode !== 'concise' && settings.aiStepMode === 'parallel',
+)
+
+const concurrencyInput = ref(String(settings.aiConcurrency))
+const concurrencyLimitInput = ref(String(settings.aiConcurrencyLimit))
+/** 与 detailModeError 分开管理，避免串台；错误条常驻直到用户处理（FB-3） */
+const concurrencyError = ref('')
+const concurrencyNotSaved = ref(false)
+
+function parseConcurrencyInput(raw: string): number {
+  const trimmed = raw.trim()
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : Number.NaN
+}
+
+function currentConcurrencyPair(): { c: number; l: number } {
+  return {
+    c: parseConcurrencyInput(concurrencyInput.value),
+    l: parseConcurrencyInput(concurrencyLimitInput.value),
+  }
+}
+
+/** 失焦只做行内预校验：不写 store、不写 localStorage、不发 toast */
+function validateConcurrencyFields() {
+  if (!canEditConcurrency.value) return
+  const { c, l } = currentConcurrencyPair()
+  concurrencyError.value = validateConcurrencyPair(c, l) ?? ''
+}
+
+/** 条件 ①：拒绝保存并提示；原生效值不变，仍可用上一次合法配置发起解读 */
+/** BT-5 / AC-12：300ms 内连点只生效 1 次，不改变业务触发次数语义 */
+let lastConcurrencySaveAt = 0
+
+function saveConcurrency() {
+  const now = Date.now()
+  if (now - lastConcurrencySaveAt < 300) return
+  lastConcurrencySaveAt = now
+  if (!canEditConcurrency.value) return
+  const { c, l } = currentConcurrencyPair()
+  const error = validateConcurrencyPair(c, l)
+  if (error) {
+    concurrencyError.value = error
+    concurrencyNotSaved.value = true
+    ui.notify(
+      error.includes('不能超过')
+        ? '保存失败：AI 并发数不能超过并发上限'
+        : `保存失败：${error}`,
+      'error',
+    )
+    return
+  }
+  // 整体校验通过后，先写不会破坏当前约束的一侧，保证两个 setter 的「待写入对」都合法。
+  // 任一步失败（校验 / 持久化）都回滚到原生效值，杜绝「上限已改、并发数未改」的部分写入。
+  const previousConcurrency = settings.aiConcurrency
+  const previousLimit = settings.aiConcurrencyLimit
+  const ok =
+    c > previousLimit
+      ? settings.setAiConcurrencyLimit(l) && settings.setAiConcurrency(c)
+      : settings.setAiConcurrency(c) && settings.setAiConcurrencyLimit(l)
+  if (!ok) {
+    settings.aiConcurrency = previousConcurrency
+    settings.aiConcurrencyLimit = previousLimit
+    settings.persist()
+    concurrencyError.value = settings.persistError || '保存失败，设置未生效'
+    concurrencyNotSaved.value = true
+    ui.notify(`保存失败：${concurrencyError.value}`, 'error')
+    return
+  }
+  concurrencyError.value = ''
+  concurrencyNotSaved.value = false
+  ui.notify('并发设置已保存', 'success')
+}
+
+// 用户输入变化时清掉上一次的错误 / 未保存标记，直到再次提交
+watch([concurrencyInput, concurrencyLimitInput], () => {
+  concurrencyError.value = ''
+  concurrencyNotSaved.value = false
+})
+// setter 生效后把输入同步为规范值
+watch(
+  () => [settings.aiConcurrency, settings.aiConcurrencyLimit] as const,
+  ([c, l]) => {
+    concurrencyInput.value = String(c)
+    concurrencyLimitInput.value = String(l)
+  },
+)
+
+// AC-C3：存量非法配置被归一后，给一次可见提示（消费即清）
+onMounted(() => {
+  const notice = takeConcurrencyMigrationNotice()
+  if (notice) ui.notify(notice, 'info')
+})
 
 /* ── 多 AI 配置 ──────────────────────────────────────── */
 
@@ -543,6 +649,48 @@ function regenerateAll() {
             </button>
           </div>
         </div>
+
+        <!-- 并发设置（v2.3.0 · T-C3）：位于「多步编排方式」之后，不新增分节 / 页面 / 路由 -->
+        <div class="concurrency-settings">
+          <span class="t-sm">并发设置</span>
+          <span class="t-xs t-muted">
+            AI 并发数只是设定值，不切片分批；唯一闸门是「任务所需并发数 ≤ 并发上限」。
+            通过时除最终大总结外所有分项一次性并发执行，最终大总结最后单独执行。
+          </span>
+          <div class="concurrency-fields">
+            <HdField
+              v-model="concurrencyInput"
+              label="AI 并发数"
+              type="number"
+              inputmode="numeric"
+              :disabled="!canEditConcurrency"
+              :hint="RANGE_HINT"
+              :error="concurrencyError"
+              @blur="validateConcurrencyFields"
+            />
+            <HdField
+              v-model="concurrencyLimitInput"
+              label="并发上限"
+              type="number"
+              inputmode="numeric"
+              :disabled="!canEditConcurrency"
+              :hint="RANGE_HINT"
+              :error="concurrencyError"
+              @blur="validateConcurrencyFields"
+            />
+          </div>
+          <span class="t-xs t-muted">
+            范围：{{ RANGE_HINT }}；关系说明：AI 并发数不得超过并发上限（1 ≤ AI 并发数 ≤ 并发上限 ≤ 128）。
+          </span>
+          <p v-if="!canEditConcurrency" class="t-xs t-muted">仅并发档生效（当前设置不参与编排）。</p>
+          <div class="actions">
+            <HdButton size="sm" :disabled="!canEditConcurrency" @click="saveConcurrency">
+              保存并发设置
+            </HdButton>
+          </div>
+          <p v-if="concurrencyNotSaved" class="t-xs msg-warning">配置未保存</p>
+        </div>
+
         <p v-if="detailModeError" class="t-xs msg-warning">{{ detailModeError }}</p>
       </div>
     </section>
@@ -708,7 +856,7 @@ function regenerateAll() {
       </header>
 
       <div class="actions">
-        <HdButton variant="ghost" @click="emit('export')">导出备份</HdButton>
+        <HdButton variant="ghost" @click="emit('export')">导出备份（档案 JSON）</HdButton>
         <HdButton variant="ghost" @click="pickFile">导入备份</HdButton>
         <HdButton size="sm" variant="ghost" @click="regenerateAll">重新生成全部图表</HdButton>
         <HdButton variant="danger" @click="emit('clear-all')">清空全部档案</HdButton>
@@ -953,6 +1101,28 @@ header p {
   padding: var(--sp-2);
   border: 1px dashed var(--border);
   border-radius: var(--radius-md);
+}
+
+/* ── 并发设置（T-C3）：复用既有变量与 HdField，不新增 CSS 变量 ── */
+.concurrency-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--sp-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+
+.concurrency-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-2);
+}
+
+@media (max-width: 768px) {
+  .concurrency-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 .timeout-presets {

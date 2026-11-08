@@ -80,7 +80,7 @@ onBeforeUnmount(() => {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.42);
-  z-index: var(--z-dialog);
+  z-index: var(--z-confirm);
 }
 
 .dialog {
@@ -97,7 +97,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--elev-dialog);
-  z-index: calc(var(--z-dialog) + 1);
+  z-index: calc(var(--z-confirm) + 1);
 }
 
 .desc {

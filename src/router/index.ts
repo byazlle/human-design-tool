@@ -1,4 +1,16 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import {
+  SETTINGS_RETURN_KEY,
+  SOURCE_KEYS,
+  clearSource,
+  consumeSource,
+  isDerivedRoute,
+  peekSource,
+  recordSource,
+} from '../utils/navigationSource'
+
+/** 兼容既有引用：key 名与 v2.2.1 完全一致 */
+export { SETTINGS_RETURN_KEY } from '../utils/navigationSource'
 
 /**
  * 路由表（COMPONENTS.md §2）。
@@ -56,41 +68,34 @@ const router = createRouter({
   scrollBehavior: (_to, _from, savedPosition) => savedPosition ?? { top: 0 },
 })
 
-/** 进入设置页前的来源路由：让「返回」回到完整盘而不是强制回档案库 */
-const SETTINGS_RETURN_KEY = 'hdt.settings.returnTo'
-
+/**
+ * 唯一改动的路由逻辑（T-1 / §3.1.3）：
+ * ① 设置页来源 —— 保持 v2.2.1 原语义（直接打开 / 刷新清掉旧来源）；
+ * ② 派生页来源 —— 记录发起页 fullPath，不覆盖派生页之间的内部跳转。
+ */
 router.beforeEach((to, from) => {
-  if (to.name !== 'settings') return
-  try {
-    if (from.name && from.name !== 'settings') {
-      sessionStorage.setItem(SETTINGS_RETURN_KEY, from.fullPath)
+  if (to.name === 'settings') {
+    if (from.name && from.name !== 'settings') recordSource(SOURCE_KEYS.settings, from.fullPath)
+    else if (!from.name) clearSource(SOURCE_KEYS.settings)
+    return
+  }
+  if (isDerivedRoute(to.name)) {
+    if (from.name && !isDerivedRoute(from.name)) {
+      recordSource(SOURCE_KEYS.derived, from.fullPath)
     } else if (!from.name) {
-      // 直接打开 / 刷新设置页：清掉旧来源，避免「返回」串到上一次的盘面
-      sessionStorage.removeItem(SETTINGS_RETURN_KEY)
+      clearSource(SOURCE_KEYS.derived)
     }
-  } catch {
-    /* 隐私模式下不可写时忽略，返回按钮回退到档案库 */
   }
 })
 
-/** 只读来源（用于返回按钮文案，不消费） */
+/** 只读来源（用于返回按钮文案，不消费）；签名与返回语义完全不变 */
 export function peekSettingsReturn(): string {
-  try {
-    return sessionStorage.getItem(SETTINGS_RETURN_KEY) ?? ''
-  } catch {
-    return ''
-  }
+  return peekSource(SOURCE_KEYS.settings)
 }
 
-/** 读取并清除来源（只消费一次，避免之后从别处进设置时串到旧来源） */
+/** 读取并清除来源（只消费一次）；签名与返回语义完全不变 */
 export function consumeSettingsReturn(): string {
-  try {
-    const value = sessionStorage.getItem(SETTINGS_RETURN_KEY) ?? ''
-    sessionStorage.removeItem(SETTINGS_RETURN_KEY)
-    return value
-  } catch {
-    return ''
-  }
+  return consumeSource(SOURCE_KEYS.settings)
 }
 
 export default router

@@ -312,6 +312,12 @@ function saveAi() {
   saveAiResult({ title: aiState.value.title, content: aiState.value.content })
 }
 
+import AiConfigBadge from '../components/base/AiConfigBadge.vue'
+import { takeNotice } from '../utils/navigationSource'
+
+/** R-2：手机端并排降级的明示提示（一次性消费） */
+const boardNotice = takeNotice('mobile-boards-downgrade')
+
 function goBack() {
   router.push('/')
 }
@@ -363,7 +369,7 @@ const starListOpen = ref(false)
 </script>
 
 <template>
-  <div class="page">
+  <div class="page page-shell">
     <AppToolbar
       :title="archive?.name ?? '未找到'"
       back-label="档案库"
@@ -386,6 +392,18 @@ const starListOpen = ref(false)
       </template>
     </AppToolbar>
 
+    <!-- R-2：手机端并排降级的明示提示（一次性跨页提示 + 返回档案库入口） -->
+    <div v-if="boardNotice" class="sk-banner">
+      <span class="t-xs">{{ boardNotice.text }}</span>
+      <button type="button" class="sk-banner__action" @click="router.push('/')">返回档案库</button>
+    </div>
+
+    <!-- R-4：AI 配置状态标识 + 未配置去设置 -->
+    <div class="sk-banner ai-config-row">
+      <span class="t-xs t-muted">本盘 AI 解读状态</span>
+      <AiConfigBadge @settings="goSettings" />
+    </div>
+
     <EmptyState
       v-if="!archive"
       title="没有找到这份档案"
@@ -406,7 +424,7 @@ const starListOpen = ref(false)
       @action="goBack"
     />
 
-    <main v-else class="layout" :class="{ mobile: isMobile, 'layout-custom': !isMobile && layout.preset !== 'single' }">
+    <main v-else class="layout content-shell" :class="{ mobile: isMobile, 'layout-custom': !isMobile && layout.preset !== 'single' }">
       <div v-if="chart.meta?.warning" class="notice warn" role="status">
         <span class="t-sm">{{ chart.meta.warning }}</span>
       </div>

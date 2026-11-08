@@ -1,0 +1,94 @@
+sequenceDiagram
+    autonumber
+    actor U as 用户
+    participant F as SettingsForm
+    participant S as stores/settings
+    participant R as useAiReading.runFull
+    participant C as aiConcurrency.resolveSchedule
+    participant O as runFullReading
+    participant E as aiClient.explain
+    participant P as AiReadingPanel(B区)
+    participant T as ui.notify(toast)
+
+    rect rgb(239, 246, 255)
+    note over U,S: 条件 ① 保存配置（Q-C3 口径：拒绝保存、原值不变）
+    U->>F: 输入 AI 并发数 c / 并发上限 l
+    F->>C: validateConcurrencyPair(c, l)
+    alt c > l 或越界（条件 ①）
+        C-->>F: 行内错误文案
+        F->>U: 行内错误 + error toast「保存失败…」+「配置未保存」+ 无成功 toast
+        F--xS: 不写入、不 persist（原生效值不变）
+        note right of F: 用户仍可用上一次合法配置直接发起解读
+    else 合法
+        F->>S: setAiConcurrency / setAiConcurrencyLimit
+        S->>S: persist() 写 hdt.settings.v1 两个顶层 number
+        F->>U: 成功 toast ≤3s + 立即生效
+    end
+    end
+
+    U->>R: 点击「全盘 AI 解读」（完整档 / parallel）
+    R->>O: runFullReading({ aiConcurrency:X, aiConcurrencyLimit:Y, stepMode, tasks, onUpdate, signal })
+    O->>O: tasks = options.tasks ?? buildFullTasks(chart)
+    O->>O: requiredConcurrency N = tasks.length（★ 不含融合）
+    O->>C: resolveSchedule(N, Y, stepMode)
+    alt stepMode = serial（AC-C11）
+        C-->>O: batchWidth=1, batchCount=N, degraded=false
+        loop N 次（既有串行分支逐字不动）
+            O->>E: explain(第 i 项)
+            E-->>O: 分项内容
+            O->>P: publish(phase='分项解读（串行）')
+        end
+    else N ≤ Y（Q-C1：未超限，一次性并发，批次数=1）
+        C-->>O: batchWidth=N, batchCount=1, degraded=false
+        O->>P: publish(current='一次性并发 N 项（设定并发数 X / 上限 Y）', phase='分项解读（一次性并发 N 项）')
+        par 同一个 Promise.all 一次性发起全部 N 项（AC-C7）
+            O->>E: explain(任务 1)
+            O->>E: explain(任务 2)
+            O->>E: explain(…)
+            O->>E: explain(任务 N)
+        end
+        E-->>O: N 项结果（含各自 withRetry 重试 1 次）
+        opt 其中 M 项重试后仍失败（AC-C13）
+            O->>P: publish(phase='并发失败，失败项改串行重跑')
+            loop 仅这 M 项，串行逐个重跑 1 次
+                O->>E: explain(失败项)
+                E-->>O: 成功或记入 skipped/failed
+            end
+            note right of O: 成功的 N−M 项不重跑；不存在「剩余未启动任务改串行」
+        end
+    else N > Y（条件 ②，Q-C3：允许继续 + 收敛批宽 + 全部 N 项）
+        C-->>O: batchWidth=Y, K=ceil(N/Y), degraded=true
+        O->>P: publish(current='本次需并发 N 项，超过并发上限 Y，已按上限 Y 分 K 批执行（全部 N 项都会执行，不会减少）…', phase='分项解读（按上限 Y 分 K 批）')
+        O->>T: 首次检测到「按上限」→ 一次 info toast（去重）
+        loop K 批，每批宽 Y
+            par 一个 Promise.all（本批 Y 项）
+                O->>E: explain(批次内各分项)
+            end
+            E-->>O: 本批结果
+            O->>P: publish(同一 N/Y/K 常驻提示 · done 递增)
+        end
+    end
+
+    rect rgb(236, 253, 245)
+    note over O,P: 融合例外（★ 位置保持在循环之后、请求数恒 1、最后单独执行）
+    O->>P: publish(phase='全盘整合分析（最后一步，单独执行）' 或关系场版本)
+    O->>E: explain(scope='full-fusion', offline=buildFusionInput(sections, skipped))
+    E-->>O: 融合正文 → splitFusion → fusion / summary
+    O->>O: done = total (N+1)
+    O->>P: publish(current='已完成', phase='已完成'（逐字不动）)
+    O-->>R: FullReport（结构不变）
+    R-->>P: B 区终态保留（条件 ② 提示仍常驻）
+    end
+
+    rect rgb(254, 242, 242)
+    note over O,P: 取消 / 失败（AC-C14 / C15）
+    opt 分项或融合阶段取消（AbortSignal）
+        O--xO: isCancelled 立即上抛，不做失败项串行重跑
+        O-->>R: AiError('已取消','cancelled')
+        R->>P: 「已取消」终态 ≥3s；fusion/summary 为空，不写占位文本
+    end
+    opt 融合失败（重试 1 次仍失败）
+        O->>O: skipped.push('全盘整合与最终总结论')；fusion=''；summary=''
+        O->>P: 状态区显示失败原因；报告仍由分项构成
+    end
+    end

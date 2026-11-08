@@ -47,11 +47,15 @@ function addToComposite(id: string) {
   }
 }
 
+import { putNotice } from '../utils/navigationSource'
+
 function openBoards() {
   const ids = archiveStore.selectedIds
   if (!ids.length) return
   board.open(ids)
   if (isMobile.value) {
+    // R-2：静默降级改为明示提示，由目标页 SK-5 横幅消费
+    putNotice('mobile-boards-downgrade', '手机端不提供并排，已为你打开第 1 份档案')
     router.push(`/archive/${ids[0]}`)
   } else {
     router.push(`/boards?ids=${ids.join(',')}`)
@@ -142,7 +146,7 @@ function confirmRemove() {
 </script>
 
 <template>
-  <div class="page">
+  <div class="page page-shell">
     <AppToolbar
       :title="isMobile ? '人类图' : '档案库'"
       show-search
@@ -154,7 +158,7 @@ function confirmRemove() {
     >
     </AppToolbar>
 
-    <main class="content">
+    <main class="content content-shell">
       <EmptyState
         v-if="!list.length && archiveStore.keyword.trim()"
         title="没有匹配的档案"
