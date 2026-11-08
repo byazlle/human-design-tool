@@ -1,0 +1,108 @@
+classDiagram
+    direction TB
+    class AiConcurrencyUtil {
+        <<service · 新增 · 纯函数>>
+        +CONCURRENCY_MIN = 1
+        +CONCURRENCY_MAX = 128
+        +DEFAULT_AI_CONCURRENCY = 3
+        +DEFAULT_AI_CONCURRENCY_LIMIT = 64
+        +clampConcurrency(raw, fallback) number
+        +normalizeConcurrencyPair(rawC, rawL) ConcurrencyPair
+        +validateConcurrencyPair(c, l) string|null
+        +resolveSchedule(required, limit, stepMode) ConcurrencySchedule
+    }
+    class ConcurrencyPair {
+        <<type · 加载时>>
+        +concurrency: number
+        +limit: number
+        +adjusted: boolean
+    }
+    class ConcurrencySchedule {
+        <<type · 运行时 · 不持久化>>
+        +required: number
+        +limit: number
+        +batchWidth: number
+        +batchCount: number
+        +K: number
+        +degraded: boolean
+    }
+    class SettingsStore {
+        <<Pinia · 修改>>
+        +aiConcurrency: number
+        +aiConcurrencyLimit: number
+        +aiDetailMode: AiDetailMode FROZEN
+        +aiStepMode: AiStepMode FROZEN
+        +setAiConcurrency(v) boolean
+        +setAiConcurrencyLimit(v) boolean
+        +persist() boolean
+        +takeConcurrencyMigrationNotice() string|null
+    }
+    class SettingsForm {
+        <<component · 修改>>
+        +canEditConcurrency: Computed~boolean~
+        +concurrencyError: Ref~string~
+        +saveConcurrency() void
+    }
+    class FullReadingOptions {
+        <<existing + 2 optional>>
+        +cfg: AiConfig FROZEN
+        +chart: BodyGraph FROZEN
+        +stepMode: AiStepMode FROZEN
+        +onUpdate: Fn FROZEN
+        +aiConcurrency: number?
+        +aiConcurrencyLimit: number?
+    }
+    class RunFullReading {
+        <<service · parallel 分支重写>>
+        +PARALLEL_CONCURRENCY = 3 FROZEN_VALUE
+        +requiredConcurrency: number
+        +total: number
+        +runFullReading(options) Promise~FullReport~
+        -publish(current, phase) void
+        -attempt(index) Promise~TaskOutcome~
+        -finalizeOk() / finalizeFail() void
+    }
+    class UseAiReading {
+        <<composable · 修改>>
+        +runFull(options, own) Promise~void~
+        -degradedNotified: boolean
+        +publish(update) void
+    }
+    class AiProgress {
+        <<types/report.ts · 8 字段 FROZEN>>
+        +done: number
+        +total: number
+        +current: string
+        +phase: string
+        +elapsedMs: number
+        +etaMs: number|null
+        +skipped: string[]
+        +failed: string[]
+    }
+    class AiReadingPanel {
+        <<component · B 区文案>>
+        +props.progress: AiProgress|null
+        -lastPhase: Ref~string~
+    }
+    class FrozenTypes {
+        <<FROZEN>>
+        AiConfig
+        BodyGraph
+        AiStepMode
+        FullReport
+        AiDetailMode
+    }
+
+    SettingsForm --> SettingsStore : 校验后写入
+    SettingsStore ..> AiConcurrencyUtil : normalize / validate
+    AiConcurrencyUtil --> ConcurrencyPair
+    AiConcurrencyUtil --> ConcurrencySchedule
+    SettingsStore --> UseAiReading : 读 2 个配置值
+    UseAiReading --> FullReadingOptions : 透传
+    FullReadingOptions --> RunFullReading
+    RunFullReading ..> AiConcurrencyUtil : resolveSchedule
+    RunFullReading ..> AiProgress : publish（只读字段取值）
+    UseAiReading ..> AiProgress : onUpdate 转发
+    AiReadingPanel ..> AiProgress : 渲染 phase/current
+    RunFullReading ..> FrozenTypes : 只读引用
+    SettingsStore ..> FrozenTypes : 只读引用

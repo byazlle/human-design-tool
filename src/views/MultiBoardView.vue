@@ -57,7 +57,11 @@ watch(
 watch(
   isMobile,
   (mobile) => {
-    if (mobile && ids.value.length) router.replace(`/archive/${ids.value[0]}`)
+    if (mobile && ids.value.length) {
+      // R-2：明示降级原因，不再静默 replace
+      putNotice('mobile-boards-downgrade', '手机端不提供并排，已为你打开第 1 份档案')
+      router.replace(`/archive/${ids.value[0]}`)
+    }
   },
   { immediate: true },
 )
@@ -129,8 +133,11 @@ function closeOne(id: string) {
   else router.replace('/')
 }
 
+import { goDerivedBack, derivedBackLabel, putNotice } from '../utils/navigationSource'
+import AiConfigBadge from '../components/base/AiConfigBadge.vue'
+
 function goBack() {
-  router.push('/')
+  goDerivedBack(router)
 }
 function goNew() {
   router.push('/new')
@@ -141,8 +148,14 @@ function goSettings() {
 </script>
 
 <template>
-  <div class="page">
-    <AppToolbar title="多盘并排" back-label="档案库" @back="goBack" @new="goNew" @settings="goSettings" @help="ui.notify('每栏是一张独立的盘，互不影响；点右上角可收起星体表或关闭该栏。')" />
+  <div class="page page-shell">
+    <AppToolbar title="多盘并排" :back-label="derivedBackLabel()" @back="goBack" @new="goNew" @settings="goSettings" @help="ui.notify('每栏是一张独立的盘，互不影响；点右上角可收起星体表或关闭该栏。')" />
+
+    <!-- R-4：AI 配置状态标识 + 未配置去设置 -->
+    <div class="sk-banner ai-config-row">
+      <span class="t-xs t-muted">多盘 AI 解读状态</span>
+      <AiConfigBadge compact @settings="goSettings" />
+    </div>
 
     <EmptyState
       v-if="!columns.length"
@@ -152,7 +165,7 @@ function goSettings() {
       @action="goBack"
     />
 
-    <main v-else class="layout">
+    <main v-else class="layout content-shell">
       <div class="grid">
         <section v-for="archive in columns" :key="archive.id" class="col card">
           <header class="col-head">

@@ -1,6 +1,12 @@
 import { defineStore } from 'pinia'
 import type { AiConfig, AiDetailMode, AiProfile, AiStepMode, ThemeMode } from '../types/hd'
 import { clearAiCache, validateAiConfig } from '../services/aiClient'
+import {
+  DEFAULT_AI_CONCURRENCY,
+  DEFAULT_AI_CONCURRENCY_LIMIT,
+  normalizeConcurrencyPair,
+  validateConcurrencyPair,
+} from '../services/aiConcurrency'
 import { createId, loadJson, saveJson, SAVE_FAILURE_HINT } from '../utils/storage'
 
 const KEY = 'hdt.settings.v1'
@@ -35,6 +41,16 @@ interface SettingsState {
   aiDetailMode: AiDetailMode
   /** 完整版多轮编排方式：串行 / 并发 */
   aiStepMode: AiStepMode
+  /**
+   * v2.3.0「AI 并发数」：整数 1–128，默认 3。
+   * 只是用户设定值 / 合法性校验对象 / 展示值，**不切片分批**（Q-C1）。
+   */
+  aiConcurrency: number
+  /**
+   * v2.3.0「并发上限」：整数 1–128，默认 64。
+   * 判定「是否一次性并发」的唯一闸门，满足 1 ≤ aiConcurrency ≤ aiConcurrencyLimit ≤ 128。
+   */
+  aiConcurrencyLimit: number
   appearance: Appearance
   precision: { decimals: 2 }
   /** 最近一次 persist 失败的原因；null 表示最近一次写入成功 */
@@ -55,6 +71,8 @@ const DEFAULTS: SettingsState = {
   activeAiId: '',
   aiDetailMode: 'concise',
   aiStepMode: 'serial',
+  aiConcurrency: DEFAULT_AI_CONCURRENCY,
+  aiConcurrencyLimit: DEFAULT_AI_CONCURRENCY_LIMIT,
   appearance: {
     theme: 'light',
     fontScale: 1,
@@ -114,6 +132,19 @@ function normalizeStepMode(raw: unknown): AiStepMode {
   return raw === 'parallel' ? 'parallel' : 'serial'
 }
 
+/**
+ * 「存量并发配置被归一」的一次性可见提示（AC-C3）。
+ * 模块级标记：不进 `SettingsState`、不持久化、不随切换 profile 变化；消费即清。
+ */
+let concurrencyMigrationNotice: string | null = null
+
+/** @returns 一次性提示文案；不存在或已被消费则返回 null */
+export function takeConcurrencyMigrationNotice(): string | null {
+  const notice = concurrencyMigrationNotice
+  concurrencyMigrationNotice = null
+  return notice
+}
+
 export interface AiProfileInput {
   name: string
   baseUrl: string
@@ -137,6 +168,11 @@ function validateProfileInput(input: AiProfileInput): string | null {
 export const useSettingsStore = defineStore('settings', {
   state: (): SettingsState => {
     const saved = loadJson<Partial<SettingsState> | null>(KEY, {}) ?? {}
+    // 加载 / 迁移用宽松归一（AC-C3）：缺失回落默认值，存量非法才收敛 + 一次可见提示
+    const pair = normalizeConcurrencyPair(saved.aiConcurrency, saved.aiConcurrencyLimit)
+    if (pair.adjusted) {
+      concurrencyMigrationNotice = '检测到旧的并发配置不满足约束，已调整为合法值，请确认后保存'
+    }
     const profiles: AiProfile[] = Array.isArray(saved.aiProfiles)
       ? (saved.aiProfiles.map(normalizeProfile).filter(Boolean) as AiProfile[])
       : []
@@ -152,6 +188,8 @@ export const useSettingsStore = defineStore('settings', {
         activeAiId,
         aiDetailMode: normalizeDetailMode(saved.aiDetailMode),
         aiStepMode: normalizeStepMode(saved.aiStepMode),
+        aiConcurrency: pair.concurrency,
+        aiConcurrencyLimit: pair.limit,
         appearance: { ...DEFAULTS.appearance, ...(saved.appearance ?? {}) },
         precision: { ...DEFAULTS.precision, ...(saved.precision ?? {}) },
         persistError: null,
@@ -173,6 +211,8 @@ export const useSettingsStore = defineStore('settings', {
         activeAiId: migrated.id,
         aiDetailMode: normalizeDetailMode(saved.aiDetailMode),
         aiStepMode: normalizeStepMode(saved.aiStepMode),
+        aiConcurrency: pair.concurrency,
+        aiConcurrencyLimit: pair.limit,
         appearance: { ...DEFAULTS.appearance, ...(saved.appearance ?? {}) },
         precision: { ...DEFAULTS.precision, ...(saved.precision ?? {}) },
         persistError: null,
@@ -185,6 +225,8 @@ export const useSettingsStore = defineStore('settings', {
       activeAiId: '',
       aiDetailMode: normalizeDetailMode(saved.aiDetailMode),
       aiStepMode: normalizeStepMode(saved.aiStepMode),
+      aiConcurrency: pair.concurrency,
+      aiConcurrencyLimit: pair.limit,
       appearance: { ...DEFAULTS.appearance, ...(saved.appearance ?? {}) },
       precision: { ...DEFAULTS.precision, ...(saved.precision ?? {}) },
       persistError: null,
@@ -207,6 +249,8 @@ export const useSettingsStore = defineStore('settings', {
         activeAiId: this.activeAiId,
         aiDetailMode: this.aiDetailMode,
         aiStepMode: this.aiStepMode,
+        aiConcurrency: this.aiConcurrency,
+        aiConcurrencyLimit: this.aiConcurrencyLimit,
         appearance: this.appearance,
         precision: this.precision,
       })
@@ -343,6 +387,26 @@ export const useSettingsStore = defineStore('settings', {
     /** 完整版多轮编排方式（串行 / 并发） */
     setAiStepMode(mode: AiStepMode): boolean {
       this.aiStepMode = normalizeStepMode(mode)
+      return this.persist()
+    },
+
+    /* ── AI 并发设置（v2.3.0 · T-C2）────────────────────
+     * 条件 ① 的唯一实现点：写入前严格校验「待写入对」，违反则 return false，
+     * 不写 store、不 persist、原生效值不变；合法才赋值 + persist。
+     * 与加载期的 normalizeConcurrencyPair（宽松归一）语义不同，不得混用。
+     */
+
+    /** @returns 是否写入成功；false = 被条件 ① 拒绝或持久化失败 */
+    setAiConcurrency(value: number): boolean {
+      if (validateConcurrencyPair(value, this.aiConcurrencyLimit) !== null) return false
+      this.aiConcurrency = value
+      return this.persist()
+    },
+
+    /** @returns 是否写入成功；false = 被条件 ① 拒绝或持久化失败 */
+    setAiConcurrencyLimit(value: number): boolean {
+      if (validateConcurrencyPair(this.aiConcurrency, value) !== null) return false
+      this.aiConcurrencyLimit = value
       return this.persist()
     },
 

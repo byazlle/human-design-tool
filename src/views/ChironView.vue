@@ -123,8 +123,11 @@ async function requestChironAi() {
   })
 }
 
+import { goDerivedBack, derivedBackLabel } from '../utils/navigationSource'
+import AiConfigBadge from '../components/base/AiConfigBadge.vue'
+
 function goBack() {
-  router.push(`/archive/${id.value}`)
+  goDerivedBack(router)
 }
 
 function goSettings() {
@@ -149,10 +152,10 @@ watch(
 </script>
 
 <template>
-  <div class="page">
+  <div class="page page-shell">
     <AppToolbar
       :title="`凯龙回归图 · ${archive?.name ?? '未找到'}`"
-      back-label="返回本盘"
+      :back-label="derivedBackLabel()"
       @back="goBack"
       @new="router.push('/new')"
       @settings="router.push('/settings')"
@@ -162,6 +165,12 @@ watch(
         <HdButton size="sm" :loading="aiState.loading" @click="requestChironAi">凯龙图 AI 解读</HdButton>
       </template>
     </AppToolbar>
+
+    <!-- R-4：AI 配置状态标识 + 未配置去设置 -->
+    <div class="sk-banner ai-config-row">
+      <span class="t-xs t-muted">凯龙回归盘 · 扩展层标注（独立周期盘，不替换本命盘）</span>
+      <AiConfigBadge @settings="goSettings" />
+    </div>
 
     <EmptyState
       v-if="!archive"
@@ -179,7 +188,7 @@ watch(
       @action="goBack"
     />
 
-    <main v-else class="layout" :class="{ mobile: isMobile }">
+    <main v-else class="layout content-shell" :class="{ mobile: isMobile }">
       <!-- 规范 §3.9：扩展层必须标注，且不展示个体气场结论 -->
       <p class="layer-note" role="note">
         <span class="layer-badge">扩展层</span>
@@ -288,7 +297,7 @@ watch(
     minmax(520px, 1.7fr) minmax(240px, 0.75fr) minmax(240px, 0.75fr);
   gap: var(--sp-3);
   width: 100%;
-  max-width: 1500px;
+  max-width: 840px; /* SK-3：凯龙单列，1500 → 840 */
   margin: 0 auto;
   padding: 8px var(--sp-4) 64px;
   box-sizing: border-box;

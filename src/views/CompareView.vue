@@ -108,8 +108,11 @@ watch(bId, (v) => {
   syncRoute()
 })
 
+import { goDerivedBack, derivedBackLabel } from '../utils/navigationSource'
+import AiConfigBadge from '../components/base/AiConfigBadge.vue'
+
 function goBack() {
-  router.push('/')
+  goDerivedBack(router)
 }
 function goSettings() {
   router.push('/settings')
@@ -169,10 +172,10 @@ function saveAi() {
 </script>
 
 <template>
-  <div class="page">
+  <div class="page page-shell">
     <AppToolbar
       title="双盘对比"
-      back-label="档案库"
+      :back-label="derivedBackLabel()"
       @back="goBack"
       @new="router.push('/new')"
       @settings="goSettings"
@@ -185,6 +188,17 @@ function saveAi() {
       </template>
     </AppToolbar>
 
+    <!-- R-3：当前对比对象明示条，两个 select 不变 -->
+    <div class="sk-banner compare-hint">
+      <span class="t-xs">当前对比：{{ pairNames.a }} × {{ pairNames.b }}；可直接在下方下拉框更换任一侧。</span>
+    </div>
+
+    <!-- R-4：AI 配置状态标识 + 未配置去设置 -->
+    <div class="sk-banner ai-config-row">
+      <span class="t-xs t-muted">双盘对比 AI 解读状态</span>
+      <AiConfigBadge @settings="goSettings" />
+    </div>
+
     <EmptyState
       v-if="all.length < 2"
       title="档案不足"
@@ -193,7 +207,7 @@ function saveAi() {
       @action="goBack"
     />
 
-    <main v-else class="compare-layout">
+    <main v-else class="compare-layout content-shell">
       <section class="card pane">
         <header class="pane-head">
           <select v-model="aId" class="picker" aria-label="选择左侧档案">

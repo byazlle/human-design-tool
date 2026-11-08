@@ -230,7 +230,17 @@ describe('runFullReading 编排', () => {
       onUpdate: (u) => updates.push(u),
     })
     expect(updates.some((u) => u.progress.phase.includes('并发失败'))).toBe(true)
-    expect(updates.some((u) => u.progress.phase === '分项解读（串行）')).toBe(true)
+    // v2.3.0 口径变更：一次性并发后仅失败项串行重跑，不再出现「分项解读（串行）」阶段
+    expect(updates.some((u) => u.progress.phase.includes('失败项改串行重跑'))).toBe(true)
+    // 不存在「剩余未启动任务改串行」分支
+    expect(
+      updates.some(
+        (u) =>
+          u.progress.phase.includes('剩余') ||
+          u.progress.current.includes('剩余未启动') ||
+          u.progress.current.includes('剩余分项改串行'),
+      ),
+    ).toBe(false)
     expect(growthCalls).toBe(3) // 并发 2 次（含重试） + 串行重跑 1 次
     expect(report.sections).toHaveLength(12)
     expect(report.skipped).toEqual([])

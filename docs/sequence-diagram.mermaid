@@ -1,0 +1,112 @@
+sequenceDiagram
+    autonumber
+    actor U as 用户
+    participant V as 盘面视图<br/>(5 页之一)
+    participant R as useAiReading
+    participant S as useAiStatus<br/>(UI 单例)
+    participant UIS as stores/ui.ts
+    participant C as aiClient.explain
+    participant F as aiFullReading<br/>(零改动)
+    participant P as AiReadingPanel<br/>(B9 唯一)
+    participant D as ConfirmDialog
+
+    U->>V: 点击「AI 解读」主操作
+    V->>R: run(options)
+    R->>UIS: openAi() / beginRegenerate()
+    R->>S: begin(mode, settings.ai.timeoutMs)
+    S->>S: 启动 500ms 本地计时器
+    R->>C: validateAiConfig(settings.ai)
+    alt 配置不可用（未配置 / 配置错误）
+        C-->>R: configError
+        R->>S: finish('failed','config')
+        R->>UIS: setAiError(configError)
+        R-->>P: error 态（★ 不进入连接阶段 / D 区正文节点数=0）
+        P->>U: E 区错误条 +「重试 / 去设置」(AC-23/24)
+    else 配置可用
+        C-->>R: null
+        R->>UIS: setAiLoading(true)
+
+        alt 精简 / 详细（单次请求）
+            R->>C: explain({... , onStage})
+            C->>S: onStage(config-validated)
+            alt 命中本地缓存
+                C->>S: onStage(completed)
+                C-->>R: cached content
+            else 发起网络请求
+                C->>S: onStage(request-sent)
+                loop 每 500ms（UI 本地计时）
+                    S->>P: 刷新「已等待 Xs / 超时上限 Ys（剩余 Zs）/ 最后活动 Ns 前」
+                    P->>U: B 区不确定进度动画 +「单次请求，无分项进度」
+                end
+                opt finish_reason='length' 续写
+                    C->>S: onStage(response-received, round=n)
+                    C->>C: 追加 CONTINUE_PROMPT 下一轮
+                end
+                C->>S: onStage(response-received)
+                C-->>R: content
+            end
+            R->>UIS: setAiContent(content)
+            R->>S: finish('completed')
+
+        else 完整（多轮编排）
+            R->>F: runFullReading({onUpdate: publish, signal})
+            loop 每个分项 / 融合 / 阶段切换
+                F->>C: explain({scope: full-*, detailMode:'full'})
+                C-->>F: 分项内容
+                F->>R: onUpdate(FullReadingUpdate{progress: AiProgress, sections, ...})
+                R->>UIS: setAiProgress(progress) + setAiReport(快照)
+                R->>S: applyProgress(progress)（更新 lastActivityAt）
+                S->>P: 确定进度条 N/M · 当前项 · ETA · 跳过项 + 本地已耗时
+            end
+            F-->>R: FullReport
+            R->>UIS: setAiReport(report) + setAiContent(serializeFullReport)
+            R->>S: finish('completed')
+        end
+        P->>U: B 区静态终态「已完成（耗时 Xs）」+ D 区报告 + A 区可导出
+    end
+
+    rect rgb(254, 242, 242)
+    note over U,D: 取消 / 超时 / 失败 / 关闭（代价操作，均需确认或分类）
+    U->>P: 点 B 区唯一「取消请求」
+    P->>D: open=confirm('cancel')「取消后本次结果不会生成，已生成内容保留」
+    alt 用户取消确认
+        D-->>P: @cancel → 仅关确认框，请求继续
+    else 用户确认
+        D-->>P: @confirm
+        P->>R: emit('cancel') → abortAi()
+        R->>R: controller.abort() + ui.setAiLoading(false)
+        R->>S: finish('cancelled')
+        C->>S: onStage(cancelled, errorKind='cancelled')
+        S->>P: 「已取消」静态终态（≥3s，不自动消失）
+    end
+    opt 内部超时（cfg.timeoutMs 到点）
+        C->>C: AbortController 内部 abort
+        C->>S: onStage(timeout, errorKind='timeout')
+        C-->>R: AiError('请求超时…','timeout')
+        R->>S: finish('timeout')
+        R->>UIS: setAiError(message)
+        P->>U: E 区常驻错误条 +「重试 / 去设置」
+    end
+    opt 网络 / HTTP / 格式失败
+        C->>S: onStage(failed, errorKind=network|http|format)
+        C-->>R: AiError
+        R->>S: finish('failed', kind)
+        R->>UIS: setAiError(message)
+    end
+    opt 进行中点 A 区「关闭」
+        P->>D: open=confirm('close')「本次生成将被中断…」
+        D-->>P: @confirm → emit('close')
+        P->>UIS: ui.closeAi()（各页既有绑定不变）
+        UIS-->>R: watch(open=false) → abort() → finish('cancelled')
+    end
+    end
+
+    rect rgb(236, 253, 245)
+    note over U,P: 放大 / 还原（★ 纯展示，全程网络请求数 = 0）
+    U->>P: 点 A 区「放大阅读 / 还原阅读」
+    P->>P: savedScrollTop = bodyEl.scrollTop
+    P->>P: expanded = !expanded（仅切 CSS class，不重建 DOM）
+    P->>P: nextTick → bodyEl.scrollTop = min(saved, max)
+    note right of P: 不调用 run/retry/abort，不 emit close/regenerate，<br/>不写 ui.aiReading，toggles 与展开态保留，报告文本哈希不变
+    P->>U: D 区独立滚动，A/B/C/E 固定可达
+    end

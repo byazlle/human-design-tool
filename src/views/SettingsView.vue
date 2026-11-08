@@ -3,11 +3,13 @@
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { consumeSettingsReturn, peekSettingsReturn } from '../router'
+import { sourceReturnLabel } from '../utils/navigationSource'
 import { useArchiveStore } from '../stores/archive'
 import { useSettingsStore } from '../stores/settings'
 import { useUiStore } from '../stores/ui'
 import AppToolbar from '../components/base/AppToolbar.vue'
 import SettingsForm from '../components/settings/SettingsForm.vue'
+import ConfirmDialog from '../components/base/ConfirmDialog.vue'
 import { parseBackup } from '../services/backupImport'
 import { SCHEMA_VERSION } from '../engine/version'
 
@@ -16,16 +18,8 @@ const archiveStore = useArchiveStore()
 const settings = useSettingsStore()
 const ui = useUiStore()
 
-/** 返回按钮文案跟随来源页（#6：从完整盘进设置应「返回完整盘」） */
-const returnLabel = computed(() => {
-  const to = peekSettingsReturn()
-  if (to.startsWith('/archive/')) return '返回完整盘'
-  if (to.startsWith('/chiron/')) return '返回凯龙盘'
-  if (to.startsWith('/composite/')) return '返回合盘'
-  if (to.startsWith('/compare')) return '返回双盘对比'
-  if (to === '/boards') return '返回多盘'
-  return '返回档案库'
-})
+/** 返回按钮文案跟随来源页；映射委托通用工具（settings 变体逐字保持 v2.2.1 文案） */
+const returnLabel = computed(() => sourceReturnLabel(peekSettingsReturn(), '返回档案库'))
 
 function exportAll() {
   const payload = {
@@ -101,9 +95,15 @@ async function importFile(file: File) {
   }
 }
 
+/** T-7 / R-7：原生 window.confirm 换成全站统一的 ConfirmDialog（可 Esc / 遮罩取消 / danger） */
+const confirmClearAll = ref(false)
+
 function clearAll() {
-  const ok = window.confirm('确定清空全部本地档案与 AI 缓存？此操作不可撤销。')
-  if (!ok) return
+  confirmClearAll.value = true
+}
+
+function applyClearAll() {
+  confirmClearAll.value = false
   archiveStore.clearAll()
   settings.clearCache()
   ui.notify(archiveStore.persistError ?? '已清空本地数据', archiveStore.persistError ? 'error' : 'success')
@@ -123,9 +123,9 @@ function goNew() {
 </script>
 
 <template>
-  <div class="page">
+  <div class="page page-shell">
     <AppToolbar title="设置" :back-label="returnLabel" @back="goBack" @new="goNew" @help="ui.notify('AI 配置仅保存在本机；不填也能正常排盘与查看离线释义。')" />
-    <main class="content">
+    <main class="content content-shell">
       <SettingsForm
         @export="exportAll"
         @import="importFile"
@@ -163,11 +163,25 @@ function goNew() {
         </section>
       </Transition>
     </Teleport>
+
+    <!-- T-7 / R-7：清空全部数据的二次确认（替代 window.confirm） -->
+    <ConfirmDialog
+      :open="confirmClearAll"
+      title="清空全部本地数据？"
+      desc="将删除全部档案与 AI 缓存，此操作不可撤销。建议先在「数据」分节导出备份。"
+      confirm-text="确认清空"
+      cancel-text="返回"
+      danger
+      @confirm="applyClearAll"
+      @cancel="confirmClearAll = false"
+    />
   </div>
 </template>
 
 <style scoped>
 .page {
+  /* SK-3：设置页 880px，由 --page-max-w 统一约束 */
+  --page-max-w: 880px;
   min-height: 100%;
   display: flex;
   flex-direction: column;
@@ -176,7 +190,7 @@ function goNew() {
 .content {
   flex: 1;
   width: 100%;
-  max-width: 880px;
+  max-width: var(--page-max-w, 880px);
   margin: 0 auto;
   padding: var(--sp-4);
 }

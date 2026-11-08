@@ -4,6 +4,9 @@
  *
  * 取消：面板关闭或组件卸载时 abort 在途请求，避免返回后仍写入 ui.aiReading。
  * 重试：模块级记住上一次请求参数（不进 UI 状态模型），「重试」按上次 scope/ref 重跑。
+ *
+ * v2.3.0 / T-5：接入模块级单例 useAiStatus（三档统一状态区）。
+ * ★ T-C5 的 degradedNotified 去重、两个并发参数拼装、`...(options.fullPlan ?? {})` 位置逐字不动。
  */
 import { computed, onScopeDispose, watch } from 'vue'
 import { useUiStore } from '../stores/ui'
@@ -15,6 +18,7 @@ import {
   type FullReadingUpdate,
 } from '../services/aiFullReading'
 import { serializeFullReport } from '../services/aiExport'
+import { useAiStatus } from './useAiStatus'
 import type { AiDetailMode, AiStepMode, BodyGraph } from '../types/hd'
 
 interface RunOptions {
@@ -47,9 +51,21 @@ interface RunOptions {
 /** 上一次请求参数：仅用于「重试」，不写入 ui 状态 */
 let lastOptions: RunOptions | null = null
 
+function errorKindOf(err: unknown): AiError['kind'] {
+  return err instanceof AiError ? err.kind : 'network'
+}
+
+function terminalPhaseOf(kind: AiError['kind']): 'failed' | 'timeout' | 'cancelled' {
+  if (kind === 'timeout') return 'timeout'
+  if (kind === 'cancelled') return 'cancelled'
+  return 'failed'
+}
+
 export function useAiReading() {
   const ui = useUiStore()
   const settings = useSettingsStore()
+  // 模块级单例：5 个盘面视图各自调用也只拿到同一份快照
+  const status = useAiStatus()
 
   const state = computed(() => ui.aiReading)
   const configured = computed(() => settings.aiConfigured)
@@ -61,7 +77,11 @@ export function useAiReading() {
     controller?.abort()
     controller = null
     // 主动取消后必须退出 loading，否则面板会一直停在骨架屏
-    if (hadController) ui.setAiLoading(false)
+    if (hadController) {
+      ui.setAiLoading(false)
+      // 仅当确实存在在途 controller 时才标记取消，避免空闲时误标
+      status.finish('cancelled', 'cancelled')
+    }
   }
 
   // 面板关闭 → 取消在途请求
@@ -83,7 +103,14 @@ export function useAiReading() {
     const chart = options.chart!
     const title = options.title
     const generatedAt = new Date().toISOString()
+    // 条件 ② 降级 info toast：每次 runFull 重置，保证每次降级恰好一次
+    let degradedNotified = false
     const publish = (update: FullReadingUpdate) => {
+      status.applyProgress(update.progress)
+      if (!degradedNotified && update.progress.phase.includes('按上限')) {
+        degradedNotified = true
+        ui.notify(update.progress.current, 'info')
+      }
       ui.setAiProgress(update.progress)
       ui.setAiReport({
         title,
@@ -105,6 +132,8 @@ export function useAiReading() {
         stepMode: options.stepMode ?? settings.aiStepMode,
         signal: own.signal,
         onUpdate: publish,
+        aiConcurrency: settings.aiConcurrency,
+        aiConcurrencyLimit: settings.aiConcurrencyLimit,
         ...(options.fullPlan ?? {}),
       })
       if (own.signal.aborted) {
@@ -113,6 +142,7 @@ export function useAiReading() {
       }
       ui.setAiReport(report)
       ui.setAiContent(serializeFullReport(report))
+      status.finish('completed')
     } catch (err) {
       if (own.signal.aborted) {
         ui.setAiLoading(false)
@@ -121,11 +151,16 @@ export function useAiReading() {
       const message =
         err instanceof AiError ? err.message : `调用失败：${(err as Error).message ?? '未知错误'}`
       ui.setAiError(message)
+      const kind = errorKindOf(err)
+      status.finish(terminalPhaseOf(kind), kind)
     }
   }
 
   async function run(options: RunOptions, externalSignal?: AbortSignal) {
     lastOptions = { ...options }
+    const mode: AiDetailMode = options.full
+      ? 'full'
+      : (options.detailMode ?? settings.aiDetailMode)
 
     // 同一面板「重新生成」：保留旧内容，只置 loading；首次打开或切换面板时重置。
     const samePanel =
@@ -141,11 +176,15 @@ export function useAiReading() {
 
     const configError = validateAiConfig(settings.ai)
     if (configError) {
+      // 未配置 / 配置错误：不进入连接阶段（AC-23）
+      status.finish('failed', 'config')
       ui.setAiError(configError)
       return
     }
 
     abort()
+    // abort() 可能把上一轮状态标成 cancelled；begin() 在它之后重置，避免串台
+    status.begin(mode, settings.ai.timeoutMs)
     const own = new AbortController()
     controller = own
     if (externalSignal) {
@@ -177,12 +216,14 @@ export function useAiReading() {
         detailMode: options.detailMode ?? settings.aiDetailMode,
         angle: options.angle,
         signal: own.signal,
+        onStage: (e) => status.applyStage(e),
       })
       if (own.signal.aborted) {
         ui.setAiLoading(false)
         return
       }
       ui.setAiContent(content)
+      status.finish('completed')
     } catch (err) {
       // 主动取消（关闭面板 / 卸载）不算错误，也不写入状态
       if (own.signal.aborted) {
@@ -192,6 +233,8 @@ export function useAiReading() {
       const message =
         err instanceof AiError ? err.message : `调用失败：${(err as Error).message ?? '未知错误'}`
       ui.setAiError(message)
+      const kind = errorKindOf(err)
+      status.finish(terminalPhaseOf(kind), kind)
     } finally {
       if (controller === own) controller = null
     }

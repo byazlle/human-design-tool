@@ -38,9 +38,18 @@ import type {
   FullReportSection,
   FullSectionKind,
 } from '../types/report'
+import {
+  DEFAULT_AI_CONCURRENCY,
+  DEFAULT_AI_CONCURRENCY_LIMIT,
+  clampConcurrency,
+  resolveSchedule,
+} from './aiConcurrency'
 
-/** 并发批次大小；用于 ETA 估算里的「并发 N」 */
-export const PARALLEL_CONCURRENCY = 3
+/**
+ * 保留导出名与值 3，仅作 `aiConcurrency` 的默认值来源（旧配置迁移后设定值不突变）。
+ * ★ 不再参与任何分批计算：批宽由 `resolveSchedule()` 决定（ARCH §11.3.2 / AC-C8）。
+ */
+export const PARALLEL_CONCURRENCY = DEFAULT_AI_CONCURRENCY
 
 /** 融合时每项最多注入的字符数（风险表：全文会超上下文） */
 export const FUSION_EXCERPT_CHARS = 300
@@ -85,6 +94,10 @@ export interface FullReadingOptions extends FullReadingPlan {
   signal?: AbortSignal
   /** 每项完成 / 失败 / 阶段切换时回调，供 UI 实时更新进度与模块化报告 */
   onUpdate?: (update: FullReadingUpdate) => void
+  /** v2.3.0「AI 并发数」：设定值 / 展示值 / 校验对象；★ 不参与调度切片 */
+  aiConcurrency?: number
+  /** v2.3.0「并发上限」：★ 唯一闸门；不传时回落 DEFAULT_AI_CONCURRENCY_LIMIT */
+  aiConcurrencyLimit?: number
 }
 
 /* ── 事实文本：全部取自项目既有离线释义 ─────────────────── */
@@ -316,15 +329,33 @@ export async function runFullReading(options: FullReadingOptions): Promise<FullR
   const total = tasks.length + 1 // +1 = full-fusion
   const startedAt = Date.now()
 
+  // ★ Q-C1：`aiConcurrency` 不切片分批，唯一闸门是「任务所需并发数 N ≤ 并发上限 Y」
+  const requiredConcurrency = tasks.length // 不含融合；运行时计算、不持久化
+  const limit = clampConcurrency(options.aiConcurrencyLimit, DEFAULT_AI_CONCURRENCY_LIMIT)
+  const configured = clampConcurrency(options.aiConcurrency, DEFAULT_AI_CONCURRENCY) // 仅展示 X
+  const schedule = resolveSchedule(requiredConcurrency, limit, options.stepMode)
+  const degradedNote = schedule.degraded
+    ? `本次需并发 ${requiredConcurrency} 项，超过并发上限 ${limit}，已按上限 ${limit} 分 ${schedule.K} 批执行（全部 ${requiredConcurrency} 项都会执行，不会减少）；可在设置页提高并发上限以启用一次性并发`
+    : ''
+  const parallelPhase = schedule.degraded
+    ? `分项解读（按上限 ${limit} 分 ${schedule.K} 批）`
+    : `分项解读（一次性并发 ${requiredConcurrency} 项）`
+  const initialPhase = options.stepMode === 'parallel' ? parallelPhase : '分项解读（串行）'
+  const initialCurrent = schedule.degraded
+    ? degradedNote
+    : options.stepMode === 'parallel'
+      ? `一次性并发 ${requiredConcurrency} 项（设定并发数 ${configured} / 上限 ${limit}）`
+      : '准备分项任务'
+
   /** index → 成功的内容；用 Map 保证并行完成后仍按任务原序输出 */
   const contentByIndex = new Map<number, string>()
   const durations: number[] = []
   const skipped: string[] = []
   const failed: string[] = []
   let done = 0
-  let mode: 'serial' | 'parallel' = options.stepMode === 'parallel' ? 'parallel' : 'serial'
-  let current = '准备分项任务'
-  let phase = mode === 'parallel' ? '分项解读（并发）' : '分项解读（串行）'
+  const mode: 'serial' | 'parallel' = options.stepMode === 'parallel' ? 'parallel' : 'serial'
+  let current = initialCurrent
+  let phase = initialPhase
   let fusion = ''
   let finalSummary = ''
 
@@ -334,15 +365,27 @@ export async function runFullReading(options: FullReadingOptions): Promise<FullR
       return content ? [{ kind: t.kind, key: t.key, title: t.title, content }] : []
     })
 
+  /** 仅用于写入 AiProgress.phase 的展示文案；融合段调用点实参逐字不动 */
+  const FUSION_PHASE_LABEL: Record<string, string> = {
+    '全盘整合分析与最终总结论': '全盘整合分析（最后一步，单独执行）',
+    '关系场整合分析与最终总结论': '关系场整合分析与最终总结论（最后一步，单独执行）',
+  }
+
   const publish = (nextCurrent: string, nextPhase: string) => {
     current = nextCurrent
-    phase = nextPhase
+    // ★ 仅融合段的 publish 才映射：nextCurrent 必须等于本次 fusionAngle，且 nextPhase
+    //   为融合段实参；分项标题恰巧同名时不会误映射。
+    //   `分项解读（串行）` 与 `已完成` 不在映射表内，逐字不变。
+    phase =
+      nextCurrent === fusionAngle && nextPhase === '全盘整合分析'
+        ? (FUSION_PHASE_LABEL[nextCurrent] ?? nextPhase)
+        : nextPhase
     const elapsedMs = Date.now() - startedAt
     const remaining = Math.max(0, total - done)
     const avg = durations.length
       ? durations.reduce((a, b) => a + b, 0) / durations.length
       : null
-    const divisor = mode === 'parallel' ? PARALLEL_CONCURRENCY : 1
+    const divisor = Math.max(1, schedule.batchWidth) // 未超限 = N；降级 = Y；串行 = 1
     const progress: AiProgress = {
       done,
       total,
@@ -389,17 +432,25 @@ export async function runFullReading(options: FullReadingOptions): Promise<FullR
   const finalizeOk = (index: number, content: string) => {
     contentByIndex.set(index, content)
     done += 1
-    publish(tasks[index].title, phase)
+    publish(schedule.degraded ? degradedNote : tasks[index].title, phase)
   }
   const finalizeFail = (index: number, message: string) => {
     const task = tasks[index]
     skipped.push(task.title)
     failed.push(`${task.title}：${message}`)
     done += 1
-    publish(task.title, phase)
+    publish(schedule.degraded ? degradedNote : task.title, phase)
   }
 
-  publish(current, phase)
+  // 首帧即发布状态（≤300ms 可见）；条件 ② 的 N/Y/K 常驻提示从这里起就存在
+  publish(initialCurrent, initialPhase)
+
+  // 预切批次：未超限时 batches.length === 1，一个 Promise.all 一次性发起全部 N 项；
+  // 条件 ② 降级时按上限 Y 分 K 批，indices 覆盖全部 N 项，一个不少、不跳过、不截断。
+  const width = Math.max(1, schedule.batchWidth)
+  const indices = tasks.map((_, i) => i)
+  const batches: number[][] = []
+  for (let i = 0; i < indices.length; i += width) batches.push(indices.slice(i, i + width))
 
   let pending = tasks.map((_, i) => i)
   while (pending.length) {
@@ -418,29 +469,44 @@ export async function runFullReading(options: FullReadingOptions): Promise<FullR
       continue
     }
 
-    // 并发：一批一个 Promise.allSettled；任一项失败 → 剩余（含失败项）改串行重跑
-    const batch = pending.splice(0, PARALLEL_CONCURRENCY)
-    publish(
-      batch.map((i) => tasks[i].title).join(' / '),
-      '分项解读（并发）',
-    )
-    const t0 = Date.now()
-    const outcomes = await Promise.all(batch.map((i) => attempt(i)))
-    // 并发下按「每项平均耗时」记样本，供 ETA 使用
-    durations.push((Date.now() - t0) / Math.max(1, batch.length))
-    if (signal?.aborted) throw cancelled(signal)
+    // ★ Q-C1：`aiConcurrency` 不切片，唯一闸门 `N ≤ limit`。
+    // parallel 分支不消费 pending（不留「剩余待启动」队列），一次性批次由 batches 驱动。
+    for (const batch of batches) {
+      if (signal?.aborted) throw cancelled(signal)
+      publish(
+        schedule.degraded
+          ? `${degradedNote}｜本批 ${batch.length} 项`
+          : `一次性并发 ${requiredConcurrency} 项（设定并发数 ${configured} / 上限 ${limit}）`,
+        parallelPhase,
+      )
+      const t0 = Date.now()
+      const outcomes = await Promise.all(batch.map((i) => attempt(i)))
+      // 按实际批大小归一，避免一次性并发下 ETA 失真
+      durations.push((Date.now() - t0) / Math.max(1, batch.length))
+      if (signal?.aborted) throw cancelled(signal)
 
-    for (const outcome of outcomes) {
-      if (outcome.content) finalizeOk(outcome.index, outcome.content)
+      for (const outcome of outcomes) {
+        if (outcome.content) finalizeOk(outcome.index, outcome.content)
+      }
+      // 仅对「重试 1 次后仍失败」的 M 项串行逐个重跑 1 次；成功项不重跑（AC-C13）
+      const failedIdx = outcomes.filter((o) => !o.content).map((o) => o.index)
+      if (failedIdx.length) {
+        publish(`${failedIdx.length} 项失败，正在串行重跑`, '并发失败，失败项改串行重跑')
+        for (const i of failedIdx) {
+          if (signal?.aborted) throw cancelled(signal) // 取消优先，不做失败项串行重跑
+          const t1 = Date.now()
+          const outcome = await attempt(i)
+          durations.push(Date.now() - t1)
+          if (signal?.aborted) throw cancelled(signal)
+          if (outcome.content) finalizeOk(i, outcome.content)
+          else finalizeFail(i, outcome.error ?? '未知错误')
+        }
+      }
     }
-    const failedIdx = outcomes.filter((o) => !o.content).map((o) => o.index)
-    if (failedIdx.length) {
-      mode = 'serial'
-      // 失败项重新排队；Q3.4「如果是并发，改为串行一个一个来」
-      pending = [...failedIdx, ...pending]
-      publish('并发失败，切换为串行', '并发失败，剩余分项改串行逐个重跑')
-    }
+    break
   }
+  // 全部批次 + 失败项串行重跑完成后才进入融合例外：
+  // ★ 位置保持在循环之后，请求数恒 1，最后单独执行（不与任何分项请求重叠）。
 
   // ── 全盘融合（最后 1 项）────────────────────────────
   publish(fusionAngle, '全盘整合分析')

@@ -293,8 +293,11 @@ function setFilter(key: 'showDecimals' | 'showColorToneBase' | 'sharedOnly', val
   compositeStore.setFilter(key, value)
 }
 
+import { goDerivedBack, derivedBackLabel } from '../utils/navigationSource'
+import AiConfigBadge from '../components/base/AiConfigBadge.vue'
+
 function goBack() {
-  router.push('/')
+  goDerivedBack(router)
 }
 function goNew() {
   router.push('/new')
@@ -313,8 +316,14 @@ function saveAi() {
 </script>
 
 <template>
-  <div class="page">
-    <AppToolbar title="合盘" back-label="档案库" @back="goBack" @new="goNew" @settings="goSettings" @help="ui.notify('蓝 = A 独有，橙 = B 独有，紫 = 双方共享。开启「仅看共享通道」只改变显示，不改变数据。')" />
+  <div class="page page-shell">
+    <AppToolbar title="合盘" :back-label="derivedBackLabel()" @back="goBack" @new="goNew" @settings="goSettings" @help="ui.notify('蓝 = A 独有，橙 = B 独有，紫 = 双方共享。开启「仅看共享通道」只改变显示，不改变数据。')" />
+
+    <!-- R-4：AI 配置状态标识 + 未配置去设置 -->
+    <div class="sk-banner ai-config-row">
+      <span class="t-xs t-muted">合盘 AI 解读状态</span>
+      <AiConfigBadge @settings="goSettings" />
+    </div>
 
     <EmptyState
       v-if="invalidPair"
@@ -333,7 +342,7 @@ function saveAi() {
     />
 
     <template v-else>
-      <main class="layout" :class="{ mobile: isMobile }">
+      <main class="layout content-shell" :class="{ mobile: isMobile }">
         <div class="head-row">
           <CompositeToolbar
             :filters="filters"
@@ -655,7 +664,7 @@ function saveAi() {
   flex: 1;
   display: flex;
   width: 100%;
-  max-width: 1560px;
+  max-width: 1280px; /* SK-3：合盘三栏换行，1560 → 1280 */
   margin: 0 auto;
   padding: 0 var(--sp-4) var(--sp-4);
   gap: var(--sp-4);
