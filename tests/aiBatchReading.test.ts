@@ -460,3 +460,53 @@ describe('runBatchReading：进度发布', () => {
     expect(report.outcomes.map((o) => o.archiveId)).toEqual(['a', 'b', 'c'])
   })
 })
+
+describe('v2.5.0：受众 / 单份 token 预算 / 触顶标记', () => {
+  it('audience 与 tokenBudget 原样传给每一次 explain', async () => {
+    explainMock.mockResolvedValue('正文')
+    const { tasks } = buildBatchTasks(inputs(['a', 'b']), BASE_OPTIONS)
+    await runBatchReading({
+      cfg: CFG,
+      tasks,
+      stepMode: 'parallel',
+      concurrencyLimit: 64,
+      audience: 'plain',
+      tokenBudget: 1200,
+    })
+    expect(explainMock).toHaveBeenCalledTimes(2)
+    for (const call of explainMock.mock.calls) {
+      const args = call[0] as AiExplainArgs
+      expect(args.audience).toBe('plain')
+      expect(args.tokenBudget).toBe(1200)
+    }
+  })
+
+  it('触顶标记按本次调用收集，并发下不串台；报告点名且内容照常保留', async () => {
+    explainMock.mockImplementation(async (args: AiExplainArgs) => {
+      const hit = isTask(args, 'b')
+      args.onStage?.({
+        stage: 'completed',
+        at: Date.now(),
+        elapsedMs: 1,
+        timeoutMs: 60000,
+        truncated: hit,
+      })
+      return '半截正文'
+    })
+    const { tasks } = buildBatchTasks(inputs(['a', 'b']), BASE_OPTIONS)
+    const report = await runBatchReading({
+      cfg: CFG,
+      tasks,
+      stepMode: 'parallel',
+      concurrencyLimit: 64,
+      tokenBudget: 900,
+    })
+    const a = report.outcomes.find((o) => o.archiveId === 'a')!
+    const b = report.outcomes.find((o) => o.archiveId === 'b')!
+    expect(a.truncated).toBe(false)
+    expect(b.truncated).toBe(true)
+    expect(b.content).toBe('半截正文')
+    expect(report.truncatedNames).toEqual(['档案b'])
+    expect(report.ok).toBe(2)
+  })
+})

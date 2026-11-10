@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
-import type { AiConfig, AiDetailMode, AiProfile, AiStepMode, ThemeMode } from '../types/hd'
-import { clearAiCache, validateAiConfig } from '../services/aiClient'
+import type { AiAudience, AiConfig, AiDetailMode, AiProfile, AiStepMode, ThemeMode } from '../types/hd'
+import { clearAiCache, MIN_TOKEN_BUDGET, validateAiConfig } from '../services/aiClient'
 import {
   DEFAULT_AI_CONCURRENCY,
   DEFAULT_AI_CONCURRENCY_LIMIT,
@@ -39,6 +39,16 @@ interface SettingsState {
   activeAiId: string
   /** AI 解读详细度：精简（5 视角）/ 详细（8 节）/ 完整（多轮分步） */
   aiDetailMode: AiDetailMode
+  /**
+   * v2.5.0 面向人群：专业版（允许术语）/ 简明版（大白话）。
+   * 只影响 system 提示词的【读者背景】段落，进缓存键。
+   */
+  aiAudience: AiAudience
+  /**
+   * v2.5.0 单份解读的 token 总预算（含自动续写，跨轮累计）。
+   * 0 = 不限制（沿用各档位默认额度）；批量生成时每项独立适用。
+   */
+  aiTokenBudget: number
   /** 完整版多轮编排方式：串行 / 并发 */
   aiStepMode: AiStepMode
   /**
@@ -70,6 +80,8 @@ const DEFAULTS: SettingsState = {
   aiProfiles: [],
   activeAiId: '',
   aiDetailMode: 'concise',
+  aiAudience: 'pro',
+  aiTokenBudget: 0,
   aiStepMode: 'serial',
   aiConcurrency: DEFAULT_AI_CONCURRENCY,
   aiConcurrencyLimit: DEFAULT_AI_CONCURRENCY_LIMIT,
@@ -132,6 +144,24 @@ function normalizeStepMode(raw: unknown): AiStepMode {
   return raw === 'parallel' ? 'parallel' : 'serial'
 }
 
+/** 旧数据没有该字段时回落到专业版（与 v2.4.0 及之前风格一致） */
+function normalizeAudience(raw: unknown): AiAudience {
+  return raw === 'plain' ? 'plain' : 'pro'
+}
+
+/** 单份预算上限：防止误填一个天文数字把额度一次烧光 */
+export const MAX_TOKEN_BUDGET = 100000
+
+/**
+ * 旧数据 / 手填值归一：0 或非法 = 不限制；正数夹在
+ * [MIN_TOKEN_BUDGET, MAX_TOKEN_BUDGET]，避免出现「填 10 得到半句话」。
+ */
+export function normalizeTokenBudget(raw: unknown): number {
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n <= 0) return 0
+  return Math.min(MAX_TOKEN_BUDGET, Math.max(MIN_TOKEN_BUDGET, Math.round(n)))
+}
+
 /**
  * 「存量并发配置被归一」的一次性可见提示（AC-C3）。
  * 模块级标记：不进 `SettingsState`、不持久化、不随切换 profile 变化；消费即清。
@@ -187,6 +217,8 @@ export const useSettingsStore = defineStore('settings', {
         aiProfiles: profiles,
         activeAiId,
         aiDetailMode: normalizeDetailMode(saved.aiDetailMode),
+        aiAudience: normalizeAudience(saved.aiAudience),
+        aiTokenBudget: normalizeTokenBudget(saved.aiTokenBudget),
         aiStepMode: normalizeStepMode(saved.aiStepMode),
         aiConcurrency: pair.concurrency,
         aiConcurrencyLimit: pair.limit,
@@ -210,6 +242,8 @@ export const useSettingsStore = defineStore('settings', {
         aiProfiles: [migrated],
         activeAiId: migrated.id,
         aiDetailMode: normalizeDetailMode(saved.aiDetailMode),
+        aiAudience: normalizeAudience(saved.aiAudience),
+        aiTokenBudget: normalizeTokenBudget(saved.aiTokenBudget),
         aiStepMode: normalizeStepMode(saved.aiStepMode),
         aiConcurrency: pair.concurrency,
         aiConcurrencyLimit: pair.limit,
@@ -224,6 +258,8 @@ export const useSettingsStore = defineStore('settings', {
       aiProfiles: [],
       activeAiId: '',
       aiDetailMode: normalizeDetailMode(saved.aiDetailMode),
+      aiAudience: normalizeAudience(saved.aiAudience),
+      aiTokenBudget: normalizeTokenBudget(saved.aiTokenBudget),
       aiStepMode: normalizeStepMode(saved.aiStepMode),
       aiConcurrency: pair.concurrency,
       aiConcurrencyLimit: pair.limit,
@@ -248,6 +284,8 @@ export const useSettingsStore = defineStore('settings', {
         aiProfiles: this.aiProfiles,
         activeAiId: this.activeAiId,
         aiDetailMode: this.aiDetailMode,
+        aiAudience: this.aiAudience,
+        aiTokenBudget: this.aiTokenBudget,
         aiStepMode: this.aiStepMode,
         aiConcurrency: this.aiConcurrency,
         aiConcurrencyLimit: this.aiConcurrencyLimit,
@@ -381,6 +419,18 @@ export const useSettingsStore = defineStore('settings', {
     /** @returns 是否写入成功；失败时 persistError 已被置位，由调用方展示 */
     setAiDetailMode(mode: AiDetailMode): boolean {
       this.aiDetailMode = normalizeDetailMode(mode)
+      return this.persist()
+    },
+
+    /** v2.5.0 面向人群：专业版 / 简明版（进缓存键，切换后不会命中另一档的旧缓存） */
+    setAiAudience(audience: AiAudience): boolean {
+      this.aiAudience = normalizeAudience(audience)
+      return this.persist()
+    },
+
+    /** v2.5.0 单份解读 token 总预算；0 = 不限制 */
+    setAiTokenBudget(value: number): boolean {
+      this.aiTokenBudget = normalizeTokenBudget(value)
       return this.persist()
     },
 

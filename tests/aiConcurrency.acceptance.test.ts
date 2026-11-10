@@ -1040,7 +1040,7 @@ describe('QA-F｜禁止词与冻结清单静态契约', () => {
     expect(match).not.toBeNull()
     const fields = (match![1] as string).split('\n').filter((l) => /^\s{2}\w+\s*:/.test(l))
     expect(fields).toHaveLength(8)
-    expect(read('src/services/aiClient.ts')).toContain("PROMPT_VERSION = '3.2'")
+    expect(read('src/services/aiClient.ts')).toContain("PROMPT_VERSION = '3.3'")
     expect(read('src/engine/mandala.ts')).toContain('29.875')
     expect(read('src/engine/mandala.ts')).toContain('302.000')
   })

@@ -30,4 +30,16 @@ contextBridge.exposeInMainWorld('hdDesktop', {
     saveReport: (payload) => ipcRenderer.invoke('file:save-report', payload),
     savePdf: (payload) => ipcRenderer.invoke('file:save-pdf', payload),
   },
+
+  /**
+   * v2.5.0：AI 接口经主进程转发，绕开渲染进程的同源策略。
+   *
+   * 必要性：部分中转站不返回 CORS 响应头，渲染进程里带 Authorization 的
+   * POST 会在预检阶段就被拒；主进程的 Chromium 网络栈没有同源限制。
+   * 密钥只经 IPC 过一遍，主进程不落盘、不写日志。
+   */
+  ai: {
+    request: (payload) => ipcRenderer.invoke('ai:request', payload),
+    cancel: (id) => ipcRenderer.send('ai:cancel', id),
+  },
 })

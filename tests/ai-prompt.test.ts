@@ -232,8 +232,8 @@ describe('提示词的关键契约（字数 / 结构）', () => {
     expect(PROMPT_SYSTEM_FUSION).toBe(codeBlocks[5])
   })
 
-  it('提示词版本为 3.2（旧缓存不得串档）', () => {
-    expect(PROMPT_VERSION).toBe('3.2')
+  it('提示词版本为 3.3（旧缓存不得串档）', () => {
+    expect(PROMPT_VERSION).toBe('3.3')
   })
 
   it('v3.2 明确禁止复述事实块：三套提示词都声明「与事实块的分工」', () => {

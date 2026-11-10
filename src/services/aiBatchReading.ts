@@ -15,8 +15,8 @@
  *
  * 本模块不碰 store、不写 localStorage —— 持久化由调用方（composable）负责。
  */
-import type { AiConfig, AiDetailMode, AiStepMode, BodyGraph } from '../types/hd'
-import { chartSummaryOf, explain } from './aiClient'
+import type { AiAudience, AiConfig, AiDetailMode, AiStepMode, BodyGraph } from '../types/hd'
+import { chartSummaryOf, explain, resolveAudience } from './aiClient'
 import { resolveSchedule } from './aiConcurrency'
 import { cancelledError, errText, isCancelled, withRetry } from './aiAttempt'
 import {
@@ -154,6 +154,8 @@ export interface BatchOutcome {
   content: string
   /** 非空表示该项失败 */
   error: string
+  /** v2.5.0：输出因单份 token 上限被截断，内容可能不完整（不写缓存） */
+  truncated?: boolean
 }
 
 export interface BatchReport {
@@ -163,6 +165,8 @@ export interface BatchReport {
   skipped: string[]
   totalChars: number
   generatedAt: string
+  /** 触顶（内容可能不完整）的档案名，供 UI 明确提示而不是当成正常完成 */
+  truncatedNames: string[]
   /** 实际使用的调度（含是否降级），供 UI 提示 N/Y/K */
   scheduleInfo: { required: number; limit: number; batchWidth: number; batchCount: number; degraded: boolean }
 }
@@ -175,6 +179,10 @@ export interface BatchOptions {
   stepMode: AiStepMode
   /** 并发上限 Y */
   concurrencyLimit: number
+  /** v2.5.0 面向人群；不传按专业版，与缓存键一致 */
+  audience?: AiAudience
+  /** v2.5.0 每份解读的 token 总预算；0 或不传 = 不限制 */
+  tokenBudget?: number
   signal?: AbortSignal
   onUpdate?: (payload: {
     progress: BatchProgress
@@ -192,6 +200,8 @@ export interface BatchOptions {
  */
 export async function runBatchReading(options: BatchOptions): Promise<BatchReport> {
   const { cfg, tasks, signal } = options
+  const audience = resolveAudience(options.audience)
+  const tokenBudget = options.tokenBudget
   const schedule = resolveSchedule(tasks.length, options.concurrencyLimit, options.stepMode)
   const total = tasks.length
   const startedAt = Date.now()
@@ -258,10 +268,14 @@ export async function runBatchReading(options: BatchOptions): Promise<BatchRepor
       mode: task.mode,
       title: task.title,
     }
+    // 截断标记必须按「本次 explain 调用」收集：批量并发时多份解读同时完成，
+    // 任何模块级「上一次」变量都会串台，把 A 的截断误记到 B 头上。
+    let truncated = false
     try {
       const content = await withRetry(
-        () =>
-          explain({
+        () => {
+          truncated = false
+          return explain({
             cfg,
             scope: task.scope,
             ref: task.ref,
@@ -269,11 +283,17 @@ export async function runBatchReading(options: BatchOptions): Promise<BatchRepor
             chartSummary: task.chartSummary,
             detailMode: task.mode,
             angle: task.angle,
+            audience,
+            tokenBudget,
             signal,
-          }),
+            onStage: (e) => {
+              if (e.stage === 'completed') truncated = Boolean(e.truncated)
+            },
+          })
+        },
         signal,
       )
-      return { index, cancelled: false, outcome: { ...base, content, error: '' } }
+      return { index, cancelled: false, outcome: { ...base, content, error: '', truncated } }
     } catch (err) {
       // 取消：不记为失败，交给调用方上抛（已发布的结果不丢）
       if (isCancelled(err, signal)) return { index, cancelled: true, outcome: { ...base, content: '', error: '' } }
@@ -305,6 +325,7 @@ export async function runBatchReading(options: BatchOptions): Promise<BatchRepor
       skipped,
       totalChars: 0,
       generatedAt,
+      truncatedNames: [],
       scheduleInfo: schedule,
     }
   }
@@ -355,6 +376,7 @@ export async function runBatchReading(options: BatchOptions): Promise<BatchRepor
     skipped,
     totalChars: ordered.reduce((sum, o) => sum + o.content.length, 0),
     generatedAt,
+    truncatedNames: ordered.filter((o) => o.truncated && o.content).map((o) => o.name),
     scheduleInfo: schedule,
   }
 }

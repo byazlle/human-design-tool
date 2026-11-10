@@ -10,7 +10,7 @@
  * 三档详细度 = 精简 / 详细 / 完整；v3.0 起解除「单点强制精简」，单点解读同样套用新规则。
  * 四套全文逐字取自规范文档，改动必须同步 `PROMPT_VERSION`，否则旧缓存会串档。
  */
-import type { AiConfig, AiDetailMode, BodyGraph, CenterId } from '../types/hd'
+import type { AiAudience, AiConfig, AiDetailMode, BodyGraph, CenterId } from '../types/hd'
 import {
   AUTHORITY_LABELS,
   CENTER_LABELS,
@@ -19,9 +19,10 @@ import {
 } from '../types/hd'
 import { CHANNELS, GATE_CENTER } from '../engine/gateData'
 import { ENGINE_VERSION } from '../engine/version'
+import { aiHttpRequest } from './aiTransport'
 
 /** 提示词版本：提示词正文一改就必须 +1（同时进入缓存键，见 cacheKey） */
-export const PROMPT_VERSION = '3.2'
+export const PROMPT_VERSION = '3.3'
 
 /**
  * 客户端可观测阶段（v2.3.0 · T-5 新增，仅用于 UI 状态区）。
@@ -43,8 +44,10 @@ export interface AiStageEvent {
   timeoutMs: number
   /** 仅 response-received：finish_reason='length' 续写轮次 */
   round?: number
-  /** 仅终态；复用既有 6 类分类 */
+  /** 终态；复用既有 6 类分类 */
   errorKind?: AiError['kind']
+  /** v2.5.0：仅 completed —— 本次输出因 token 上限被截断（未续写完） */
+  truncated?: boolean
 }
 
 export interface AiExplainArgs {
@@ -61,6 +64,16 @@ export interface AiExplainArgs {
   detailMode?: AiDetailMode
   /** 解读角度标签（如「整体解读」「成长方向」），注入【用户选择】 */
   angle?: string
+  /**
+   * v2.5.0：面向人群。`pro` 允许专业术语，`plain` 用大白话并解释术语。
+   * 缺省按 `pro`（与 v2.4.0 及之前的历史行为一致，避免老调用点静默改变风格）。
+   */
+  audience?: AiAudience
+  /**
+   * v2.5.0：本篇解读的 token 总预算（跨续写轮次累计）。
+   * 0 或未传 = 不限制，按档位默认额度。批量生成用它控制单份成本。
+   */
+  tokenBudget?: number
   signal?: AbortSignal
   /** v2.3.0：可选阶段回调，仅用于 UI 状态区。★ 不传时行为与 v2.2.1 逐字一致 */
   onStage?: (event: AiStageEvent) => void
@@ -238,28 +251,104 @@ const CONTINUE_PROMPT =
 /**
  * 采样参数：max_tokens ≥ 目标字数 × 1.8。
  * 完整版分项（full-*）与融合（full-fusion）单独给额度；其余按 mode。
+ *
+ * v2.5.0：`budget` 为**本篇总预算**（含续写，见 explain 的累计逻辑）。
+ * 传入正整数时用它压住单轮额度，使「一轮 + 续写」的总和不超过预算；
+ * 不传 / 传 0 表示不限制，行为与 v2.4.0 逐字一致。
  */
-export function resolveRequestParams(scope: string, mode?: AiDetailMode): RequestParams {
+export function resolveRequestParams(
+  scope: string,
+  mode?: AiDetailMode,
+  budget?: number,
+): RequestParams {
   const effective = resolveDetailMode(scope, mode)
   // 融合契约要求 2900–4500 字（整合分析 + 分水岭 + 优势卡点 + 行动纲领 + 总结论），
   // 6000 tokens 会在第 4/5 节前被截断；分项契约 900–1400 字，3000 也偏紧。
   // 超出模型上限时由 explain() 的续写机制兜底，不会静默丢内容。
-  if (scope === 'full-fusion') return { mode: effective, temperature: 0.6, maxTokens: 8000 }
-  if (scope.startsWith('full-')) return { mode: effective, temperature: 0.65, maxTokens: 4000 }
-  if (scope.startsWith('composite-')) {
-    return { mode: effective, temperature: 0.6, maxTokens: 4500 }
-  }
-  if (scope === 'chiron') return { mode: effective, temperature: 0.55, maxTokens: 1500 }
-  if (effective === 'full') return { mode: effective, temperature: 0.65, maxTokens: 8000 }
-  if (effective === 'detailed') return { mode: effective, temperature: 0.65, maxTokens: 6000 }
-  return { mode: effective, temperature: 0.6, maxTokens: 1500 }
+  let params: RequestParams
+  if (scope === 'full-fusion') params = { mode: effective, temperature: 0.6, maxTokens: 8000 }
+  else if (scope.startsWith('full-')) params = { mode: effective, temperature: 0.65, maxTokens: 4000 }
+  else if (scope.startsWith('composite-')) params = { mode: effective, temperature: 0.6, maxTokens: 4500 }
+  else if (scope === 'chiron') params = { mode: effective, temperature: 0.55, maxTokens: 1500 }
+  else if (effective === 'full') params = { mode: effective, temperature: 0.65, maxTokens: 8000 }
+  else if (effective === 'detailed') params = { mode: effective, temperature: 0.65, maxTokens: 6000 }
+  else params = { mode: effective, temperature: 0.6, maxTokens: 1500 }
+
+  return { ...params, maxTokens: applyTokenBudget(params.maxTokens, budget) }
 }
 
-/** system 提示词按生效档位 / scope 选（与缓存键里的 mode 严格一致） */
-export function systemPromptOf(mode: AiDetailMode, scope?: string): string {
-  if (scope === 'full-fusion') return PROMPT_SYSTEM_FUSION
-  if (mode === 'full') return PROMPT_SYSTEM_FULL
-  return mode === 'detailed' ? PROMPT_SYSTEM_DETAILED : PROMPT_SYSTEM_CONCISE
+/** 总预算下限：低于此值写不出任何可用解读，直接按此值执行（避免用户填 10 得到半句话） */
+export const MIN_TOKEN_BUDGET = 200
+
+/**
+ * 把「总预算」折算成**单轮**额度。
+ *
+ * 一次解读最多发 `MAX_CONTINUATIONS + 1` 轮，所以单轮 = 预算 ÷ 轮数（向下取整），
+ * 并夹在 [MIN_TOKEN_BUDGET, 档位默认额度] 之间：
+ * - 预算大于档位默认值时不放大（档位额度本身就是该档位的合理上限）；
+ * - 预算为 0 / 负数 / 非有限值 = 不限制，返回档位默认值。
+ */
+export function applyTokenBudget(modeMaxTokens: number, budget?: number): number {
+  if (!budget || !Number.isFinite(budget) || budget <= 0) return modeMaxTokens
+  const rounds = MAX_CONTINUATIONS + 1
+  const perRound = Math.floor(budget / rounds)
+  return Math.max(MIN_TOKEN_BUDGET, Math.min(modeMaxTokens, perRound))
+}
+
+/**
+ * 面向人群段落（v2.5.0）：单独成节附加在 system 提示词末尾，
+ * 不改上面四套正文（它们仍与规范文档逐字一致），也不改事实块与字数契约。
+ * 只调「用词与解释深度」这一件事，两种人群的结论精确度要求相同。
+ */
+const AUDIENCE_PRO: string = `
+【读者背景：有基础（专业版）】
+读者已熟悉人类图术语（类型、策略、权威、九大中心、闸门、通道、人生角色、定义型、轮回交叉）。因此：
+- 可以直接使用专业词，不必逐个展开解释，把篇幅留给这张盘的具体判断。
+- 可以直接引用闸门编号、通道名与中心名，并说明它们在盘内的位置与联动关系。
+- 不要为了「让外行也能看懂」而降低结论的精确度或替换成模糊说法。
+- 但仍然禁止用术语掩饰空话：专业词只在与本盘的具体判断绑定时才出现。
+`
+
+const AUDIENCE_PLAIN: string = `
+【读者背景：零基础（简明版）】
+读者完全没接触过人类图，也不打算先学术语。因此：
+- 凡是专业词第一次出现，先用一句大白话说清它对应的是什么生活现象，再把原词放进括号，例如「你的身体会先有反应、头脑随后才跟上（这叫『荐骨权威』）」。
+- 解释一个术语时不许用另一个术语当垫背；优先用日常场景、具体例子和身体感受来描述。
+- 不删减结论和判断，只把说法换成一般人能听懂的话。例如把「三分人，多重定义」写成「你身上同时跑着好几套彼此独立的节奏」。
+- 句子要短，少用括号堆砌与并列名词长串；每一节结尾要能让人用一句话复述。
+`
+
+/** 按面向人群取附加段落；不传时返回空串，保持 v2.4.0 的提示词逐字一致 */
+export function audiencePromptOf(audience?: AiAudience): string {
+  if (audience === 'plain') return AUDIENCE_PLAIN
+  if (audience === 'pro') return AUDIENCE_PRO
+  return ''
+}
+
+/** 生效的面向人群：未指定时按「专业版」，与 v2.4.0 及之前的历史风格一致 */
+export function resolveAudience(audience?: AiAudience): AiAudience {
+  return audience === 'plain' ? 'plain' : 'pro'
+}
+
+/**
+ * system 提示词按生效档位 / scope 选（与缓存键里的 mode 严格一致）。
+ * 第三参显式给 `pro` / `plain` 时追加【读者背景】段落；不传则只返回四套正文，
+ * 让未接入受众设置的旧调用点与既有测试保持原样。
+ */
+export function systemPromptOf(
+  mode: AiDetailMode,
+  scope?: string,
+  audience?: AiAudience,
+): string {
+  const base =
+    scope === 'full-fusion'
+      ? PROMPT_SYSTEM_FUSION
+      : mode === 'full'
+        ? PROMPT_SYSTEM_FULL
+        : mode === 'detailed'
+          ? PROMPT_SYSTEM_DETAILED
+          : PROMPT_SYSTEM_CONCISE
+  return base + audiencePromptOf(audience)
 }
 
 const MODE_LABEL: Record<AiDetailMode, string> = {
@@ -479,10 +568,13 @@ const CACHE_PREFIX = 'hdt.ai.cache.v1'
 
 /**
  * 缓存键：提示词版本 + 内核版本 + 接口地址 + 模型 + 配置指纹（Key 的短哈希，不落明文）
- * + scope + 详细度 + ref + 内容哈希。
+ * + scope + 详细度 + 面向人群 + ref + 内容哈希。
  *
  * 详细度必须进键：否则「先看精简、再切详细」会直接命中精简缓存，
- * 用户会以为详细版没生效（规范 §4.5）。导出仅为便于测试与排查，业务代码不要直接拼。
+ * 用户会以为详细版没生效（规范 §4.5）。
+ * v2.5.0 面向人群同理：`plain` 与 `pro` 的正文不同，必须分开缓存。
+ * token 预算**不进键**：它只影响输出长度上限，同一份解读的不同预算应共享缓存，
+ * 否则用户把预算调小一次就要重新付费生成（实为省钱的设定，不该增加成本）。
  */
 export function cacheKey(cfg: AiConfig, args: AiExplainArgs): string {
   const configTag = hash(cfg.apiKey.trim()).slice(0, 8)
@@ -496,6 +588,7 @@ export function cacheKey(cfg: AiConfig, args: AiExplainArgs): string {
     configTag,
     args.scope,
     mode,
+    resolveAudience(args.audience),
     args.ref ?? '',
     hash(args.offline + (args.chartSummary ?? '')),
   ].join(':')
@@ -568,6 +661,8 @@ export function resolveEndpoint(baseUrl: string): string {
 
 export async function explain(args: AiExplainArgs): Promise<string> {
   const { cfg } = args
+  /** 受众缺省按专业版；提示词与缓存键必须读同一个值，否则会串档 */
+  const audience = resolveAudience(args.audience)
   const startedAt = Date.now()
   /** 6 个客户端观测点统一出口；回调抛错不得影响请求结果 */
   const emit = (stage: AiStage, extra?: Partial<AiStageEvent>) => {
@@ -595,7 +690,7 @@ export async function explain(args: AiExplainArgs): Promise<string> {
   }
   emit('config-validated')
 
-  const key = cacheKey(cfg, args)
+  const key = cacheKey(cfg, { ...args, audience })
   if (cfg.cacheEnabled) {
     const hit = readCache(key)
     // ★ 命中缓存时确实没有发请求，不能谎报 request-sent
@@ -605,8 +700,11 @@ export async function explain(args: AiExplainArgs): Promise<string> {
     }
   }
 
-  const params = resolveRequestParams(args.scope, args.detailMode)
+  const params = resolveRequestParams(args.scope, args.detailMode, args.tokenBudget)
   const controller = new AbortController()
+  // ★ 整体超时语义与 v2.4.0 一致：`cfg.timeoutMs` 覆盖**整次解读**（含全部续写轮），
+  //   而不是每轮各给一份，否则完整版多轮会把等待时间放大到 3 倍。
+  const deadline = Date.now() + Math.max(3000, cfg.timeoutMs)
   const timer = setTimeout(() => controller.abort(), Math.max(3000, cfg.timeoutMs))
   const onAbort = () => controller.abort()
   args.signal?.addEventListener('abort', onAbort)
@@ -614,15 +712,18 @@ export async function explain(args: AiExplainArgs): Promise<string> {
   try {
     type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
     const messages: ChatMessage[] = [
-      { role: 'system', content: systemPromptOf(params.mode, args.scope) },
+      { role: 'system', content: systemPromptOf(params.mode, args.scope, audience) },
       { role: 'user', content: buildUserPrompt(args) },
     ]
 
     let content = ''
+    let truncated = false
     for (let round = 0; round <= MAX_CONTINUATIONS; round += 1) {
       // 仅第一轮发 request-sent；续写轮不再重复
       if (round === 0) emit('request-sent')
-      const response = await fetch(resolveEndpoint(cfg.baseUrl), {
+      const remaining = Math.max(1000, deadline - Date.now())
+      const result = await aiHttpRequest({
+        url: resolveEndpoint(cfg.baseUrl),
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -634,14 +735,34 @@ export async function explain(args: AiExplainArgs): Promise<string> {
           max_tokens: params.maxTokens,
           messages,
         }),
+        timeoutMs: remaining,
         signal: controller.signal,
       })
 
-      if (!response.ok) {
-        const text = await response.text().catch(() => '')
+      if (!result.ok) {
+        // 传输层只回传事实，这里翻译成既有 6 类 AiError，不改任何既有文案与分类
+        if (result.errorKind === 'cancelled') {
+          if (args.signal?.aborted) throw new AiError('已取消', 'cancelled')
+          throw new AiError(
+            `请求超时（${Math.round(cfg.timeoutMs / 1000)} 秒），请重试或调大超时`,
+            'timeout',
+          )
+        }
+        if (result.errorKind === 'timeout') {
+          throw new AiError(
+            `请求超时（${Math.round(cfg.timeoutMs / 1000)} 秒），请重试或调大超时`,
+            'timeout',
+          )
+        }
+        if (result.status) {
+          throw new AiError(
+            `接口返回 ${result.status}${result.bodyText ? `：${result.bodyText.slice(0, 200)}` : ''}`,
+            'http',
+          )
+        }
         throw new AiError(
-          `接口返回 ${response.status}${text ? `：${text.slice(0, 200)}` : ''}`,
-          'http',
+          `网络请求失败：${result.error || '未知错误'}。若是浏览器跨域限制，请确认接口允许 CORS。`,
+          'network',
         )
       }
 
@@ -649,13 +770,10 @@ export async function explain(args: AiExplainArgs): Promise<string> {
         choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
       }
       try {
-        data = (await response.json()) as typeof data
+        data = JSON.parse(result.bodyText) as typeof data
       } catch (err) {
-        if ((err as Error)?.name === 'SyntaxError') {
-          // 接口返回了非 JSON（例如网关错误页），属于格式问题而非网络问题。
-          throw new AiError(`接口返回的不是合法 JSON：${(err as Error).message}`, 'format')
-        }
-        throw err
+        // 接口返回了非 JSON（例如网关错误页），属于格式问题而非网络问题。
+        throw new AiError(`接口返回的不是合法 JSON：${(err as Error).message}`, 'format')
       }
       const choice = data.choices?.[0]
       const piece = choice?.message?.content?.trim()
@@ -667,6 +785,9 @@ export async function explain(args: AiExplainArgs): Promise<string> {
       // 而不是把半句话当成完整解读返回（完整版融合最容易触发）。
       if (choice?.finish_reason !== 'length') break
       if (round === MAX_CONTINUATIONS) {
+        // 续写配额用完仍未收尾：内容照常返回，但必须标记「已触顶」，
+        // 否则批量生成会把半截解读当成完整结果存进档案（v2.5.0）。
+        truncated = true
         console.warn(
           `[AI] 已续写 ${MAX_CONTINUATIONS} 次仍触顶（scope=${args.scope} / ${params.mode}），输出可能不完整`,
         )
@@ -690,8 +811,12 @@ export async function explain(args: AiExplainArgs): Promise<string> {
       )
     }
 
-    if (cfg.cacheEnabled) writeCache(key, content)
-    emit('completed')
+    // ★ 截断的内容不进缓存：否则「调小预算试一次」会把半截结果写进缓存，
+    //   之后即使调大预算也永远命中这份残缺内容（用户以为接口坏了）。
+    if (cfg.cacheEnabled && !truncated) writeCache(key, content)
+    // 截断标记走本次请求的 onStage 回调，不用模块级变量：
+    // 批量并发时多份解读会同时完成，模块级「上一次」会串台。
+    emit('completed', { truncated })
     return content
   } catch (err) {
     // 终态分类只复用既有 AiError.kind，不新增分类、不改异常类型
@@ -733,6 +858,9 @@ export interface AiProbeResult {
  * 连通性测试：向 chat/completions 发一次最小请求（max_tokens: 1）。
  * 只验证「地址可达 + Key 可用 + 模型名被接受」，不做内容生成。
  * 不打印、也不返回 apiKey。
+ *
+ * v2.5.0 改走统一传输层：中转站普遍不返回 CORS 头，若这里仍用渲染进程的
+ * fetch，桌面端「测试」按钮会永远失败，而真正生成解读却是通的。
  */
 export async function probeAiConfig(cfg: AiConfig): Promise<AiProbeResult> {
   const configError = validateAiConfig(cfg)
@@ -743,7 +871,8 @@ export async function probeAiConfig(cfg: AiConfig): Promise<AiProbeResult> {
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   const startedAt = Date.now()
   try {
-    const response = await fetch(resolveEndpoint(cfg.baseUrl), {
+    const result = await aiHttpRequest({
+      url: resolveEndpoint(cfg.baseUrl),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -754,37 +883,161 @@ export async function probeAiConfig(cfg: AiConfig): Promise<AiProbeResult> {
         max_tokens: 1,
         messages: [{ role: 'user', content: 'ping' }],
       }),
+      timeoutMs,
       signal: controller.signal,
     })
     const latencyMs = Date.now() - startedAt
-    if (!response.ok) {
-      const text = await response.text().catch(() => '')
+    if (!result.ok) {
+      if (result.errorKind === 'cancelled') {
+        return { ok: false, message: `测试超时（>${Math.round(timeoutMs / 1000)} 秒）`, latencyMs }
+      }
+      if (result.status) {
+        const hint = result.status === 401 || result.status === 403 ? '（API Key 无效或已过期）' : ''
+        return {
+          ok: false,
+          message: `接口返回 ${result.status}${hint}${
+            result.bodyText ? `：${result.bodyText.slice(0, 120)}` : ''
+          }`,
+          latencyMs,
+        }
+      }
       return {
         ok: false,
-        message: `接口返回 ${response.status}${text ? `：${text.slice(0, 120)}` : ''}`,
+        message: `连接失败：${result.error || '未知错误'}（网页端可能受跨域限制，请用桌面版）`,
         latencyMs,
       }
     }
     let candidateLabel = ''
     try {
-      const data = (await response.json()) as { choices?: unknown[]; model?: string }
+      const data = JSON.parse(result.bodyText) as { choices?: unknown[]; model?: string }
       if (Array.isArray(data.choices)) candidateLabel = `，返回 ${data.choices.length} 个候选`
       else if (typeof data.model === 'string' && data.model) candidateLabel = `，模型 ${data.model}`
     } catch {
       /* 连通性优先：响应体不是 JSON 也算已连通 */
     }
     return { ok: true, message: `连通正常${candidateLabel}`, latencyMs }
-  } catch (err) {
-    const latencyMs = Date.now() - startedAt
-    if ((err as Error)?.name === 'AbortError') {
-      return { ok: false, message: `测试超时（>${Math.round(timeoutMs / 1000)} 秒）`, latencyMs }
-    }
-    return {
-      ok: false,
-      message: `连接失败：${(err as Error).message || '未知错误'}（若是浏览器跨域限制，请确认接口允许 CORS）`,
-      latencyMs,
-    }
   } finally {
     clearTimeout(timer)
+  }
+}
+
+/* ── 模型列表（v2.5.0）──────────────────────────────── */
+
+export interface AiModelsResult {
+  ok: boolean
+  /** 去重、按字母排序后的模型 id；失败时为空数组 */
+  models: string[]
+  message: string
+  /** 实际取到列表的接口地址，成功时给出，便于排查中转站路径差异 */
+  endpoint?: string
+}
+
+/**
+ * 模型列表地址：允许填写基础地址、/v1、完整 /chat/completions、或直接的 /models。
+ * 中转站的路径并不统一，主地址拿不到时 `fetchAiModels` 会再试源站 /v1/models。
+ */
+export function resolveModelsEndpoint(baseUrl: string): string {
+  const url = baseUrl.trim().replace(/\/+$/, '')
+  if (/\/models$/.test(url)) return url
+  if (/\/chat\/completions$/.test(url)) return url.replace(/\/chat\/completions$/, '/models')
+  if (/\/v\d+([a-z-]*)?$/i.test(url)) return `${url}/models`
+  return `${url}/v1/models`
+}
+
+/** 兼容 OpenAI `{data:[{id}]}`、数组、以及少量中转站的 `{models:[...]}` / `{data:[string]}` */
+export function parseAiModels(bodyText: string): string[] {
+  let data: unknown
+  try {
+    data = JSON.parse(bodyText)
+  } catch {
+    return []
+  }
+  const raw: unknown = Array.isArray(data)
+    ? data
+    : data && typeof data === 'object'
+      ? ((data as Record<string, unknown>).data ?? (data as Record<string, unknown>).models)
+      : null
+  if (!Array.isArray(raw)) return []
+  const ids = raw
+    .map((item) =>
+      typeof item === 'string' ? item : item && typeof item === 'object' ? (item as { id?: unknown }).id : null,
+    )
+    .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+    .map((id) => id.trim())
+  return [...new Set(ids)].sort((a, b) => a.localeCompare(b))
+}
+
+/**
+ * 自动获取模型列表（GET /models）。
+ *
+ * 走统一传输层的理由与 probeAiConfig 相同：带 Authorization 的请求在渲染进程
+ * 会被预检拦下，而桌面主进程没有同源策略。key 只经 IPC 传递，不落盘、不写日志。
+ * 失败时返回可读原因（Key 过期 / 接口不支持 / 跨域），调用方仍可手填模型名。
+ */
+export async function fetchAiModels(
+  cfg: Pick<AiConfig, 'baseUrl' | 'apiKey' | 'timeoutMs'>,
+): Promise<AiModelsResult> {
+  const baseUrl = cfg.baseUrl.trim()
+  const apiKey = cfg.apiKey.trim()
+  if (!/^https?:\/\//i.test(baseUrl)) {
+    return { ok: false, models: [], message: '请先填写接口地址（需以 http:// 或 https:// 开头）' }
+  }
+  if (!apiKey) return { ok: false, models: [], message: '请先填写 API Key' }
+
+  const primary = resolveModelsEndpoint(baseUrl)
+  let fallback = ''
+  try {
+    const u = new URL(primary)
+    fallback = `${u.origin}/v1/models`
+  } catch {
+    /* primary 已校验过协议，URL 解析失败时不做 fallback */
+  }
+  const candidates = fallback && fallback !== primary ? [primary, fallback] : [primary]
+  const timeoutMs = Math.min(Math.max(3000, cfg.timeoutMs || 15000), 20000)
+  let lastStatus = 0
+  let lastError = ''
+
+  for (const endpoint of candidates) {
+    const result = await aiHttpRequest({
+      url: endpoint,
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      timeoutMs,
+    })
+    if (result.ok) {
+      const models = parseAiModels(result.bodyText)
+      if (models.length) {
+        return { ok: true, models, message: `已获取 ${models.length} 个模型`, endpoint }
+      }
+      return {
+        ok: false,
+        models: [],
+        message: '接口返回了空的模型列表（或格式不兼容），请手动填写模型名称',
+        endpoint,
+      }
+    }
+    lastStatus = result.status
+    lastError = result.error || ''
+    // 只有「路径不对」才值得换地址重试；401/403 是 Key 问题，换路径也没用
+    if (result.status !== 404 && result.status !== 405 && result.status !== 0) break
+  }
+
+  if (lastStatus === 401 || lastStatus === 403) {
+    return { ok: false, models: [], message: `API Key 无效或已过期（HTTP ${lastStatus}）` }
+  }
+  if (lastStatus === 404 || lastStatus === 405) {
+    return {
+      ok: false,
+      models: [],
+      message: `该接口未提供模型列表（HTTP ${lastStatus}），请手动填写模型名称`,
+    }
+  }
+  if (lastStatus) {
+    return { ok: false, models: [], message: `接口返回 HTTP ${lastStatus}，请检查接口地址与 Key` }
+  }
+  return {
+    ok: false,
+    models: [],
+    message: `无法获取模型列表：${lastError || '未知错误'}（网页端可能受跨域限制，请用桌面版）`,
   }
 }

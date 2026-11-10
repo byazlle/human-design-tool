@@ -70,6 +70,15 @@ export type CenterId =
  */
 export type AiDetailMode = 'concise' | 'detailed' | 'full'
 
+/**
+ * AI 解读的面向人群（v2.5.0）：
+ * - `pro`（专业版）：读者已懂人类图术语，可以直接使用「荐骨权威 / 二分人 / 悬挂闸门」等专业词；
+ * - `plain`（简明版）：面向零基础，必须用大白话解释，术语先给生活化说法再带出原名。
+ *
+ * 只影响 system 提示词的收尾段落，不改事实块与离线释义，也不改字数契约。
+ */
+export type AiAudience = 'pro' | 'plain'
+
 /** 完整版多轮编排的执行方式：串行 / 并发（并发失败时自动转串行，用户 Q3.4） */
 export type AiStepMode = 'serial' | 'parallel'
 

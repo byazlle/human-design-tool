@@ -34,11 +34,17 @@ function args(overrides: Partial<AiExplainArgs> = {}): AiExplainArgs {
   }
 }
 
-function okResponse(content = '解读正文'): unknown {
+function okResponse(content = '解读正文', finishReason = 'stop'): unknown {
+  // 统一传输层读的是 Response.text()（主进程 / 原生桥回传的也是纯文本），
+  // 所以 mock 的 text() 必须给出与 json() 一致的真实响应体。
+  const body = JSON.stringify({
+    choices: [{ message: { content }, finish_reason: finishReason }],
+  })
   return {
     ok: true,
-    json: async () => ({ choices: [{ message: { content }, finish_reason: 'stop' }] }),
-    text: async () => '',
+    status: 200,
+    json: async () => JSON.parse(body),
+    text: async () => body,
   }
 }
 
@@ -71,7 +77,7 @@ describe('explain() 可选 onStage · 向后兼容', () => {
     fetchMock.mockResolvedValue(okResponse())
     const result = await explain(args())
     expect(result).toBe('解读正文')
-    expect(PROMPT_VERSION).toBe('3.2')
+    expect(PROMPT_VERSION).toBe('3.3')
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
@@ -106,11 +112,7 @@ describe('explain() 可选 onStage · 向后兼容', () => {
       return okResponse(r === 0 ? '第一段' : '第二段')
     })
     // 让第一轮 finish_reason='length' 触发续写
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ choices: [{ message: { content: '第一段' }, finish_reason: 'length' }] }),
-      text: async () => '',
-    })
+    fetchMock.mockResolvedValueOnce(okResponse('第一段', 'length'))
     fetchMock.mockResolvedValueOnce(okResponse('第二段'))
     const stages: AiStageEvent[] = []
     const result = await explain(args({ onStage: (e) => stages.push(e) }))

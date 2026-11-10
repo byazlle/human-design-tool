@@ -16,7 +16,7 @@
  * - 全程可取消（AbortSignal）；取消抛 AiError('已取消','cancelled')，由编排层处理。
  * - 融合只注入每项前 300 字要点 + 标题，避免 45 个分项全文撑爆模型上下文。
  */
-import { AiError, chartSummaryOf, explain } from './aiClient'
+import { AiError, chartSummaryOf, explain, resolveAudience } from './aiClient'
 import {
   cancelledError as cancelled,
   errText,
@@ -32,6 +32,7 @@ import {
   CENTER_LABELS,
   DEFINITION_LABELS,
   TYPE_LABELS,
+  type AiAudience,
   type AiConfig,
   type AiStepMode,
   type BodyGraph,
@@ -104,6 +105,10 @@ export interface FullReadingOptions extends FullReadingPlan {
   aiConcurrency?: number
   /** v2.3.0「并发上限」：★ 唯一闸门；不传时回落 DEFAULT_AI_CONCURRENCY_LIMIT */
   aiConcurrencyLimit?: number
+  /** v2.5.0 面向人群；不传按专业版，每个分项与融合读同一值 */
+  audience?: AiAudience
+  /** v2.5.0 单份（每个分项 / 融合各算一份）token 总预算；0 或不传 = 不限制 */
+  tokenBudget?: number
 }
 
 /* ── 事实文本：全部取自项目既有离线释义 ─────────────────── */
@@ -296,6 +301,8 @@ interface TaskOutcome {
  */
 export async function runFullReading(options: FullReadingOptions): Promise<FullReport> {
   const { cfg, chart, title, signal } = options
+  const audience = resolveAudience(options.audience)
+  const tokenBudget = options.tokenBudget
   const tasks = options.tasks ?? buildFullTasks(chart, options.factBlock)
   const summary = options.summary ?? chartSummaryOf(chart)
   const fusionAngle = options.fusionAngle ?? '全盘整合分析与最终总结论'
@@ -388,6 +395,8 @@ export async function runFullReading(options: FullReadingOptions): Promise<FullR
       chartSummary: summary,
       detailMode: 'full',
       angle: task.title,
+      audience,
+      tokenBudget,
       signal,
     })
 
@@ -496,6 +505,8 @@ export async function runFullReading(options: FullReadingOptions): Promise<FullR
           chartSummary: summary,
           detailMode: 'full',
           angle: fusionAngle,
+          audience,
+          tokenBudget,
           signal,
         }),
       signal,

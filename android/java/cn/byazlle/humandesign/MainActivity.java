@@ -9,18 +9,30 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
-import android.webkit.ValueCallback;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import org.json.JSONObject;
+
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 原生 WebView 壳。
@@ -72,9 +84,133 @@ public class MainActivity extends Activity {
             }
         });
 
+        // v2.5.0：AI 请求走原生桥。中转站普遍不返回 CORS 响应头，WebView 里
+        // 带 Authorization 的 POST 会在预检阶段被拒；Java 侧没有同源策略。
+        web.addJavascriptInterface(new AiBridge(), "hdAndroid");
+
         setContentView(web);
         applyEdgeToEdge();
         web.loadUrl(BASE_URL);
+    }
+
+    /**
+     * AI 接口代理。JS 侧（aiTransport.ts）调用 hdAndroid.aiRequest(id, json)，
+     * 本类在后台线程完成一次 HTTP 往返，再回主线程调 window.__hdAiResolve(id, json)。
+     * 密钥只在进程内存里过一遍，不落盘、不写日志。
+     */
+    private class AiBridge {
+        private final Map<String, HttpURLConnection> inflight = new ConcurrentHashMap<>();
+        // 不用 ConcurrentHashMap.newKeySet()：那是 Java 8 新增的静态方法，
+        // API 24 的 libcore 未必有；newSetFromMap 自 Java 6 起就存在。
+        private final Set<String> cancelled = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+
+        @JavascriptInterface
+        public void aiRequest(final String id, final String payloadJson) {
+            new Thread(() -> {
+                HttpURLConnection conn = null;
+                try {
+                    JSONObject p = new JSONObject(payloadJson);
+                    String url = p.optString("url", "");
+                    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                        throw new IllegalArgumentException("接口地址需以 http:// 或 https:// 开头");
+                    }
+                    String method = p.optString("method", "POST");
+                    int timeoutMs = Math.max(1000, p.optInt("timeoutMs", 60000));
+                    String body = p.isNull("body") ? null : p.optString("body", null);
+
+                    conn = (HttpURLConnection) new URL(url).openConnection();
+                    conn.setRequestMethod(method);
+                    conn.setConnectTimeout(timeoutMs);
+                    conn.setReadTimeout(timeoutMs);
+                    conn.setInstanceFollowRedirects(true);
+                    JSONObject headers = p.optJSONObject("headers");
+                    if (headers != null) {
+                        Iterator<String> keys = headers.keys();
+                        while (keys.hasNext()) {
+                            String key = keys.next();
+                            conn.setRequestProperty(key, headers.optString(key, ""));
+                        }
+                    }
+                    inflight.put(id, conn);
+                    if (body != null && !"GET".equals(method)) {
+                        conn.setDoOutput(true);
+                        if (conn.getRequestProperty("Content-Type") == null) {
+                            conn.setRequestProperty("Content-Type", "application/json");
+                        }
+                        try (OutputStream os = conn.getOutputStream()) {
+                            os.write(body.getBytes(StandardCharsets.UTF_8));
+                        }
+                    }
+
+                    int status = conn.getResponseCode();
+                    InputStream stream = status >= 200 && status < 300
+                            ? conn.getInputStream()
+                            : conn.getErrorStream();
+                    JSONObject out = new JSONObject();
+                    out.put("ok", status >= 200 && status < 300);
+                    out.put("status", status);
+                    out.put("bodyText", readAll(stream));
+                    resolve(id, out);
+                } catch (Exception e) {
+                    // 主动取消已经回过结果了，不要二次兑现
+                    if (cancelled.remove(id)) return;
+                    JSONObject out = new JSONObject();
+                    try {
+                        out.put("ok", false);
+                        out.put("status", 0);
+                        out.put("bodyText", "");
+                        out.put("error", e.getMessage() == null ? "未知错误" : e.getMessage());
+                        out.put("errorKind", e instanceof SocketTimeoutException ? "timeout" : "network");
+                    } catch (org.json.JSONException ignored) {
+                        // JSONObject.put 只可能因 key 为 null 抛错，这里 key 均为字面量
+                    }
+                    resolve(id, out);
+                } finally {
+                    if (conn != null) {
+                        inflight.remove(id);
+                        conn.disconnect();
+                    }
+                }
+            }, "hdt-ai").start();
+        }
+
+        @JavascriptInterface
+        public void aiCancel(final String id) {
+            cancelled.add(id);
+            HttpURLConnection conn = inflight.remove(id);
+            if (conn != null) conn.disconnect();
+            JSONObject out = new JSONObject();
+            try {
+                out.put("ok", false);
+                out.put("status", 0);
+                out.put("bodyText", "");
+                out.put("error", "已取消");
+                out.put("errorKind", "cancelled");
+            } catch (org.json.JSONException ignored) {
+                // 同上
+            }
+            resolve(id, out);
+        }
+
+        /** evaluateJavascript 必须在主线程调用 */
+        private void resolve(final String id, final JSONObject result) {
+            final String js = "window.__hdAiResolve&&window.__hdAiResolve("
+                    + JSONObject.quote(id) + "," + JSONObject.quote(result.toString()) + ")";
+            WebView target = web;
+            if (target == null) return;
+            target.post(() -> target.evaluateJavascript(js, null));
+        }
+
+        private String readAll(InputStream in) throws IOException {
+            if (in == null) return "";
+            try (InputStream stream = in) {
+                ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+                byte[] chunk = new byte[8192];
+                int n;
+                while ((n = stream.read(chunk)) != -1) buffer.write(chunk, 0, n);
+                return new String(buffer.toByteArray(), StandardCharsets.UTF_8);
+            }
+        }
     }
 
     /** 关闭重定向与资源请求的跳转都走本地拦截 */

@@ -29,6 +29,8 @@ export interface BatchRunOptions {
   customDirection: string
   /** 缺省用设置里的当前档位 */
   detailMode?: AiDetailMode
+  /** 本次每份解读的 token 总预算；缺省用设置里的全局值（0 = 不限制） */
+  tokenBudget?: number
   /** 已有解读的处理：skip 跳过（默认）/ overwrite 覆盖 */
   onExisting?: 'skip' | 'overwrite'
 }
@@ -61,7 +63,7 @@ export function useAiBatch() {
     const ref = `${dims.join('+')}:${options.angleKey}:${options.customDirection || '-'}`
 
     const existing = ids.filter(
-      (id) => readings.find(id, 'unified', ref, mode) !== null,
+      (id) => readings.find(id, 'unified', ref, mode, settings.aiAudience) !== null,
     )
     const onExisting = options.onExisting ?? 'skip'
     const toRun = onExisting === 'overwrite' ? ids : ids.filter((id) => !existing.includes(id))
@@ -117,7 +119,9 @@ export function useAiBatch() {
 
     // 先筛掉已有解读的档案（除非明确要求覆盖），否则会白白重复消耗额度
     const existingIds = new Set(
-      options.archiveIds.filter((id) => readings.find(id, 'unified', scopeRef, mode) !== null),
+      options.archiveIds.filter(
+        (id) => readings.find(id, 'unified', scopeRef, mode, settings.aiAudience) !== null,
+      ),
     )
     const targetIds =
       onExisting === 'overwrite'
@@ -168,6 +172,8 @@ export function useAiBatch() {
         skipped: skippedLabels,
         stepMode: settings.aiStepMode,
         concurrencyLimit: settings.aiConcurrencyLimit,
+        audience: settings.aiAudience,
+        tokenBudget: options.tokenBudget ?? settings.aiTokenBudget,
         signal: ctrl.signal,
         onUpdate: ({ progress, outcomes }) => {
           ui.setBatchProgress(progress)
@@ -181,11 +187,13 @@ export function useAiBatch() {
       lastOutcomes.value = report.outcomes
       lastReport.value = report
 
+      const truncatedCount = report.truncatedNames.length
       const summary =
         `${report.ok} 份已生成` +
         (report.failed.length ? `，${report.failed.length} 份失败` : '') +
-        (report.skipped.length ? `，跳过 ${report.skipped.length} 份` : '')
-      ui.finishBatch(summary, report.failed.length === 0)
+        (report.skipped.length ? `，跳过 ${report.skipped.length} 份` : '') +
+        (truncatedCount ? `，其中 ${truncatedCount} 份触顶可能不完整` : '')
+      ui.finishBatch(summary, report.failed.length === 0 && truncatedCount === 0)
       return report
     } catch (err) {
       const isCancel = err instanceof AiError && err.kind === 'cancelled'
@@ -218,6 +226,8 @@ export function useAiBatch() {
           mode,
           title: o.title,
           content: o.content,
+          audience: settings.aiAudience,
+          truncated: o.truncated,
         }),
       )
     if (records.length) readings.putMany(records)

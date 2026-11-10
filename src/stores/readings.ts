@@ -15,7 +15,7 @@
  * 因此「同一档案 + 同一范围 + 同一档位」只有一条记录，重跑是覆盖而非堆积。
  */
 import { defineStore } from 'pinia'
-import type { AiDetailMode } from '../types/hd'
+import type { AiAudience, AiDetailMode } from '../types/hd'
 import { ENGINE_VERSION } from '../engine/version'
 import { PROMPT_VERSION } from '../services/aiClient'
 import { loadJsonChecked, saveJson } from '../utils/storage'
@@ -41,20 +41,32 @@ export interface ReadingRecord {
   promptVersion: string
   /** 生成时的计算内核版本；与当前不一致表示盘面已重算，内容可能过期 */
   engineVersion: string
+  /** v2.5.0 面向人群；旧记录缺省按专业版 */
+  audience?: AiAudience
+  /** v2.5.0 输出因 token 上限触顶，内容可能不完整 */
+  truncated?: boolean
 }
 
-/** 解读记录的稳定标识（store 索引键与去重键） */
+/**
+ * 解读记录的稳定标识（store 索引键与去重键）。
+ *
+ * v2.5.0：面向人群参与键，但**只在简明版时追加一段**——
+ * 专业版与所有旧记录仍用原来的 4 段键，存量数据、导出格式与既有测试全部不动；
+ * 简明版另起一段，让同一张盘的专业版 / 简明版可以并存、互不覆盖。
+ */
 export function readingKey(
   archiveId: string,
   scope: string,
   ref: string,
   mode: AiDetailMode,
+  audience: AiAudience = 'pro',
 ): string {
-  return `${archiveId}|${scope}|${ref}|${mode}`
+  const base = `${archiveId}|${scope}|${ref}|${mode}`
+  return audience === 'plain' ? `${base}|plain` : base
 }
 
 export function keyOfReading(r: ReadingRecord): string {
-  return readingKey(r.archiveId, r.scope, r.ref, r.mode)
+  return readingKey(r.archiveId, r.scope, r.ref, r.mode, r.audience ?? 'pro')
 }
 
 /**
@@ -73,6 +85,10 @@ export function makeReading(input: {
   mode: AiDetailMode
   title: string
   content: string
+  /** 面向人群；不传按专业版 */
+  audience?: AiAudience
+  /** 输出是否因 token 上限触顶 */
+  truncated?: boolean
 }): ReadingRecord {
   return {
     ...input,
@@ -112,6 +128,8 @@ function normalize(raw: ReadingRecord): ReadingRecord {
     at: raw.at,
     promptVersion: typeof raw.promptVersion === 'string' ? raw.promptVersion : '',
     engineVersion: typeof raw.engineVersion === 'string' ? raw.engineVersion : '',
+    audience: raw.audience === 'plain' ? 'plain' : 'pro',
+    truncated: raw.truncated === true,
   }
 }
 
@@ -138,10 +156,16 @@ export const useReadingsStore = defineStore('readings', {
     coveredIds(state): Set<string> {
       return new Set(state.list.map((r) => r.archiveId))
     },
-    /** 查询单条（不存在返回 null） */
+    /** 查询单条（不存在返回 null）；v2.5.0 起按面向人群区分 */
     find(state) {
-      return (archiveId: string, scope: string, ref: string, mode: AiDetailMode) => {
-        const key = readingKey(archiveId, scope, ref, mode)
+      return (
+        archiveId: string,
+        scope: string,
+        ref: string,
+        mode: AiDetailMode,
+        audience: AiAudience = 'pro',
+      ) => {
+        const key = readingKey(archiveId, scope, ref, mode, audience)
         return state.list.find((r) => keyOfReading(r) === key) ?? null
       }
     },
@@ -186,8 +210,8 @@ export const useReadingsStore = defineStore('readings', {
       return this.persist()
     },
 
-    remove(id: string, scope: string, ref: string, mode: AiDetailMode) {
-      const key = readingKey(id, scope, ref, mode)
+    remove(id: string, scope: string, ref: string, mode: AiDetailMode, audience: AiAudience = 'pro') {
+      const key = readingKey(id, scope, ref, mode, audience)
       const next = this.list.filter((r) => keyOfReading(r) !== key)
       if (next.length === this.list.length) return
       this.list = next

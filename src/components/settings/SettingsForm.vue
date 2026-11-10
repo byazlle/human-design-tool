@@ -1,16 +1,20 @@
 <script setup lang="ts">
 /** 设置面板：AI 配置（多套）/ 外观 / 数据 / 计算精度（DESIGN.md §4.12） */
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useSettingsStore, takeConcurrencyMigrationNotice } from '../../stores/settings'
+import {
+  useSettingsStore,
+  takeConcurrencyMigrationNotice,
+  MAX_TOKEN_BUDGET,
+} from '../../stores/settings'
 import { useArchiveStore } from '../../stores/archive'
 import { useUiStore } from '../../stores/ui'
-import { probeAiConfig, validateAiConfig } from '../../services/aiClient'
+import { fetchAiModels, MIN_TOKEN_BUDGET, probeAiConfig, validateAiConfig } from '../../services/aiClient'
 import {
   CONCURRENCY_MAX,
   CONCURRENCY_MIN,
   validateConcurrencyPair,
 } from '../../services/aiConcurrency'
-import type { AiDetailMode, AiProfile, AiStepMode } from '../../types/hd'
+import type { AiAudience, AiDetailMode, AiProfile, AiStepMode } from '../../types/hd'
 import ConfirmDialog from '../base/ConfirmDialog.vue'
 import HdField from '../base/HdField.vue'
 import HdToggle from '../base/HdToggle.vue'
@@ -191,6 +195,117 @@ function setStepMode(mode: AiStepMode) {
   const ok = settings.setAiStepMode(mode)
   detailModeError.value = ok ? '' : settings.persistError || '保存失败，设置未生效'
 }
+
+/* ── 面向人群（v2.5.0）：只改提示词的用词与解释深度 ────────── */
+
+const AUDIENCES: Array<{ value: AiAudience; label: string; hint: string }> = [
+  {
+    value: 'pro',
+    label: '专业版（有基础）',
+    hint: '直接使用类型、权威、闸门、通道等专业词，不逐个解释术语，篇幅留给这张盘的具体判断',
+  },
+  {
+    value: 'plain',
+    label: '简明版（零基础）',
+    hint: '用大白话和生活例子讲；术语第一次出现必须先解释对应什么现象，不删减结论',
+  },
+]
+
+const audienceError = ref('')
+
+function setAudience(audience: AiAudience) {
+  if (settings.aiAudience === audience) return
+  const ok = settings.setAiAudience(audience)
+  audienceError.value = ok ? '' : settings.persistError || '保存失败，设置未生效'
+}
+
+/* ── 单份解读 token 上限（v2.5.0）──────────────────────── */
+
+const tokenBudgetInput = ref(String(settings.aiTokenBudget))
+const tokenBudgetError = ref('')
+
+/** 0 = 不限制；正数按 [MIN_TOKEN_BUDGET, MAX_TOKEN_BUDGET] 校验，不把「填 10」静默放大 */
+function saveTokenBudget() {
+  const raw = tokenBudgetInput.value.trim()
+  if (!/^\d+$/.test(raw)) {
+    tokenBudgetError.value = '请填 0（不限制）或正整数'
+    return
+  }
+  const n = Number(raw)
+  if (n !== 0 && (n < MIN_TOKEN_BUDGET || n > MAX_TOKEN_BUDGET)) {
+    tokenBudgetError.value = `限制值需在 ${MIN_TOKEN_BUDGET}–${MAX_TOKEN_BUDGET} 之间，或填 0 表示不限制`
+    return
+  }
+  const ok = settings.setAiTokenBudget(n)
+  tokenBudgetError.value = ok ? '' : settings.persistError || '保存失败，设置未生效'
+  if (ok) tokenBudgetInput.value = String(settings.aiTokenBudget)
+}
+
+watch(
+  () => settings.aiTokenBudget,
+  (v) => {
+    tokenBudgetInput.value = String(v)
+  },
+)
+
+/* ── 自动获取模型列表（v2.5.0）────────────────────────── */
+
+/** 'editor' 表示编辑表单里的配置，其余值为某条已保存配置的 id */
+const modelPickerFor = ref<string | null>(null)
+const modelOptions = ref<string[]>([])
+const modelNote = ref('')
+const modelLoading = ref<string | null>(null)
+
+async function loadModels(target: string) {
+  const cfg =
+    target === 'editor'
+      ? editor.value
+        ? {
+            baseUrl: editor.value.baseUrl,
+            apiKey: editor.value.apiKey,
+            timeoutMs: Math.round(Number(editor.value.timeoutSec) * 1000) || 15000,
+          }
+        : null
+      : settings.aiProfiles.find((p) => p.id === target)
+  if (!cfg) return
+  modelPickerFor.value = target
+  modelOptions.value = []
+  modelNote.value = ''
+  if (!cfg.baseUrl.trim() || !cfg.apiKey.trim()) {
+    modelNote.value = '请先填写接口地址与 API Key'
+    return
+  }
+  modelLoading.value = target
+  try {
+    const result = await fetchAiModels({
+      baseUrl: cfg.baseUrl,
+      apiKey: cfg.apiKey,
+      timeoutMs: cfg.timeoutMs,
+    })
+    modelOptions.value = result.models
+    modelNote.value = result.message
+  } finally {
+    modelLoading.value = null
+  }
+}
+
+function pickModel(model: string) {
+  const target = modelPickerFor.value
+  if (!target) return
+  if (target === 'editor') {
+    if (editor.value) editor.value.model = model
+  } else {
+    const result = settings.updateAiProfile(target, { model })
+    if (!result.ok || settings.persistError) {
+      ui.notify(result.error ?? settings.persistError ?? '保存失败', 'error')
+      return
+    }
+  }
+  delete fieldErrors.model
+  modelPickerFor.value = null
+  ui.notify(`已选择模型 ${model}`, 'success')
+}
+
 const probeNotes = reactive<Record<string, string>>({})
 const confirmDeleteId = ref<string | null>(null)
 const deleteTarget = computed(() => settings.aiProfiles.find((p) => p.id === confirmDeleteId.value) ?? null)
@@ -498,6 +613,22 @@ function regenerateAll() {
             >
               {{ probeNotes[profile.id] }}
             </p>
+            <div v-if="modelPickerFor === profile.id && (modelNote || modelOptions.length)" class="model-picker">
+              <p class="t-xs" :class="modelOptions.length ? 'msg-success' : 'msg-warning'">{{ modelNote }}</p>
+              <div v-if="modelOptions.length" class="preset-row">
+                <button
+                  v-for="m in modelOptions"
+                  :key="m"
+                  type="button"
+                  class="preset-btn"
+                  :class="{ on: profile.model === m }"
+                  :title="`设为模型 ${m}`"
+                  @click="pickModel(m)"
+                >
+                  {{ m }}
+                </button>
+              </div>
+            </div>
           </div>
           <div class="ai-actions">
             <HdButton
@@ -515,6 +646,14 @@ function regenerateAll() {
               @click="testProfile(profile)"
             >
               测试
+            </HdButton>
+            <HdButton
+              size="sm"
+              variant="ghost"
+              :loading="modelLoading === profile.id"
+              @click="loadModels(profile.id)"
+            >
+              获取模型
             </HdButton>
             <HdButton size="sm" variant="ghost" @click="openEdit(profile)">编辑</HdButton>
             <HdButton size="sm" variant="ghost" @click="duplicateProfile(profile)">复制</HdButton>
@@ -561,10 +700,37 @@ function regenerateAll() {
           <HdField
             v-model="editor.model"
             label="模型名称"
-            placeholder="gpt-4o-mini"
+            placeholder="可点右侧按钮自动获取，也可手填"
             :error="fieldErrors.model"
             @blur="validateField('model')"
-          />
+          >
+            <template #suffix>
+              <button
+                type="button"
+                class="t-xs key-toggle"
+                :disabled="modelLoading === 'editor'"
+                @click="loadModels('editor')"
+              >
+                {{ modelLoading === 'editor' ? '获取中…' : '自动获取' }}
+              </button>
+            </template>
+          </HdField>
+          <div v-if="modelPickerFor === 'editor' && (modelNote || modelOptions.length)" class="field model-picker">
+            <span class="t-xs" :class="modelOptions.length ? 'msg-success' : 'msg-warning'">{{ modelNote }}</span>
+            <div v-if="modelOptions.length" class="preset-row">
+              <button
+                v-for="m in modelOptions"
+                :key="m"
+                type="button"
+                class="preset-btn"
+                :class="{ on: editor.model === m }"
+                :title="`填入模型 ${m}`"
+                @click="pickModel(m)"
+              >
+                {{ m }}
+              </button>
+            </div>
+          </div>
           <HdField
             v-model="editor.timeoutSec"
             label="超时（秒）"
@@ -631,6 +797,54 @@ function regenerateAll() {
             <span class="t-xs">{{ opt.hint }}</span>
           </button>
         </div>
+        <!-- 面向人群（v2.5.0）：专业版 / 简明版，只改提示词的用词与解释深度 -->
+        <div class="audience-settings">
+          <span class="t-sm">面向人群</span>
+          <span class="t-xs t-muted">
+            只影响 AI 解读的用词与解释深度，结论判断与字数契约不变；切换后会另存一份缓存与解读记录，
+            不会覆盖另一版的解读。
+          </span>
+          <div class="dm-options">
+            <button
+              v-for="a in AUDIENCES"
+              :key="a.value"
+              type="button"
+              class="dm-option"
+              :class="{ on: settings.aiAudience === a.value }"
+              :aria-pressed="settings.aiAudience === a.value"
+              @click="setAudience(a.value)"
+            >
+              <strong>{{ a.label }}</strong>
+              <span class="t-xs">{{ a.hint }}</span>
+            </button>
+          </div>
+          <p v-if="audienceError" class="t-xs msg-warning">{{ audienceError }}</p>
+        </div>
+
+        <!-- 单份 token 上限（v2.5.0）：批量生成时逐份独立适用 -->
+        <div class="budget-settings">
+          <span class="t-sm">单份解读 token 上限</span>
+          <span class="t-xs t-muted">
+            一份解读（含自动续写）的总预算；批量生成时每份独立计算，不再无限消耗。
+            填 0 表示不限制，按所选档位的默认额度执行。触顶时结果会标注「可能不完整」且不写入缓存，
+            调高上限后重新生成即可。
+          </span>
+          <div class="budget-field">
+            <HdField
+              v-model="tokenBudgetInput"
+              label="上限（tokens）"
+              type="number"
+              inputmode="numeric"
+              :hint="`0 不限制；限制值 ${MIN_TOKEN_BUDGET}–${MAX_TOKEN_BUDGET}`"
+              :error="tokenBudgetError"
+              @blur="saveTokenBudget"
+            />
+          </div>
+          <div class="actions">
+            <HdButton size="sm" @click="saveTokenBudget">保存上限</HdButton>
+          </div>
+        </div>
+
         <div v-if="settings.aiDetailMode !== 'concise'" class="step-mode">
           <span class="t-sm">多步编排方式</span>
           <span class="t-xs t-muted">仅影响「完整」版的多轮请求；并发失败会自动转回串行。</span>
@@ -1094,13 +1308,29 @@ header p {
   background: rgba(124, 58, 237, 0.1);
 }
 
-.step-mode {
+.step-mode,
+.audience-settings,
+.budget-settings {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: var(--sp-2);
   border: 1px dashed var(--border);
   border-radius: var(--radius-md);
+}
+
+/* ── v2.5.0：token 预算输入 / 模型选择列表 ───────────── */
+.budget-field {
+  display: grid;
+  grid-template-columns: minmax(0, 280px);
+}
+
+.model-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 190px;
+  overflow-y: auto;
 }
 
 /* ── 并发设置（T-C3）：复用既有变量与 HdField，不新增 CSS 变量 ── */

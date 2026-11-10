@@ -298,6 +298,133 @@ ipcMain.handle('file:open', async () => {
   }
 })
 
+/**
+ * AI 接口代理（v2.5.0）：在**主进程**里发出 ai 请求，绕开渲染进程的同源策略。
+ *
+ * 为什么必须这样：部分中转站不返回任何 CORS 响应头（OPTIONS 预检 403、
+ * POST 响应无 `access-control-allow-origin`）。带 `Authorization` 与
+ * `Content-Type: application/json` 的请求必然触发预检，于是渲染进程里这类
+ * 接口「永远连不上」，而同样的请求在主进程里是通的。
+ *
+ * 用 Electron 的 `net.request` 而不是 Node 的 http：前者走 Chromium 网络栈，
+ * 自动继承系统代理 / 证书设置，行为与用户在浏览器里访问一致。
+ * 密钥只在本进程内存中过一遍，不落盘、不写日志。
+ */
+const aiInflight = new Map()
+
+function abortAiRequest(id) {
+  const entry = aiInflight.get(id)
+  if (!entry) return
+  aiInflight.delete(id)
+  try {
+    entry.request.abort()
+  } catch {
+    /* 已结束的请求 abort 会抛错，忽略 */
+  }
+  entry.finish({ ok: false, status: 0, bodyText: '', error: '已取消', errorKind: 'cancelled' })
+}
+
+ipcMain.handle('ai:request', async (_e, payload = {}) => {
+  const {
+    id = `ai-${Date.now()}`,
+    url,
+    method = 'POST',
+    headers = {},
+    body,
+    timeoutMs = 60000,
+  } = payload
+
+  if (!url || !/^https?:\/\//i.test(String(url))) {
+    return { ok: false, status: 0, bodyText: '', error: '接口地址需以 http:// 或 https:// 开头' }
+  }
+
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (result) => {
+      if (settled) return
+      settled = true
+      aiInflight.delete(id)
+      clearTimeout(timer)
+      resolve(result)
+    }
+
+    let request
+    try {
+      request = net.request({ method, url: String(url), redirect: 'follow' })
+    } catch (error) {
+      resolve({
+        ok: false,
+        status: 0,
+        bodyText: '',
+        error: `无法发起请求：${String(error && error.message ? error.message : error)}`,
+      })
+      return
+    }
+
+    const timer = setTimeout(() => {
+      try {
+        request.abort()
+      } catch {
+        /* ignore */
+      }
+      finish({
+        ok: false,
+        status: 0,
+        bodyText: '',
+        error: `请求超时（${Math.round(timeoutMs / 1000)} 秒）`,
+        errorKind: 'timeout',
+      })
+    }, Math.max(1000, Math.min(3600000, Number(timeoutMs) || 60000)))
+
+    aiInflight.set(id, { request, finish })
+
+    // 只透传调用方显式给出的头；不额外伪造 Origin / Referer
+    for (const [k, v] of Object.entries(headers)) {
+      if (typeof v === 'string' && v) request.setHeader(k, v)
+    }
+
+    const chunks = []
+    request.on('response', (response) => {
+      const status = response.statusCode
+      response.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
+      response.on('end', () => {
+        const bodyText = Buffer.concat(chunks).toString('utf8')
+        finish({ ok: status >= 200 && status < 300, status, bodyText })
+      })
+      response.on('error', (error) => {
+        finish({
+          ok: false,
+          status,
+          bodyText: Buffer.concat(chunks).toString('utf8'),
+          error: String(error && error.message ? error.message : error),
+          errorKind: 'network',
+        })
+      })
+    })
+
+    request.on('error', (error) => {
+      const message = String(error && error.message ? error.message : error)
+      finish({
+        ok: false,
+        status: 0,
+        bodyText: '',
+        error: message,
+        // net.request 的超时/取消也会走到这里，但上面已各自处理；此处一律归为网络问题
+        errorKind: /abort/i.test(message) ? 'cancelled' : 'network',
+      })
+    })
+
+    if (body) request.write(String(body), 'utf8')
+    request.end()
+  })
+})
+
+ipcMain.on('ai:cancel', (_e, id) => abortAiRequest(id))
+
+app.on('before-quit', () => {
+  for (const id of [...aiInflight.keys()]) abortAiRequest(id)
+})
+
 ipcMain.on('window:minimize', () => mainWindow && mainWindow.minimize())
 ipcMain.on('window:toggle-maximize', () => {
   if (!mainWindow) return

@@ -145,6 +145,8 @@ export function useAiReading() {
         onUpdate: publish,
         aiConcurrency: settings.aiConcurrency,
         aiConcurrencyLimit: settings.aiConcurrencyLimit,
+        audience: settings.aiAudience,
+        tokenBudget: settings.aiTokenBudget,
         ...(options.fullPlan ?? {}),
       })
       if (own.signal.aborted) {
@@ -226,8 +228,15 @@ export function useAiReading() {
           options.chartSummary ?? (options.chart ? chartSummaryOf(options.chart) : undefined),
         detailMode: options.detailMode ?? settings.aiDetailMode,
         angle: options.angle,
+        audience: settings.aiAudience,
+        tokenBudget: settings.aiTokenBudget,
         signal: own.signal,
-        onStage: (e) => status.applyStage(e),
+        onStage: (e) => {
+          status.applyStage(e)
+          if (e.stage === 'completed' && e.truncated) {
+            ui.notify('本次输出已达到 token 上限，内容可能不完整；可调高上限后重新生成', 'info')
+          }
+        },
       })
       if (own.signal.aborted) {
         ui.setAiLoading(false)

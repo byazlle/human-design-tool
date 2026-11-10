@@ -39,11 +39,31 @@ interface DesktopFileApi {
   savePdf?: (payload: SavePdfPayload) => Promise<FileResult>
 }
 
+interface DesktopAiApi {
+  request: (payload: {
+    id: string
+    url: string
+    method: string
+    headers: Record<string, string>
+    body?: string
+    timeoutMs: number
+  }) => Promise<{
+    ok?: boolean
+    status?: number
+    bodyText?: string
+    error?: string
+    errorKind?: string
+  }>
+  cancel?: (id: string) => void
+}
+
 interface DesktopBridge {
   isDesktop?: boolean
   platform?: string
   version?: string
   file: DesktopFileApi
+  /** v2.5.0：AI 接口代理（老安装包没有这个字段，调用方需按缺失降级） */
+  ai?: DesktopAiApi
 }
 
 /** 网页 / 安卓下返回 null */

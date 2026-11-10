@@ -31,7 +31,7 @@ const MODE_LABELS: Record<string, string> = { concise: '精简', detailed: '详�
 const expanded = ref<string | null>(null)
 
 function keyOf(r: ReadingRecord): string {
-  return `${r.scope}|${r.ref}|${r.mode}`
+  return `${r.scope}|${r.ref}|${r.mode}|${r.audience ?? 'pro'}`
 }
 
 function toggle(r: ReadingRecord) {
@@ -65,7 +65,7 @@ function doDelete() {
   const r = pendingDelete.value
   pendingDelete.value = null
   if (!r) return
-  readings.remove(r.archiveId, r.scope, r.ref, r.mode)
+  readings.remove(r.archiveId, r.scope, r.ref, r.mode, r.audience ?? 'pro')
   if (expanded.value === keyOf(r)) expanded.value = null
   ui.notify('已删除该条解读')
 }
@@ -73,7 +73,11 @@ function doDelete() {
 const exportAll = computed(() => {
   const parts = list.value.map(
     (r) =>
-      `# ${r.title}\n（${MODE_LABELS[r.mode] ?? r.mode} · ${fmtTime(r.at)}${isStale(r) ? ' · 口径已更新' : ''}）\n\n${r.content}`,
+      `# ${r.title}\n（${MODE_LABELS[r.mode] ?? r.mode} · ${
+        r.audience === 'plain' ? '简明版' : '专业版'
+      } · ${fmtTime(r.at)}${isStale(r) ? ' · 口径已更新' : ''}${
+        r.truncated ? ' · 内容可能不完整（已达 token 上限）' : ''
+      }）\n\n${r.content}`,
   )
   return parts.join('\n\n---\n\n')
 })
@@ -105,6 +109,8 @@ function copyAll() {
               <span class="title ellipsis">{{ r.title }}</span>
               <span class="tags">
                 <span class="tag">{{ MODE_LABELS[r.mode] ?? r.mode }}</span>
+                <span class="tag ghost">{{ r.audience === 'plain' ? '简明版' : '专业版' }}</span>
+                <span v-if="r.truncated" class="tag warn" title="本次输出已达到单份 token 上限，结尾可能缺失；可调高上限后重新生成">可能不完整</span>
                 <span v-if="isStale(r)" class="tag warn" title="提示词或计算内核已更新，该解读口径可能已过时">口径已更新</span>
                 <span class="tag ghost">{{ fmtTime(r.at) }}</span>
               </span>
