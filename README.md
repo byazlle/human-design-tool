@@ -1,11 +1,11 @@
-# 人类图工具（HumanDesignTool）v2.1.0
+# 人类图工具（HumanDesignTool）v2.3.0
 
 > 仓库地址（GitHub）：https://github.com/byazlle/human-design-tool
 
 本地优先的人类图（Human Design）排盘 / 合盘 / 解读工具。所有星历计算与档案存储都在本机完成，
 **无后端、无账号、出生信息不出设备**。
 
-技术栈：Vue 3 + Vite + TypeScript + Pinia + Vue Router；人体图为纯前端 SVG 渲染（两套绘图程序）；
+技术栈：Vue 3 + Vite + TypeScript + Pinia + Vue Router；人体图为纯前端 SVG 渲染（单套底图对齐版式）；
 桌面端用 **Electron** 壳（`desktop/`），安卓端用**原生 WebView 壳**（`android/`），
 都产出可直接安装的产物。
 
@@ -16,7 +16,7 @@
 ```bash
 npm install
 npm run dev        # http://127.0.0.1:5173
-npm test           # 内核 + 交互 + 数据管理 + 几何 + AI 提示词（86 项）
+npm test           # 内核 + 交互 + 数据管理 + 几何 + AI 并发与提示词（226 项）
 npm run build      # 产出 dist/（可直接静态托管）
 ```
 
@@ -90,12 +90,13 @@ tests/               几何、星历、Markdown 渲染
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/RENDERING.md](docs/RENDERING.md) | 渲染规则：闸门标注、通道线型（含 20-57 枢纽走线）、中心填充、两版绘图程序、坐标来源 |
+| [docs/RENDERING.md](docs/RENDERING.md) | 渲染规则：闸门标注、通道线型（含 20-57 枢纽走线）、中心填充、坐标来源 |
 | [docs/spec/HD-SPEC-v2.0.md](docs/spec/HD-SPEC-v2.0.md) | **计算规范 v2.0**：15 项标准的选定与依据、数据模型、状态机、交互规范、验收标准 |
 | [docs/spec/OPTIMIZATION-BACKLOG-v2.0.md](docs/spec/OPTIMIZATION-BACKLOG-v2.0.md) | 界面与交互优化清单（U-01…U-30，含目标与验收） |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 模块划分、数据流、状态管理、打包链路、自检方式 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
-| [功能与数据补全清单.md](功能与数据补全清单.md) | 需求落地清单与待办路线 |
+| [docs/HANDOVER-2026-11-10.md](docs/HANDOVER-2026-11-10.md) | **最新交接报告**：当前状态、GitHub 仓库实况、推进方式、逐项落地核查 |
+| [docs/PLAN-v2.4.0.md](docs/PLAN-v2.4.0.md) | v2.4.0 迭代计划（AI 提示词优化 / 批量生成解读 / 页面架构梳理） |
 
 ## 构建与发布
 
@@ -116,7 +117,7 @@ python scripts/push-api.py           # 网络受限时用 Git Data API 推送提
 - ✅ **L1 绝对锚点（v1.2.0 新增）**：用 Jovian 官方公布的 Rave New Year 时刻反算 —— 2024-01-22 13:18 UTC / 2026-01-22 00:54 UTC 的太阳视黄经为 **302.0002°**，本引擎映射为 **Gate 41.1**（旧口径会得到 60.6）。复现：`node scripts/check-mandala-anchor.mjs`；
 - ✅ 4 个跨时区样本（含 1990 中国夏令时、1972 北美、1964 欧洲跨年）：**闸门集合、通道集合、类型、权威、人生角色、中心集合**与 `free-human-design` 一致；**爻位有 4 处差异**（Mercury×2、Mars、Jupiter），系该实现的锚点偏移 0.041667° 所致 —— 本版以 Jovian 锚点为准；
 - ✅ 1950–2035 随机 200 个时刻 × 13 天体 = 2600 个位置：**黄经层面**无分歧（唯一 1 例为参照实现月球截断级数残差 0.011°）；
-- ✅ 单元测试 **138 项**（14 个文件）：盘序边界（6 位精度锚点 + Rave New Year）、闸门三态、交叉四闸门顺序、通道路由、合盘归属与四象限、关系场完整版编排（合规事实块 / 任务清单 / 注入生效）、同人 id 拒绝、多 AI 配置迁移与持久化、档案删除与撤销、备份导入（含旧 schema）、几何（人体图形状/闸门布点/枢纽辐条/剪影包围盒）、AI 提示词契约与缓存键、报告四格式导出、画布排布、自定义页面布局、时区换算、Markdown 渲染与防注入；
+- ✅ 单元测试 **226 项**（20 个文件）：盘序边界（6 位精度锚点 + Rave New Year）、闸门三态、交叉四闸门顺序、通道路由、合盘归属与四象限、关系场完整版编排（合规事实块 / 任务清单 / 注入生效）、同人 id 拒绝、多 AI 配置迁移与持久化、档案删除与撤销、备份导入（含旧 schema）、几何（人体图形状/闸门布点/枢纽辐条/剪影包围盒）、AI 提示词契约与缓存键、AI 并发调度与验收、报告四格式导出、画布排布、自定义页面布局、时区换算、Markdown 渲染与防注入；
 - ✅ 桌面壳端到端自检 **29/29**（`HD_SMOKE=1`）：安全 origin、localStorage、空态、示例档案、人体图点亮、通道与闸门清单、类型详解、星体两翼、点击未激活闸门不误亮、批量解读条、AI 未配置护栏、深色模式、合盘维度、设置页、新建页；
 - ✅ 安装包实测：NSIS 静默安装 → 运行安装后程序 → 同一套自检；APK 用静态服务复现 WebView 加载路径；
 - ⚠️ 未在真实 390px 设备上截图（headless Chrome 有最小窗口宽度限制），手机端验证覆盖 ≤768 分支；

@@ -28,9 +28,8 @@ android/assets/www/
 
 # 打包失败残留（output/ 下的文档保留）
 output/desktop/
-
-# 打包失败残留（output/ 下的文档保留）
-output/desktop/
+# electron-builder 未完成的解包目录（体积以百 MB 计，可重建）
+*-unpacked.tmp/
 
 # 验证截图与临时产物
 .shots/
