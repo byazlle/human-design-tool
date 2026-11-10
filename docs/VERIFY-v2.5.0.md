@@ -73,7 +73,19 @@ javac -source 11 -target 11 -encoding UTF-8 -classpath android-34/android.jar Ma
 
 新增回归：`tests/ai-v250.test.ts`（17 项，预算折算 / 受众提示词与缓存键 / 模型列表解析与错误分支 / 触顶不写缓存 / 连通性测试走统一传输层），`tests/aiBatchReading.test.ts` 追加 2 项（受众与预算透传、并发触顶不串台）。
 
-## 五、接手必读
+## 五、发布状态（2026-11-10 22:32 更新）
+
+| 项 | 结果 |
+| --- | --- |
+| 提交 / 推送 | `f9a00bf`，`b0ea5c2..f9a00bf` 已推 main |
+| tag | annotated `v2.5.0` → `f9a00bf`，已推 |
+| CI | run `#53`（push main）与 `#54`（tag）**均 success** |
+| Release | CI 的 `release` job 自动创建 `440463284`（非 draft / 非 prerelease），附 `HumanDesign-Setup-2.5.0.exe` **80,580,758 B**、`HumanDesign-2.5.0.apk` **632,494 B** |
+| 归档 | `rlt-archive/v2.5.0/` 源码包 + MANIFEST 已生成，索引含 **12 个版本** |
+
+**归档里没有本地安装包副本**：本机到 `github.com` / release 下载域的 TLS 通道受限，Node fetch 与 PowerShell `Invoke-WebRequest` 都失败（`ghfetch.mjs` 访问 API 也间歇失败，但 `git -c http.sslBackend=openssl` 推送正常）。`archive-version.mjs` 本来就允许安装包缺失，MANIFEST 按设计指向 GitHub Release。要补本地副本，需在联网正常的环境下载两个文件到 `release/desktop/` 与 `release/android/`，再**不带参数**跑一次 `node scripts/archive-version.mjs`（带参数会覆盖索引里其余版本的行）。
+
+## 六、接手必读
 
 1. **`PROMPT_VERSION` 是静态契约**：`tests/ai-prompt.test.ts`、`tests/aiClientContinuation.test.ts`、`tests/aiConcurrency.acceptance.test.ts` 三处硬编码版本号，改提示词版本必须同步改三处断言。
 2. **提示词正文在 `docs/spec/AI-PROMPT-v2.0.md` 有镜像**，`sync-prompt-spec.mjs --check` 会逐字比对，改 `PROMPT_SYSTEM_*` 前先看该脚本。受众两段是**附加**在正文之后的，不在规范镜像里。

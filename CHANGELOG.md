@@ -2,7 +2,7 @@
 
 遵循「主版本.功能版本.修订版本」；版本号唯一来源为根 `package.json`。
 
-## v2.5.0（开发中）
+## v2.5.0（2026-11-10）
 
 > 主题：**单份 token 预算 + 专业版/简明版受众 + 通用中转站兼容与模型自动获取**。
 > 不改计算规则、盘面数据结构与人类图业务口径。
@@ -31,6 +31,7 @@
 - `npm run typecheck` 零错误；`npm test` **25 文件 / 323 项全绿**；`npm run build` 通过；`node scripts/sync-prompt-spec.mjs --check` 通过。
 - 安卓 `MainActivity.java` 按构建脚本同参（JDK 17 / `-source 11 -encoding UTF-8` / android-34）本地 `javac` 编译通过。
 - 新增回归 `tests/ai-v250.test.ts`（17 项）与 `tests/aiBatchReading.test.ts` 追加 2 项，钉住预算折算、受众提示词与缓存键、模型列表解析与错误分支、触顶不写缓存、批量触顶不串台。
+- 提交 `f9a00bf` 已推 main；tag `v2.5.0`；CI 两次 run（main / tag）均 success，Release 由 CI 自动创建并附 Windows 与 Android 安装包；`rlt-archive/v2.5.0/` 已归档源码包与清单。
 
 ## v2.4.0（2026-11-10）
 
