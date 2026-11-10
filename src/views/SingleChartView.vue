@@ -11,13 +11,13 @@ import { useSettingsStore } from '../stores/settings'
 import { useReadingsStore, type ReadingRecord } from '../stores/readings'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { useAiReading } from '../composables/useAiReading'
-import { copyAiResult, saveAiResult } from '../composables/useAiResultActions'
+import { saveAiResult } from '../composables/useAiResultActions'
 import AppToolbar from '../components/base/AppToolbar.vue'
 import HumanDesignBodyGraph from '../components/chart/HumanDesignBodyGraph.vue'
 import BoardMeta from '../components/chart/BoardMeta.vue'
 import ActivationPanels from '../components/chart/ActivationPanels.vue'
 import GateChannelPanel from '../components/panel/GateChannelPanel.vue'
-import AiReadingPanel from '../components/panel/AiReadingPanel.vue'
+import AiReadingHost from '../components/panel/AiReadingHost.vue'
 import HdButton from '../components/base/HdButton.vue'
 import EmptyState from '../components/base/EmptyState.vue'
 import IconButton from '../components/base/IconButton.vue'
@@ -53,9 +53,6 @@ const layout = usePageLayoutStore()
 const {
   state: aiState,
   run: runAi,
-  retry: retryAi,
-  abort: abortAi,
-  configured: aiConfigured,
 } = useAiReading()
 
 const id = computed(() => String(route.params.id ?? ''))
@@ -232,10 +229,6 @@ async function onBulkAi(payload: BulkPayload) {
 
 async function requestFullReading() {
   await requestUnifiedAi({ dimensions: ['channels', 'gates', 'centers', 'strategy', 'definition', 'authority', 'cross', 'profile'], angleKey: angleKey.value, customDirection: '' })
-}
-
-function copyAi() {
-  void copyAiResult(aiState.value.content)
 }
 
 function saveAi() {
@@ -588,24 +581,7 @@ async function regenerateFromRecord(record: ReadingRecord) {
       @cancel="confirmDelete = false"
     />
 
-    <AiReadingPanel
-      :open="aiState.open"
-      :title="aiState.title"
-      :content="aiState.content"
-      :loading="aiState.loading"
-      :error="aiState.error"
-      :configured="aiConfigured"
-      :mode="settings.aiDetailMode"
-      :report="aiState.report"
-      :progress="aiState.progress"
-      :meta="{ chartName: archive?.name }"
-      @close="ui.closeAi()"
-      @copy="copyAi"
-      @save="saveAi"
-      @regenerate="retryAi"
-      @cancel="abortAi"
-      @settings="goSettings"
-    />
+    <AiReadingHost :chart-name="archive?.name" @save="saveAi" />
 
     <ArchiveReadingsDrawer
       :open="readingsOpen"

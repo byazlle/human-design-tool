@@ -101,8 +101,11 @@ export function selectionTitle(sel: { kind: string; ref: string | number } | nul
 /**
  * 按勾选维度拼装统一解读的事实块。
  *
- * 维度顺序固定为 channels → gates → centers → profile → strategy → authority → definition → cross，
- * 与 v2.3.0 逐字一致：顺序一变，事实块字符串就变，缓存键随之失效。
+ * ★ 维度输出顺序固定为 profile → strategy → authority → definition → cross
+ *   → channels → gates → centers，与 v2.3.0 逐字一致：顺序一变，事实块字符串
+ *   就变，`aiClient.cacheKey()` 随之失效，已缓存的解读全部作废。
+ *   tests/chartFacts.test.ts 用「同一维度集合的两种勾选顺序产出同一字符串」
+ *   把这条口径钉住。
  */
 export function buildUnifiedFacts(chart: BodyGraph, dims: ReadingDimKey[]): string {
   const c = chart

@@ -51,6 +51,19 @@ interface RunOptions {
 /** 上一次请求参数：仅用于「重试」，不写入 ui 状态 */
 let lastOptions: RunOptions | null = null
 
+/**
+ * 在途请求的控制器。
+ *
+ * ★ 必须是**模块级**而不是 `useAiReading()` 的闭包变量：
+ *   同一个 AI 解读面板可能由两个组件分别调用本 composable——
+ *   视图负责发起（`run`），`AiReadingHost` 负责「中断」按钮与关闭（`abort`）。
+ *   若 controller 是每个实例各持一份，host 侧的 `abort()` 看到的是自己的
+ *   `null`，判定「没有在途请求」直接返回，中断按钮静默失效。
+ *   全局同时只可能存在一次 AI 解读（`ui.aiReading` 是单一槽位、
+ *   `useAiStatus` 是模块级单例），所以共用一份 controller 与既有语义一致。
+ */
+let activeController: AbortController | null = null
+
 function errorKindOf(err: unknown): AiError['kind'] {
   return err instanceof AiError ? err.kind : 'network'
 }
@@ -70,12 +83,10 @@ export function useAiReading() {
   const state = computed(() => ui.aiReading)
   const configured = computed(() => settings.aiConfigured)
 
-  let controller: AbortController | null = null
-
   function abort() {
-    const hadController = Boolean(controller)
-    controller?.abort()
-    controller = null
+    const hadController = Boolean(activeController)
+    activeController?.abort()
+    activeController = null
     // 主动取消后必须退出 loading，否则面板会一直停在骨架屏
     if (hadController) {
       ui.setAiLoading(false)
@@ -186,7 +197,7 @@ export function useAiReading() {
     // abort() 可能把上一轮状态标成 cancelled；begin() 在它之后重置，避免串台
     status.begin(mode, settings.ai.timeoutMs)
     const own = new AbortController()
-    controller = own
+    activeController = own
     if (externalSignal) {
       if (externalSignal.aborted) own.abort()
       else externalSignal.addEventListener('abort', () => own.abort(), { once: true })
@@ -200,7 +211,7 @@ export function useAiReading() {
       try {
         await runFull(options, own)
       } finally {
-        if (controller === own) controller = null
+        if (activeController === own) activeController = null
       }
       return
     }
@@ -236,7 +247,7 @@ export function useAiReading() {
       const kind = errorKindOf(err)
       status.finish(terminalPhaseOf(kind), kind)
     } finally {
-      if (controller === own) controller = null
+      if (activeController === own) activeController = null
     }
   }
 

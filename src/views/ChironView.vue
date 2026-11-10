@@ -12,7 +12,7 @@ import { useArchiveStore } from '../stores/archive'
 import { useUiStore } from '../stores/ui'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { useAiReading } from '../composables/useAiReading'
-import { copyAiResult, saveAiResult } from '../composables/useAiResultActions'
+import { saveAiResult } from '../composables/useAiResultActions'
 import { useDrawingEngine } from '../composables/useDrawingEngine'
 import { computeChironReturn } from '../services/chironChart'
 import AppToolbar from '../components/base/AppToolbar.vue'
@@ -20,7 +20,7 @@ import HumanDesignBodyGraph from '../components/chart/HumanDesignBodyGraph.vue'
 import BoardMeta from '../components/chart/BoardMeta.vue'
 import ActivationPanels from '../components/chart/ActivationPanels.vue'
 import PlanetColumn from '../components/chart/PlanetColumn.vue'
-import AiReadingPanel from '../components/panel/AiReadingPanel.vue'
+import AiReadingHost from '../components/panel/AiReadingHost.vue'
 import HdButton from '../components/base/HdButton.vue'
 import EmptyState from '../components/base/EmptyState.vue'
 
@@ -32,9 +32,6 @@ const { isMobile } = useBreakpoint()
 const {
   state: aiState,
   run: runAi,
-  retry: retryAi,
-  abort: abortAi,
-  configured: aiConfigured,
 } = useAiReading()
 const engine = useDrawingEngine()
 
@@ -132,10 +129,6 @@ function goBack() {
 
 function goSettings() {
   router.push('/settings')
-}
-
-function copyAi() {
-  void copyAiResult(aiState.value.content)
 }
 
 function saveAi() {
@@ -270,23 +263,7 @@ watch(
       </div>
     </main>
 
-    <AiReadingPanel
-      :open="aiState.open"
-      :title="aiState.title"
-      :content="aiState.content"
-      :loading="aiState.loading"
-      :error="aiState.error"
-      :configured="aiConfigured"
-      :report="aiState.report"
-      :progress="aiState.progress"
-      :meta="{ chartName: archive?.name }"
-      @close="ui.closeAi()"
-      @copy="copyAi"
-      @save="saveAi"
-      @regenerate="retryAi"
-      @cancel="abortAi"
-      @settings="goSettings"
-    />
+    <AiReadingHost :chart-name="archive?.name" @save="saveAi" />
   </div>
 </template>
 

@@ -10,7 +10,7 @@ import { useBoardStore } from '../stores/board'
 import { useUiStore } from '../stores/ui'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { useAiReading } from '../composables/useAiReading'
-import { copyAiResult, saveAiResult } from '../composables/useAiResultActions'
+import { saveAiResult } from '../composables/useAiResultActions'
 import { getChannel, getGate, CENTER_TEXT } from '../services/interpretations'
 import { CENTER_LABELS, type Archive, type CenterId } from '../types/hd'
 import AppToolbar from '../components/base/AppToolbar.vue'
@@ -18,7 +18,7 @@ import HumanDesignBodyGraph from '../components/chart/HumanDesignBodyGraph.vue'
 import StarList from '../components/chart/StarList.vue'
 import BoardMeta from '../components/chart/BoardMeta.vue'
 import GateChannelPanel from '../components/panel/GateChannelPanel.vue'
-import AiReadingPanel from '../components/panel/AiReadingPanel.vue'
+import AiReadingHost from '../components/panel/AiReadingHost.vue'
 import EmptyState from '../components/base/EmptyState.vue'
 import IconButton from '../components/base/IconButton.vue'
 
@@ -31,9 +31,6 @@ const { isMobile } = useBreakpoint()
 const {
   state: aiState,
   run: runAi,
-  retry: retryAi,
-  abort: abortAi,
-  configured: aiConfigured,
 } = useAiReading()
 
 const filter = { showDecimals: true, showColorToneBase: true, sharedOnly: false }
@@ -119,10 +116,6 @@ async function requestAi() {
     offline: offlineText.value,
     chart: panelChart.value,
   })
-}
-
-function copyAi() {
-  void copyAiResult(aiState.value.content)
 }
 
 function saveAi() {
@@ -240,22 +233,7 @@ function goSettings() {
       />
     </main>
 
-    <AiReadingPanel
-      :open="aiState.open"
-      :title="aiState.title"
-      :content="aiState.content"
-      :loading="aiState.loading"
-      :error="aiState.error"
-      :configured="aiConfigured"
-      :report="aiState.report"
-      :progress="aiState.progress"
-      @close="ui.closeAi()"
-      @copy="copyAi"
-      @save="saveAi"
-      @regenerate="retryAi"
-      @cancel="abortAi"
-      @settings="goSettings"
-    />
+    <AiReadingHost @save="saveAi" />
   </div>
 </template>
 

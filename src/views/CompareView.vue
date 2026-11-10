@@ -13,12 +13,12 @@ import AppToolbar from '../components/base/AppToolbar.vue'
 import EmptyState from '../components/base/EmptyState.vue'
 import HdButton from '../components/base/HdButton.vue'
 import HumanDesignBodyGraph from '../components/chart/HumanDesignBodyGraph.vue'
-import AiReadingPanel from '../components/panel/AiReadingPanel.vue'
+import AiReadingHost from '../components/panel/AiReadingHost.vue'
 import { useArchiveStore } from '../stores/archive'
 import { useUiStore } from '../stores/ui'
 import { useSettingsStore } from '../stores/settings'
 import { useAiReading } from '../composables/useAiReading'
-import { copyAiResult, saveAiResult } from '../composables/useAiResultActions'
+import { saveAiResult } from '../composables/useAiResultActions'
 import { chartSummaryOf } from '../services/aiClient'
 import {
   relationshipFactBlock,
@@ -36,9 +36,6 @@ const settings = useSettingsStore()
 const {
   state: aiState,
   run: runAi,
-  retry: retryAi,
-  abort: abortAi,
-  configured: aiConfigured,
 } = useAiReading()
 
 const all = computed(() => archiveStore.archives)
@@ -162,10 +159,6 @@ async function requestCompareAi() {
   })
 }
 
-function copyAi() {
-  void copyAiResult(aiState.value.content)
-}
-
 function saveAi() {
   // 双盘对比跨两份档案，解读归属主档案（A），ref 记下 B 以便区分对比组合
   saveAiResult({
@@ -270,24 +263,7 @@ function saveAi() {
       </section>
     </main>
 
-    <AiReadingPanel
-      :open="aiState.open"
-      :title="aiState.title"
-      :content="aiState.content"
-      :loading="aiState.loading"
-      :error="aiState.error"
-      :configured="aiConfigured"
-      :mode="settings.aiDetailMode"
-      :report="aiState.report"
-      :progress="aiState.progress"
-      :meta="{ chartName: `${pairNames.a} × ${pairNames.b}` }"
-      @close="ui.closeAi()"
-      @copy="copyAi"
-      @save="saveAi"
-      @regenerate="retryAi"
-      @cancel="abortAi"
-      @settings="goSettings"
-    />
+    <AiReadingHost :chart-name="`${pairNames.a} × ${pairNames.b}`" @save="saveAi" />
   </div>
 </template>
 

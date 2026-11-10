@@ -15,7 +15,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { useAiReading } from '../composables/useAiReading'
 import { relationshipFullPlan, relationshipSummary } from '../services/aiRelationshipReading'
-import { copyAiResult, saveAiResult } from '../composables/useAiResultActions'
+import { saveAiResult } from '../composables/useAiResultActions'
 import {
   COMPOSITE_DIMENSIONS,
   customDimension,
@@ -32,7 +32,7 @@ import CompositeToolbar from '../components/composite/CompositeToolbar.vue'
 import RelationshipChannels from '../components/composite/RelationshipChannels.vue'
 import CompositePlanets from '../components/composite/CompositePlanets.vue'
 import GateChannelPanel from '../components/panel/GateChannelPanel.vue'
-import AiReadingPanel from '../components/panel/AiReadingPanel.vue'
+import AiReadingHost from '../components/panel/AiReadingHost.vue'
 import HumanDesignBodyGraph from '../components/chart/HumanDesignBodyGraph.vue'
 import HdToggle from '../components/base/HdToggle.vue'
 import HdButton from '../components/base/HdButton.vue'
@@ -48,9 +48,6 @@ const { isMobile } = useBreakpoint()
 const {
   state: aiState,
   run: runAi,
-  retry: retryAi,
-  abort: abortAi,
-  configured: aiConfigured,
 } = useAiReading()
 
 const dimensionKey = ref('love')
@@ -304,10 +301,6 @@ function goNew() {
 }
 function goSettings() {
   router.push('/settings')
-}
-
-function copyAi() {
-  void copyAiResult(aiState.value.content)
 }
 
 function saveAi() {
@@ -575,24 +568,7 @@ function saveAi() {
       />
     </template>
 
-    <AiReadingPanel
-      :open="aiState.open"
-      :title="aiState.title"
-      :content="aiState.content"
-      :loading="aiState.loading"
-      :error="aiState.error"
-      :configured="aiConfigured"
-      :mode="settings.aiDetailMode"
-      :report="aiState.report"
-      :progress="aiState.progress"
-      :meta="{ chartName: `${pairNames.a} × ${pairNames.b}` }"
-      @close="ui.closeAi()"
-      @copy="copyAi"
-      @save="saveAi"
-      @regenerate="retryAi"
-      @cancel="abortAi"
-      @settings="goSettings"
-    />
+    <AiReadingHost :chart-name="`${pairNames.a} × ${pairNames.b}`" @save="saveAi" />
   </div>
 </template>
 

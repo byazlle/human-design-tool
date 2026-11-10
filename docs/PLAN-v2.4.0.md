@@ -47,32 +47,62 @@ D:\AIws\txgzml\rlt-archive\
 
 ## 阶段三：v2.4.0 开发
 
-### 3.1 AI 提示词优化
+### 3.1 AI 提示词优化 ✅
 
-现状：`src/services/aiClient.ts`（39KB）承载四套全文提示词，`PROMPT_VERSION = 3.1`，
-提示词正文一改必须 +1 版本号（同时进入缓存键）。规范文档在 `docs/spec/AI-PROMPT-v2.0.md`（34KB），
-由 `scripts/sync-prompt-spec.mjs` 同步。
+现状：`src/services/aiClient.ts` 承载四套全文提示词，`PROMPT_VERSION` 已由 `3.1` 升到 `3.2`
+（提示词正文一改必须 +1 版本号，同时进入缓存键）。规范文档在 `docs/spec/AI-PROMPT-v2.0.md`，
+由 `scripts/sync-prompt-spec.mjs` 同步（`--check` 可校验）。
 
-### 3.2 批量生成解读（本次主功能）
+本轮改动：
+- 三套提示词（精简 / 详细 / 完整分项）新增一致的【与事实块的分工】：禁止把事实块与
+  离线释义里的内容换种说法再讲一遍，要写它们之上才成立的东西。
+- 字数从硬指标降为上限：短盘面不要求凑满下限，篇幅让给真正复杂的结构。
+- 顺带修复批量生成的两处真实缺陷（见 `aiBatchReading.ts`）：`chartSummary` 缺失导致
+  缓存键与手动路径分裂；`angle` 被塞入任务标题导致上下文口径不一致。
 
-需求：对档案库中的多个档案批量生成 AI 解读，复用 v2.3.0 已有的并发调度
-（`src/services/aiConcurrency.ts`：`resolveSchedule` / `DEFAULT_AI_CONCURRENCY = 3` / `DEFAULT_AI_CONCURRENCY_LIMIT = 64`）。
+### 3.2 批量生成解读（本次主功能）✅
 
-要点：
-- 选择范围（全部 / 选中 / 按筛选结果）
-- 解读档位与 scope 选择（复用 `AiDetailMode`）
-- 并发上限沿用既有设置项，不新增第二套并发概念
-- 进度可见（N/总、成功/失败/跳过）、可中断、可续跑
-- 失败项可单独重试；已缓存的档案跳过（缓存键已含提示词版本+内核版本+baseUrl+model+Key 短哈希）
-- 结果落库：解读文本需可持久化到档案（当前 AI 解读是否存在 archive 里需先确认）
+需求已全部落地：对档案库中的多个档案批量生成 AI 解读，复用 v2.3.0 已有的并发调度。
 
-### 3.3 全站页面架构梳理优化
+| 要点 | 落地 |
+| --- | --- |
+| 选择范围 | 全部 / 已勾选（发起前实时预检「将生成 N 份 / 跳过 M 份」） |
+| 解读档位与 scope | 三档 `AiDetailMode`；维度 8 项、角度 8 项 + 自定义方向 |
+| 并发上限 | 沿用既有设置项，不新增第二套并发概念 |
+| 进度可见 | `ui.batch` 常驻状态条，切页可见；可中断，已完成项保留 |
+| 失败可续跑 | 失败项单独重跑，只重跑上次失败的 |
+| 缓存复用 | 与手动解读共用 scope/ref/offline/chartSummary，缓存键逐字相同（已加测试） |
+| 结果落库 | 新增 `src/stores/readings.ts`（`hdt.ai.readings.v1`），每档每档案保留 12 条 |
+
+新增文件：`services/chartFacts.ts`、`services/aiAttempt.ts`、`services/aiBatchReading.ts`、
+`composables/useAiBatch.ts`、`stores/readings.ts`、
+`components/archive/{BatchReadingDialog,BatchReadingStatus,ArchiveReadingsDrawer}.vue`、
+`tests/aiBatchReading.test.ts`（20 项）。
+
+### 3.3 全站页面架构梳理优化 ✅
 
 范围：`src/views/` 8 个视图 + `src/components/` + `src/styles/`。
 沿用 v2.3.0 已建立的 `pageLayout` / `navigationSource` 抽象，不推倒重来。
 
+本轮只收敛**确属重复**的部分，不做形态改造：
+
+| 问题 | 落地 |
+| --- | --- |
+| 5 个盘面视图各自复制 18 行 `<AiReadingPanel>` 绑定（9 props + 6 事件） | 抽出 `components/panel/AiReadingHost.vue`；视图退化为 `<AiReadingHost :chart-name="…" @save="saveAi" />` |
+| 5 份 `copyAi()` / `goSettings()` / `retryAi` / `abortAi` 包装 | 移入 host；视图只保留 `saveAi`（归属判定是视图的业务事实） |
+| `useAiReading()` 被视图与 host 分别实例化，`abort()` 打不到在途请求 | controller 由闭包变量改为**模块级**共用（`ui.aiReading` 与 `useAiStatus` 本就是单例，语义一致） |
+| `chartFacts.ts` 顶部注释写的维度顺序与实现不符 | 订正注释，并加测试钉住真实顺序 |
+
+**刻意不改**（避免无收益的形态改造）：`class="page page-shell"` 各处保留——它只是
+`base.css` 的两个工具类组合，再抽一层 wrapper 只会增加间接层；各视图 `goSettings`
+保留——`AppToolbar` / `AiConfigBadge` 的 `@settings` 是各自的事件契约，收敛成共享函数
+并不减少重复量，却让「哪个组件为什么去设置页」变得不明确。
+
 ## 待确认的开放问题
 
-1. AI 解读结果当前是否持久化到 archive？若否，批量生成后结果会丢（需先补持久化）。
-2. `交接文件夹/` 是否入库？
-3. 推送走 REST API（稳定）还是等 `github.com:443` 恢复走 git push？
+已解决：
+1. ✅ AI 解读结果此前不落盘到 archive —— v2.4.0 已补 `stores/readings.ts`。
+2. ✅ `交接文件夹/` 已入库（286,868 字节）。
+3. ✅ 推送走 git push（`-c http.sslBackend=openssl -c credential.helper=`），
+   `github.com:443` 仍会间歇 reset，用退避重试；REST API 作为查询通道（`scripts/ghfetch.mjs`）。
+
