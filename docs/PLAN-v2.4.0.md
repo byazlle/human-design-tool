@@ -106,3 +106,15 @@ D:\AIws\txgzml\rlt-archive\
 3. ✅ 推送走 git push（`-c http.sslBackend=openssl -c credential.helper=`），
    `github.com:443` 仍会间歇 reset，用退避重试；REST API 作为查询通道（`scripts/ghfetch.mjs`）。
 
+## 阶段四：发布与归档（已完成）
+
+- 版本号由根 `package.json` 单一来源升到 `2.4.0`（`desktop/package.json`、`package-lock.json` 跟随）。
+- tag `v2.4.0` → `69626da6`；Release [#440235941](https://github.com/byazlle/human-design-tool/releases/tag/v2.4.0)
+  附 `HumanDesign-Setup-2.4.0.exe`（76.84 MB）与 `HumanDesign-2.4.0.apk`（609.7 KB）。
+- CI（`Build Installers`）两次 run（main push `42801519370`、tag `42801526611`）均 success，
+  打包后冒烟自检通过；Release 与归档携带的 exe **取自 CI 产物**（通过冒烟的那一份），
+  非本地构建版本。
+- 归档：`D:\AIws\txgzml\rlt-archive\v2.4.0\`（源码包 + 双安装包 + MANIFEST 含 SHA256），
+  归档索引已重生成，含 v0.2.0 … v2.4.0 共 11 个版本。
+- 详细证据与踩坑备忘见 `docs/VERIFY-v2.4.0.md`。
+

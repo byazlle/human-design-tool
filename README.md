@@ -97,7 +97,8 @@ tests/               几何、星历、Markdown 渲染
 | [docs/spec/OPTIMIZATION-BACKLOG-v2.0.md](docs/spec/OPTIMIZATION-BACKLOG-v2.0.md) | 界面与交互优化清单（U-01…U-30，含目标与验收） |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 模块划分、数据流、状态管理、打包链路、自检方式 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本变更记录 |
-| [docs/HANDOVER-2026-11-10.md](docs/HANDOVER-2026-11-10.md) | **最新交接报告**：当前状态、GitHub 仓库实况、推进方式、逐项落地核查 |
+| [docs/HANDOVER-2026-11-10.md](docs/HANDOVER-2026-11-10.md) | **交接报告（v2.3.0 基线）**：仓库实况、Git 分叉根因与治理、逐项落地核查 |
+| [docs/VERIFY-v2.4.0.md](docs/VERIFY-v2.4.0.md) | **v2.4.0 交付与验证记录**：需求落地、新增文件、修复的三处缺陷、实跑证据与撞坑备忘 |
 | [docs/PLAN-v2.4.0.md](docs/PLAN-v2.4.0.md) | v2.4.0 迭代计划（AI 提示词优化 / 批量生成解读 / 页面架构梳理） |
 
 ## 构建与发布
