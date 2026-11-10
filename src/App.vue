@@ -3,14 +3,17 @@ import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useSettingsStore } from './stores/settings'
 import { useArchiveStore } from './stores/archive'
+import { useReadingsStore } from './stores/readings'
 import { useUiStore } from './stores/ui'
 import GlassBackdrop from './components/base/GlassBackdrop.vue'
 import WindowChrome from './components/base/WindowChrome.vue'
 import FloatingDock from './components/base/FloatingDock.vue'
 import ErrorBoundary from './components/base/ErrorBoundary.vue'
+import BatchReadingStatus from './components/archive/BatchReadingStatus.vue'
 
 const settings = useSettingsStore()
 const archive = useArchiveStore()
+const readings = useReadingsStore()
 const ui = useUiStore()
 const route = useRoute()
 
@@ -21,6 +24,9 @@ onMounted(() => {
   settings.init()
   // 算法版本对齐：曼陀罗偏移修正后，存量快照必须重算，否则用户会一直看到旧结果
   archive.syncEngineVersion()
+  // 清理孤儿解读：档案已在别处被删（例如清空数据）的记录不再保留。
+  // 放在启动而非删除时执行，是为了让「删除 → 5 秒内撤销」不丢已生成的解读。
+  readings.pruneOrphans(archive.archives.map((a) => a.id))
   if (isDesktopShell) document.body.classList.add('shell-desktop')
 })
 </script>
@@ -44,6 +50,9 @@ onMounted(() => {
   </div>
 
   <FloatingDock />
+
+  <!-- 批量生成解读的常驻状态：运行态存于 ui.batch，跨页面可见 -->
+  <BatchReadingStatus />
 
   <Transition name="toast">
     <div v-if="ui.toast" class="toast" :class="ui.toast.kind" role="status">

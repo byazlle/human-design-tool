@@ -7,27 +7,16 @@
 import { computed, ref } from 'vue'
 import HdButton from '../base/HdButton.vue'
 import { READING_ANGLES } from '../../services/readingAngles'
+import { READING_DIMENSIONS, type ReadingDimKey } from '../../services/chartFacts'
 
-export type DimKey =
-  | 'channels'
-  | 'gates'
-  | 'centers'
-  | 'strategy'
-  | 'definition'
-  | 'authority'
-  | 'cross'
-  | 'profile'
+/*
+ * 维度定义已上移到 `services/chartFacts.ts`：批量生成解读与手动解读必须共用同一份
+ * 维度清单（顺序、label、desc 一致），否则两边拼出的事实块不同、缓存键也随之分裂。
+ * `DimKey` 保留为别名，外部引用不用改。
+ */
+export type DimKey = ReadingDimKey
 
-const DIMENSIONS: Array<{ key: DimKey; label: string; desc: string }> = [
-  { key: 'channels', label: '已激活通道', desc: '全部已定义通道及其作用' },
-  { key: 'gates', label: '已激活闸门', desc: '全部激活闸门及主题' },
-  { key: 'centers', label: '九大能量中心', desc: '各中心的定义 / 开放状态' },
-  { key: 'strategy', label: '人生策略', desc: '能量类型对应的策略' },
-  { key: 'definition', label: '整体定义类型', desc: '一分人 / 二分人…' },
-  { key: 'authority', label: '内在权威', desc: '骶骨 / 情绪 / 直觉等' },
-  { key: 'cross', label: '轮回交叉', desc: '使命与人生主题' },
-  { key: 'profile', label: '人生角色类型', desc: '2/4、1/4 等及生产者类型' },
-]
+const DIMENSIONS: Array<{ key: DimKey; label: string; desc: string }> = READING_DIMENSIONS
 
 const props = defineProps<{ loading?: boolean }>()
 

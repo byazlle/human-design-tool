@@ -4,12 +4,14 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useArchiveStore } from '../stores/archive'
 import { useBoardStore, useCompositeStore } from '../stores/board'
+import { useSettingsStore } from '../stores/settings'
 import { useUiStore } from '../stores/ui'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import AppToolbar from '../components/base/AppToolbar.vue'
 import ArchiveCanvas from '../components/archive/ArchiveCanvas.vue'
 import MobileArchiveList from '../components/archive/MobileArchiveList.vue'
 import BulkActionBar from '../components/archive/BulkActionBar.vue'
+import BatchReadingDialog from '../components/archive/BatchReadingDialog.vue'
 import EmptyState from '../components/base/EmptyState.vue'
 import ConfirmDialog from '../components/base/ConfirmDialog.vue'
 import HdButton from '../components/base/HdButton.vue'
@@ -19,11 +21,26 @@ const router = useRouter()
 const archiveStore = useArchiveStore()
 const board = useBoardStore()
 const composite = useCompositeStore()
+const settings = useSettingsStore()
 const ui = useUiStore()
 const { isMobile } = useBreakpoint()
 
 const list = computed(() => archiveStore.filtered)
 const selected = computed(() => archiveStore.selectedIds)
+
+/* ── 批量生成解读（v2.4.0）────────────────────────── */
+const batchOpen = ref(false)
+/** 未配置 AI 时按钮仍可点，但会先引导去设置页，避免用户以为功能坏了 */
+function openBatch() {
+  if (!settings.aiConfigured) {
+    ui.notify('尚未配置 AI 接口，先到设置页填写接口地址与密钥', 'error', {
+      duration: 5000,
+      action: { label: '去设置', onClick: () => router.push('/settings') },
+    })
+    return
+  }
+  batchOpen.value = true
+}
 
 function open(id: string) {
   router.push(`/archive/${id}`)
@@ -156,6 +173,17 @@ function confirmRemove() {
       @settings="goSettings"
       @help="ui.notify('点击卡片「加入合盘」，选两份即可生成合盘。双击卡片打开完整盘。')"
     >
+      <template #right>
+        <button
+          v-if="list.length"
+          type="button"
+          class="batch-entry"
+          :title="settings.aiConfigured ? '为全部或选中的档案批量生成 AI 解读' : '尚未配置 AI 接口'"
+          @click="openBatch"
+        >
+          批量解读
+        </button>
+      </template>
     </AppToolbar>
 
     <main class="content content-shell">
@@ -205,8 +233,10 @@ function confirmRemove() {
     <div v-if="!isMobile && selected.length" class="bulk-dock">
       <BulkActionBar
         :count="selected.length"
+        :can-batch="settings.aiConfigured"
         @open="openBoards"
         @composite="makeComposite"
+        @batch="openBatch"
         @remove="onRemoveSelected"
         @clear="archiveStore.clearSelect()"
       />
@@ -228,6 +258,8 @@ function confirmRemove() {
       @confirm="confirmRemove"
       @cancel="cancelRemove"
     />
+
+    <BatchReadingDialog :open="batchOpen" @close="batchOpen = false" />
   </div>
 </template>
 
@@ -278,5 +310,25 @@ function confirmRemove() {
 .dock-hint {
   flex: 1;
   color: var(--text-secondary);
+}
+
+.batch-entry {
+  min-height: 32px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  font-size: calc(var(--fs-sm) * var(--font-scale));
+  color: var(--action-primary);
+  white-space: nowrap;
+}
+
+.batch-entry:hover {
+  background: rgba(124, 58, 237, 0.1);
+}
+
+@media (max-width: 768px) {
+  .batch-entry {
+    min-height: 44px;
+  }
 }
 </style>

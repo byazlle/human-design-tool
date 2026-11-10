@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** 批量操作条：选中 ≥1 出现；选中 2 时高亮「生成合盘」（DESIGN.md §4.3） */
-const props = defineProps<{ count: number }>()
-const emit = defineEmits<{ open: []; composite: []; remove: []; clear: [] }>()
+const props = defineProps<{ count: number; canBatch: boolean }>()
+const emit = defineEmits<{ open: []; composite: []; batch: []; remove: []; clear: [] }>()
 </script>
 
 <template>
@@ -18,6 +18,15 @@ const emit = defineEmits<{ open: []; composite: []; remove: []; clear: [] }>()
         @click="emit('composite')"
       >
         生成合盘
+      </button>
+      <button
+        type="button"
+        class="btn"
+        :class="{ accent: canBatch }"
+        :title="canBatch ? '为选中的档案批量生成 AI 解读' : '请先到设置页配置 AI 接口'"
+        @click="emit('batch')"
+      >
+        批量生成解读
       </button>
       <button type="button" class="btn danger" @click="emit('remove')">删除选中</button>
       <button type="button" class="btn ghost" @click="emit('clear')">清空</button>

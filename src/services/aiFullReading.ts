@@ -17,6 +17,12 @@
  * - 融合只注入每项前 300 字要点 + 标题，避免 45 个分项全文撑爆模型上下文。
  */
 import { AiError, chartSummaryOf, explain } from './aiClient'
+import {
+  cancelledError as cancelled,
+  errText,
+  isCancelled,
+  withRetry,
+} from './aiAttempt'
 import { READING_ANGLES } from './readingAngles'
 import { gateInsightOf } from './gateInsight'
 import { CENTER_TEXT, getChannel, getGate } from './interpretations'
@@ -282,38 +288,6 @@ interface TaskOutcome {
   index: number
   content?: string
   error?: string
-}
-
-function cancelled(signal?: AbortSignal): AiError {
-  void signal
-  return new AiError('已取消', 'cancelled')
-}
-
-function isCancelled(err: unknown, signal?: AbortSignal): boolean {
-  if (signal?.aborted) return true
-  return err instanceof AiError && err.kind === 'cancelled'
-}
-
-/** 单项失败先重试 1 次；取消不重试，直接向上抛 */
-async function withRetry(
-  call: () => Promise<string>,
-  signal?: AbortSignal,
-): Promise<string> {
-  let lastError: unknown
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (signal?.aborted) throw cancelled(signal)
-    try {
-      return await call()
-    } catch (err) {
-      if (isCancelled(err, signal)) throw err
-      lastError = err
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError))
-}
-
-function errText(err: unknown): string {
-  return err instanceof AiError ? err.message : (err as Error)?.message || '未知错误'
 }
 
 /**

@@ -167,7 +167,14 @@ function copyAi() {
 }
 
 function saveAi() {
-  saveAiResult({ title: aiState.value.title, content: aiState.value.content })
+  // 双盘对比跨两份档案，解读归属主档案（A），ref 记下 B 以便区分对比组合
+  saveAiResult({
+    title: aiState.value.title,
+    content: aiState.value.content,
+    archiveId: archiveA.value?.id,
+    scope: aiState.value.scope || 'compare',
+    ref: `${aId.value}:${bId.value}`,
+  })
 }
 </script>
 

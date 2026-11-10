@@ -139,7 +139,13 @@ function copyAi() {
 }
 
 function saveAi() {
-  saveAiResult({ title: aiState.value.title, content: aiState.value.content })
+  saveAiResult({
+    title: aiState.value.title,
+    content: aiState.value.content,
+    archiveId: archive.value?.id,
+    scope: 'chiron',
+    ref: result.value ? String(result.value.natalChiron.gate) : '-',
+  })
 }
 
 watch(

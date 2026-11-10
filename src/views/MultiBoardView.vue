@@ -73,16 +73,19 @@ const columns = computed(() =>
     .filter((a): a is Archive => Boolean(a)),
 )
 
-const panelChart = computed(() => {
+/** 当前解读归属哪一栏（由面板来源 source 决定），用于把结果存回对应档案 */
+const panelArchive = computed(() => {
   const sel = ui.panel
-  if (!sel) return columns.value.find((c) => c.chart)?.chart
+  if (!sel) return columns.value.find((c) => c.chart) ?? columns.value[0]
   const id = sel.source === 'b' ? columns.value[1]?.id : columns.value[0]?.id
-  const archive =
+  return (
     columns.value.find((c) => c.id === id) ??
     columns.value.find((c) => c.chart) ??
     columns.value[0]
-  return archive?.chart
+  )
 })
+
+const panelChart = computed(() => panelArchive.value?.chart)
 
 const offlineText = computed(() => {
   const sel = ui.panel
@@ -123,7 +126,13 @@ function copyAi() {
 }
 
 function saveAi() {
-  saveAiResult({ title: aiState.value.title, content: aiState.value.content })
+  saveAiResult({
+    title: aiState.value.title,
+    content: aiState.value.content,
+    archiveId: panelArchive.value?.id,
+    scope: aiState.value.scope || 'single',
+    ref: aiState.value.ref ?? (ui.panel ? String(ui.panel.ref) : '-'),
+  })
 }
 
 function closeOne(id: string) {

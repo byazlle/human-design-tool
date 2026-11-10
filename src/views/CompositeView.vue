@@ -311,7 +311,14 @@ function copyAi() {
 }
 
 function saveAi() {
-  saveAiResult({ title: aiState.value.title, content: aiState.value.content })
+  // 合盘跨两份档案，归属主档案（A），ref 记下 B 以便区分合盘组合
+  saveAiResult({
+    title: aiState.value.title,
+    content: aiState.value.content,
+    archiveId: archiveA.value?.id,
+    scope: aiState.value.scope || 'composite',
+    ref: `${aId.value}:${bId.value}`,
+  })
 }
 </script>
 

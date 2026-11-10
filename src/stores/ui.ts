@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import type { CenterId } from '../types/hd'
 import type { AiProgress, FullReport } from '../types/report'
+import type { BatchProgress } from '../services/aiBatchReading'
 
 export type PanelKind = 'gate' | 'channel' | 'center'
 export type PanelSource = 'a' | 'b' | 'merged' | 'single'
@@ -37,10 +38,56 @@ export interface ToastOptions {
   duration?: number
 }
 
+/**
+ * 跨档案批量生成解读的运行态（v2.4.0）。
+ *
+ * 为什么放在 ui store 而不是组件局部：批量生成可能跑几十份、耗时数分钟，
+ * 用户从档案库页发起后会切到别的页面继续浏览。状态必须比发起它的组件活得久，
+ * 才能让弹层/进度条在任何视图里都显示同一次运行的进度。
+ *
+ * 不持久化：这是「本次运行」的瞬时状态，刷新后丢失；已生成的解读存在 readings store 里。
+ */
+export interface BatchState {
+  running: boolean
+  total: number
+  done: number
+  /** 当前处理项名称 */
+  current: string
+  phase: string
+  ok: number
+  /** 成功生成解读的档案 id（按完成顺序），供结果条「查看」跳转 */
+  okIds: string[]
+  failed: string[]
+  skipped: string[]
+  elapsedMs: number
+  etaMs: number | null
+  /** 最近一次运行的结论（成功/失败/中断），供结果条展示 */
+  summary: string
+  /** 结论是否为正面（决定提示色） */
+  summaryOk: boolean
+}
+
+const BATCH_IDLE: BatchState = {
+  running: false,
+  total: 0,
+  done: 0,
+  current: '',
+  phase: '',
+  ok: 0,
+  okIds: [],
+  failed: [],
+  skipped: [],
+  elapsedMs: 0,
+  etaMs: null,
+  summary: '',
+  summaryOk: true,
+}
+
 interface UiState {
   panel: PanelSelection | null
   drawerOpen: boolean
   aiReading: AiReadingState
+  batch: BatchState
   toast: { text: string; kind: 'info' | 'success' | 'error'; action?: ToastAction } | null
 }
 
@@ -59,6 +106,7 @@ export const useUiStore = defineStore('ui', {
       progress: null,
       report: null,
     },
+    batch: { ...BATCH_IDLE, failed: [], skipped: [] },
     toast: null,
   }),
 
@@ -124,6 +172,46 @@ export const useUiStore = defineStore('ui', {
     },
     closeAi() {
       this.aiReading.open = false
+    },
+
+    /* ── 批量生成解读（v2.4.0）────────────────────────── */
+    /** 开始一次批量生成：重置并置 running（重复调用不应覆盖正在跑的运行） */
+    beginBatch(total: number, init: { current?: string; phase?: string } = {}) {
+      if (this.batch.running) return
+      this.batch = {
+        ...BATCH_IDLE,
+        running: true,
+        total,
+        current: init.current ?? '',
+        phase: init.phase ?? '批量生成',
+        okIds: [],
+        failed: [],
+        skipped: [],
+      }
+    },
+    setBatchProgress(progress: BatchProgress) {
+      this.batch.total = progress.total
+      this.batch.done = progress.done
+      this.batch.current = progress.current
+      this.batch.phase = progress.phase
+      this.batch.ok = progress.ok
+      this.batch.okIds = progress.okIds
+      this.batch.failed = progress.failed
+      this.batch.skipped = progress.skipped
+      this.batch.elapsedMs = progress.elapsedMs
+      this.batch.etaMs = progress.etaMs
+    },
+    /** 结束一次批量生成（ok=false 时结论条按错误色展示） */
+    finishBatch(summary: string, ok = true) {
+      this.batch.running = false
+      this.batch.phase = '已完成'
+      this.batch.summary = summary
+      this.batch.summaryOk = ok
+      this.batch.etaMs = null
+    },
+    /** 关闭结论条（保留统计数字，便于用户回看「上次跑了几份」） */
+    dismissBatchSummary() {
+      this.batch.summary = ''
     },
 
     notify(text: string, kind: 'info' | 'success' | 'error' = 'info', options: ToastOptions = {}) {

@@ -8,6 +8,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useArchiveStore } from '../stores/archive'
 import { useUiStore } from '../stores/ui'
 import { useSettingsStore } from '../stores/settings'
+import { useReadingsStore, type ReadingRecord } from '../stores/readings'
 import { useBreakpoint } from '../composables/useBreakpoint'
 import { useAiReading } from '../composables/useAiReading'
 import { copyAiResult, saveAiResult } from '../composables/useAiResultActions'
@@ -21,19 +22,22 @@ import HdButton from '../components/base/HdButton.vue'
 import EmptyState from '../components/base/EmptyState.vue'
 import IconButton from '../components/base/IconButton.vue'
 import HdToggle from '../components/base/HdToggle.vue'
-import { CENTER_TEXT } from '../services/interpretations'
-import { AUTHORITY_LABELS, CENTER_LABELS, DEFINITION_LABELS, TYPE_LABELS, type AiDetailMode, type CenterId } from '../types/hd'
-import { gateInsightOf } from '../services/gateInsight'
+import { type AiDetailMode, type CenterId } from '../types/hd'
 import { angleOf } from '../services/readingAngles'
-import { crossReadingOf } from '../services/crossData'
-import { AUTHORITY_TEXT, TYPE_TEXT, getChannel, getGate } from '../services/interpretations'
-import { GATE_NAMES } from '../engine/gateData'
+import {
+  buildSelectionOffline,
+  buildStarBrief,
+  buildUnifiedOffline,
+  selectionTitle,
+  unifiedScopeRef,
+} from '../services/chartFacts'
 import { destinyReadings } from '../services/destinyText'
 import PlanetColumn from '../components/chart/PlanetColumn.vue'
 import DetailCard from '../components/chart/DetailCard.vue'
 import CrossPanel from '../components/chart/CrossPanel.vue'
 import AiComposer, { type DimKey } from '../components/panel/AiComposer.vue'
 import ArchiveEditDialog from '../components/archive/ArchiveEditDialog.vue'
+import ArchiveReadingsDrawer from '../components/archive/ArchiveReadingsDrawer.vue'
 import ConfirmDialog from '../components/base/ConfirmDialog.vue'
 import CustomLayoutCanvas from '../components/layout/CustomLayoutCanvas.vue'
 import { usePageLayoutStore } from '../stores/pageLayout'
@@ -43,6 +47,7 @@ const router = useRouter()
 const archiveStore = useArchiveStore()
 const ui = useUiStore()
 const settings = useSettingsStore()
+const readingsStore = useReadingsStore()
 const { isMobile } = useBreakpoint()
 const layout = usePageLayoutStore()
 const {
@@ -91,82 +96,18 @@ function toggleStar(side: 'design' | 'personality', planet: string) {
 
 function starBrief(): string {
   if (!chart.value || !selectedStars.value.size) return ''
-  const bits: string[] = []
-  for (const key of selectedStars.value) {
-    const [side, planet] = key.split(':')
-    const list = side === 'design' ? chart.value.design : chart.value.personality
-    const sp = list.find((x) => x.planet === planet)
-    if (sp) {
-      bits.push(
-        `${side === 'design' ? '潜意识' : '显意识'}${planet} ${sp.gate}.${sp.line}` +
-          `（洞察：${gateInsightOf(sp.gate).trait}）`,
-      )
-    }
-  }
-  return bits.join('\n')
+  return buildStarBrief(chart.value, selectedStars.value)
 }
 
 /* ── AI 解读角度 ──────────────────────────────────────── */
 const angleKey = ref('comprehensive')
 
 /* ── 全维度统一 AI 综合解读 ──────────────────────────── */
-function firstSentence(text: string, max = 52): string {
-  const clean = text.replace(/\s+/g, '')
-  const m = clean.match(/^[^。！？;；]+[。！？]?/)
-  const s = m ? m[0] : clean
-  return s.length > max ? `${s.slice(0, max)}…` : s
-}
-
-function buildUnifiedOffline(dims: DimKey[]): string {
-  if (!chart.value) return ''
-  const c = chart.value
-  const parts: string[] = []
-
-  if (dims.includes('profile')) {
-    parts.push(
-      `【人生角色 / 能量类型】类型：${TYPE_LABELS[c.type]}（${c.type}）；人生角色：${c.profile}；${TYPE_TEXT[c.type].desc}`,
-    )
-  }
-  if (dims.includes('strategy')) {
-    parts.push(`【人生策略】${c.strategy || TYPE_TEXT[c.type].strategy}`)
-  }
-  if (dims.includes('authority')) {
-    parts.push(
-      `【内在权威】${AUTHORITY_LABELS[c.authority]}：${AUTHORITY_TEXT[c.authority].desc}`,
-    )
-  }
-  if (dims.includes('definition')) {
-    parts.push(`【整体定义】${DEFINITION_LABELS[c.definition]}（已定义中心 ${c.centers.filter((x) => x.defined).length} 个）`)
-  }
-  if (dims.includes('cross')) {
-    const cr = crossReadingOf(c.personality, c.design, c.profile)
-    parts.push(
-      `【轮回交叉】${cr.name}\n核心释义：${cr.summary.replace(/\n/g, ' ')}\n人生使命：${cr.mission.replace(/\n/g, ' ')}\n活出状态：${cr.highState.replace(/\n/g, ' ')}\n未活出状态：${cr.lowState.replace(/\n/g, ' ')}`,
-    )
-  }
-  if (dims.includes('channels')) {
-    const lines = c.channels.map((ch) => {
-      const t = getChannel(ch.key)
-      return `${ch.key} ${t.title.split(' · ').slice(1).join(' · ') || ch.key}：${firstSentence(t.text)}`
-    })
-    parts.push(`【已激活通道】（共 ${lines.length} 条）\n${lines.join('\n') || '无'}`)
-  }
-  if (dims.includes('gates')) {
-    const lines = c.gates.map((g) => {
-      const ins = gateInsightOf(g.gate)
-      return `闸门 ${g.gate} ${GATE_NAMES[g.gate]?.zh ?? ''}（${ins.trait}；由 ${g.stars.join('/')} 激活）`
-    })
-    parts.push(`【已激活闸门】（共 ${lines.length} 个）\n${lines.join('；')}`)
-  }
-  if (dims.includes('centers')) {
-    const lines = c.centers.map((ct) => {
-      const t = CENTER_TEXT[ct.id]
-      return `${CENTER_LABELS[ct.id]}：${ct.defined ? '已定义' : '开放'}——${firstSentence(ct.defined ? t.defined : t.open)}`
-    })
-    parts.push(`【九大能量中心状态】\n${lines.join('\n')}`)
-  }
-  return parts.join('\n\n')
-}
+/*
+ * 事实块拼装已上移到 `services/chartFacts.ts`：批量生成解读要对任意档案构建同一份事实块，
+ * 若继续内联在这里，批量功能只能复制一份，两份口径必然漂移、缓存键也会不同。
+ * 本视图与批量服务共用同一实现（函数名保持原名，行为逐字不变）。
+ */
 
 async function requestUnifiedAi(payload: {
   dimensions: DimKey[]
@@ -183,17 +124,20 @@ async function requestUnifiedAi(payload: {
     full: '完整',
   }
   const modeLabel = AI_MODE_LABELS[settings.aiDetailMode]
-  const direction = payload.customDirection
-    ? `【自定义解读方向】用户希望重点从「${payload.customDirection}」的角度解读，请围绕该方向展开，同时保持术语准确。`
-    : `【解读角度】${angleInfo.label}：${angleInfo.prompt}`
 
   await runAi({
     scope: 'unified',
-    ref: `${payload.dimensions.join('+')}:${payload.angleKey}:${payload.customDirection || '-'}`,
+    ref: unifiedScopeRef(payload.dimensions, payload.angleKey, payload.customDirection),
     title: payload.customDirection
       ? `${archive.value.name} · AI 综合解读 · ${payload.customDirection}`
       : `${archive.value.name} · 整体解读（${modeLabel}） · ${angleInfo.label}`,
-    offline: `${buildUnifiedOffline(payload.dimensions)}\n\n${direction}\n\n请把以上所有勾选维度作为一个整体来综合解读：先给出整体画像结论，再分别说明各维度如何相互影响，最后给落地建议。`,
+    offline: buildUnifiedOffline(
+      chart.value,
+      payload.dimensions,
+      angleInfo.label,
+      angleInfo.prompt,
+      payload.customDirection,
+    ),
     chart: chart.value,
     detailMode: settings.aiDetailMode,
     full: settings.aiDetailMode === 'full',
@@ -238,26 +182,12 @@ function onDrop(target: ModuleKey) {
   localStorage.setItem(ORDER_KEY, JSON.stringify(next))
 }
 
-const offlineText = computed(() => {
-  const sel = ui.panel
-  if (!sel) return ''
-  if (sel.kind === 'gate') return `${getGate(Number(sel.ref)).title}\n\n${getGate(Number(sel.ref)).text}`
-  if (sel.kind === 'channel') return `${getChannel(String(sel.ref)).title}\n\n${getChannel(String(sel.ref)).text}`
-  const id = String(sel.ref) as CenterId
-  const text = CENTER_TEXT[id]
-  const defined = chart.value?.centers.find((c) => c.id === id)?.defined
-  return `${CENTER_LABELS[id]}\n\n${defined ? text.defined : text.open}`
-})
+const offlineText = computed(() => buildSelectionOffline(chart.value, ui.panel))
 
 async function requestAiForSelection() {
   const sel = ui.panel
   if (!sel || !chart.value) return
-  const title =
-    sel.kind === 'gate'
-      ? getGate(Number(sel.ref)).title
-      : sel.kind === 'channel'
-        ? getChannel(String(sel.ref)).title
-        : CENTER_LABELS[String(sel.ref) as CenterId]
+  const title = selectionTitle(sel)
   await runAi({
     scope: sel.kind,
     ref: String(sel.ref),
@@ -309,7 +239,16 @@ function copyAi() {
 }
 
 function saveAi() {
-  saveAiResult({ title: aiState.value.title, content: aiState.value.content })
+  const sel = ui.panel
+  saveAiResult({
+    title: aiState.value.title,
+    content: aiState.value.content,
+    archiveId: archive.value?.id,
+    // 面板未记录 scope 时按单点解读归属，档案至少能收到一份可回看的记录
+    scope: aiState.value.scope || 'single',
+    ref: aiState.value.ref ?? (sel ? String(sel.ref) : '-'),
+    mode: settings.aiDetailMode,
+  })
 }
 
 import AiConfigBadge from '../components/base/AiConfigBadge.vue'
@@ -366,6 +305,37 @@ function doDelete() {
 }
 
 const starListOpen = ref(false)
+
+/* ── 解读记录（v2.4.0）────────────────────────────────── */
+const readingsOpen = ref(false)
+const savedReadingCount = computed(() =>
+  archive.value ? readingsStore.ofArchive(archive.value.id).length : 0,
+)
+
+/** 从记录里「重新生成」：带上该条记录的范围与档位重跑，结果覆盖同一条记录 */
+async function regenerateFromRecord(record: ReadingRecord) {
+  readingsOpen.value = false
+  const [dimsPart, angleKey, custom] = record.ref.split(':')
+  if (record.scope === 'unified' && dimsPart && angleKey) {
+    await requestUnifiedAi({
+      dimensions: dimsPart.split('+') as DimKey[],
+      angleKey,
+      customDirection: custom === '-' ? '' : (custom ?? ''),
+    })
+    return
+  }
+  // 单点 / 选区类记录：按记录的 scope 与 ref 直接重跑
+  const angleInfo = angleOf('comprehensive')
+  await runAi({
+    scope: record.scope,
+    ref: record.ref,
+    title: record.title,
+    offline: offlineText.value,
+    chart: chart.value ?? undefined,
+    detailMode: record.mode,
+    angle: angleInfo.label,
+  })
+}
 </script>
 
 <template>
@@ -382,6 +352,9 @@ const starListOpen = ref(false)
         <span class="tb-actions">
           <HdButton size="sm" variant="ghost" @click="editOpen = true">编辑</HdButton>
           <HdButton size="sm" variant="ghost" @click="duplicateChart">复制副本</HdButton>
+          <HdButton size="sm" variant="ghost" @click="readingsOpen = true">
+            解读记录{{ savedReadingCount ? `（${savedReadingCount}）` : '' }}
+          </HdButton>
           <HdButton size="sm" variant="ghost" @click="router.push(`/chiron/${id}`)"> 凯龙回归 </HdButton>
           <HdButton size="sm" @click="router.push(`/compare/${id}`)"> 双盘对比 </HdButton>
           <HdButton size="sm" variant="danger" @click="askDelete">删除</HdButton>
@@ -632,6 +605,13 @@ const starListOpen = ref(false)
       @regenerate="retryAi"
       @cancel="abortAi"
       @settings="goSettings"
+    />
+
+    <ArchiveReadingsDrawer
+      :open="readingsOpen"
+      :archive-id="archive?.id ?? ''"
+      @close="readingsOpen = false"
+      @regenerate="regenerateFromRecord"
     />
   </div>
 </template>
