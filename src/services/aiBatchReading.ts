@@ -16,7 +16,7 @@
  * 本模块不碰 store、不写 localStorage —— 持久化由调用方（composable）负责。
  */
 import type { AiConfig, AiDetailMode, AiStepMode, BodyGraph } from '../types/hd'
-import { explain } from './aiClient'
+import { chartSummaryOf, explain } from './aiClient'
 import { resolveSchedule } from './aiConcurrency'
 import { cancelledError, errText, isCancelled, withRetry } from './aiAttempt'
 import {
@@ -38,8 +38,14 @@ export interface BatchTask {
   title: string
   /** 【离线释义】正文（事实块 + 角度 + 收束指令） */
   offline: string
-  /** 盘面摘要，供防幻觉复核；与手动解读同为 `undefined`（事实已在 offline 内） */
+  /** 盘面摘要，与手动解读同为 `chartSummaryOf(chart)`（必须一致，否则缓存键分裂） */
   chartSummary?: string
+  /**
+   * 注入【用户选择】的解读角度，与手动解读同为「自定义方向优先，否则角度标签」。
+   * ★ 不能塞标题：标题里带档案名，同一张盘在批量与手动下会得到不同的
+   *   【用户选择】角度行，模型看到的口径就不一致了。标题另有 `title` 承载。
+   */
+  angle: string
   mode: AiDetailMode
 }
 
@@ -104,7 +110,13 @@ export function buildBatchTasks(
         .filter(Boolean)
         .join(' · '),
       offline: `${facts}\n\n${direction}\n\n请把以上所有勾选维度作为一个整体来综合解读：先给出整体画像结论，再分别说明各维度如何相互影响，最后给落地建议。`,
-      chartSummary: undefined,
+      // ★ 必须与手动解读同为 `chartSummaryOf(chart)`：
+      // `aiClient.cacheKey()` 把 chartSummary 拼进内容哈希，若这里留空，
+      // 同一张盘的「先手动生成」与「批量生成」会得到两个不同的缓存键，
+      // 缓存在两处各存一份、永远互相不命中，用户会看到重复计费。
+      chartSummary: chartSummaryOf(item.chart),
+      // 与手动解读（SingleChartView.requestUnifiedAi）同口径：自定义方向优先，否则角度标签
+      angle: options.customDirection || options.angleLabel,
       mode: options.detailMode,
     })
   }
@@ -256,7 +268,7 @@ export async function runBatchReading(options: BatchOptions): Promise<BatchRepor
             offline: task.offline,
             chartSummary: task.chartSummary,
             detailMode: task.mode,
-            angle: task.title,
+            angle: task.angle,
             signal,
           }),
         signal,

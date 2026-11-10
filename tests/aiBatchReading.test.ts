@@ -13,9 +13,9 @@ vi.mock('../src/services/aiClient', async (importOriginal) => {
   return { ...actual, explain: explainMock }
 })
 
-import { AiError } from '../src/services/aiClient'
+import { AiError, cacheKey, chartSummaryOf } from '../src/services/aiClient'
 import { buildBatchTasks, runBatchReading } from '../src/services/aiBatchReading'
-import { ALL_READING_DIMS } from '../src/services/chartFacts'
+import { ALL_READING_DIMS, buildUnifiedOffline, unifiedScopeRef } from '../src/services/chartFacts'
 import { resolveSchedule } from '../src/services/aiConcurrency'
 import type { AiConfig, BodyGraph, CenterId } from '../src/types/hd'
 import type { AiExplainArgs } from '../src/services/aiClient'
@@ -40,12 +40,12 @@ const CENTERS: CenterId[] = [
   'root',
 ]
 
-function makeChart(type: BodyGraph['type'] = 'Generator'): BodyGraph {
+function makeChart(type: BodyGraph['type'] = 'Generator', profile = '2/4'): BodyGraph {
   return {
     type,
     strategy: '等待回应',
     authority: 'Sacral',
-    profile: '2/4',
+    profile,
     definition: 'Single',
     incarnationCross: '右角度交叉之四方之道',
     centers: CENTERS.map((id) => ({ id, defined: id === 'sacral' })),
@@ -82,8 +82,26 @@ const BASE_OPTIONS = {
   detailMode: 'concise' as const,
 }
 
+/**
+ * 每份档案给一个可区分的人生角色：任务标题与 angle 现在对所有档案相同
+ * （与手动解读同口径），所以测试要用【盘面事实】里的内容来区分任务。
+ */
+function profileOf(id: string): string {
+  const i = id.charCodeAt(0) - 97
+  return `${(i % 8) + 1}/${(i % 5) + 3}`
+}
+
 function inputs(ids: string[]) {
-  return ids.map((id) => ({ archiveId: id, name: `档案${id}`, chart: makeChart() }))
+  return ids.map((id) => ({
+    archiveId: id,
+    name: `档案${id}`,
+    chart: makeChart('Generator', profileOf(id)),
+  }))
+}
+
+/** 从一次 explain() 调用里认出它属于哪份档案（靠事实块里的人生角色，不靠标题） */
+function isTask(args: AiExplainArgs, id: string): boolean {
+  return Boolean(args.chartSummary?.includes(`人生角色：${profileOf(id)}`))
 }
 
 beforeEach(() => {
@@ -140,6 +158,57 @@ describe('buildBatchTasks：任务展开口径与手动解读一致', () => {
     expect(skipped.map((s) => s.name)).toEqual(['无快照', '算错了'])
     expect(skipped[0].reason).toBe('尚无盘面快照')
     expect(skipped[1].reason).toContain('出生信息非法')
+  })
+
+  it('chartSummary 与手动解读同为 chartSummaryOf(chart)（否则缓存键分裂）', () => {
+    // cacheKey() 把 chartSummary 拼进内容哈希：留空会让「手动生成过的档案」
+    // 在批量时算不出同一个键，缓存各存一份、永远互相不命中。
+    const chart = makeChart()
+    const { tasks } = buildBatchTasks([{ archiveId: 'a', name: 'A', chart }], BASE_OPTIONS)
+    expect(tasks[0].chartSummary).toBe(chartSummaryOf(chart))
+    expect(tasks[0].chartSummary?.length).toBeGreaterThan(0)
+  })
+
+  it('angle 与手动解读同为「自定义方向 || 角度标签」，不夹带档案名', () => {
+    // 曾经把任务标题塞进 angle：同一张盘手动与批量的【用户选择】角度行不同，
+    // 模型看到的口径不一致，缓存键也分裂。
+    const { tasks } = buildBatchTasks(inputs(['a', 'b']), BASE_OPTIONS)
+    for (const t of tasks) {
+      expect(t.angle).toBe('综合解读')
+      expect(t.angle).not.toContain('档案')
+    }
+    const { tasks: custom } = buildBatchTasks(inputs(['a']), {
+      ...BASE_OPTIONS,
+      customDirection: '事业方向',
+    })
+    expect(custom[0].angle).toBe('事业方向')
+  })
+
+  it('批量与手动的缓存键逐字相同（同盘同档同维度）', () => {
+    const chart = makeChart()
+    const dims = ALL_READING_DIMS
+    const { tasks } = buildBatchTasks([{ archiveId: 'a', name: 'A', chart }], {
+      ...BASE_OPTIONS,
+      dimensions: dims,
+    })
+    const batchKey = cacheKey(CFG, {
+      cfg: CFG,
+      scope: tasks[0].scope,
+      ref: tasks[0].ref,
+      offline: tasks[0].offline,
+      chartSummary: tasks[0].chartSummary,
+      detailMode: tasks[0].mode,
+    })
+    // 手动路径（views/SingleChartView.vue 的 requestUnifiedAi）用同一批函数拼装
+    const manualKey = cacheKey(CFG, {
+      cfg: CFG,
+      scope: 'unified',
+      ref: unifiedScopeRef(dims, 'comprehensive', ''),
+      offline: buildUnifiedOffline(chart, dims, '综合解读', '从整体上看这张盘', ''),
+      chartSummary: chartSummaryOf(chart),
+      detailMode: 'concise',
+    })
+    expect(batchKey).toBe(manualKey)
   })
 })
 
@@ -208,8 +277,7 @@ describe('runBatchReading：调度沿用 N ≤ Y 唯一闸门', () => {
 describe('runBatchReading：失败与取消语义', () => {
   it('单项失败重试 1 次后仍失败 → 记入 failed，其余项照常完成', async () => {
     explainMock.mockImplementation(async (args: AiExplainArgs) => {
-      // 引擎把任务标题作为 angle 注入（AiExplainArgs 无 title 字段）
-      if (args.angle?.includes('档案b')) throw new AiError('接口返回 500', 'http')
+      if (isTask(args, 'b')) throw new AiError('接口返回 500', 'http')
       return '解读正文'
     })
     const { tasks } = buildBatchTasks(inputs(['a', 'b', 'c']), BASE_OPTIONS)
@@ -250,7 +318,7 @@ describe('runBatchReading：失败与取消语义', () => {
   it('取消时上抛 cancelled，且取消前已完成的项已通过 onUpdate 发布（不丢结果）', async () => {
     const controller = new AbortController()
     explainMock.mockImplementation(async (args: AiExplainArgs) => {
-      if (args.angle?.includes('档案b')) {
+      if (isTask(args, 'b')) {
         controller.abort()
         throw new AiError('已取消', 'cancelled')
       }
@@ -273,8 +341,8 @@ describe('runBatchReading：失败与取消语义', () => {
     // 档案a 在取消前已完成，必须已发布给调用方（下游据此增量落库，中断不丢结果）
     expect(published).toEqual(['a'])
     // 取消项之后不再发起：c 从未被调用
-    const called = explainMock.mock.calls.map((c) => (c[0] as AiExplainArgs).angle)
-    expect(called.some((x) => x?.includes('档案c'))).toBe(false)
+    const called = explainMock.mock.calls.map((c) => c[0] as AiExplainArgs)
+    expect(called.some((a) => isTask(a, 'c'))).toBe(false)
   })
 
   it('取消后不再发起后续项（串行）', async () => {
@@ -378,7 +446,7 @@ describe('runBatchReading：进度发布', () => {
   it('outcomes 按任务顺序排列（与调度分批无关）', async () => {
     // 让后面的任务先返回，验证输出仍按输入顺序
     explainMock.mockImplementation(async (args: AiExplainArgs) => {
-      const delay = args.angle?.includes('档案a') ? 5 : 0
+      const delay = isTask(args, 'a') ? 5 : 0
       await new Promise((r) => setTimeout(r, delay))
       return 'x'
     })

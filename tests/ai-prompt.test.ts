@@ -232,8 +232,21 @@ describe('提示词的关键契约（字数 / 结构）', () => {
     expect(PROMPT_SYSTEM_FUSION).toBe(codeBlocks[5])
   })
 
-  it('提示词版本为 3.0（旧 p2.0 缓存不得串档）', () => {
-    expect(PROMPT_VERSION).toBe('3.1')
+  it('提示词版本为 3.2（旧缓存不得串档）', () => {
+    expect(PROMPT_VERSION).toBe('3.2')
+  })
+
+  it('v3.2 明确禁止复述事实块：三套提示词都声明「与事实块的分工」', () => {
+    for (const prompt of [PROMPT_SYSTEM_CONCISE, PROMPT_SYSTEM_DETAILED, PROMPT_SYSTEM_FULL]) {
+      expect(prompt).toContain('【与事实块的分工】')
+      expect(prompt).toContain('不是把它们换种说法再讲一遍')
+    }
+  })
+
+  it('v3.2 把字数从硬指标降为上限：短盘面不要求凑满', () => {
+    expect(PROMPT_SYSTEM_CONCISE).toContain('600 字下限不是必须凑满的目标')
+    expect(PROMPT_SYSTEM_DETAILED).toContain('字数配额是上限而非指标')
+    expect(PROMPT_SYSTEM_FULL).toContain('单项字数配额是上限而非指标')
   })
 })
 

@@ -102,6 +102,6 @@ describe('完整版采样额度覆盖字数契约', () => {
   })
 
   it('提示词版本已升，避免命中旧的截断缓存', () => {
-    expect(PROMPT_VERSION).toBe('3.1')
+    expect(PROMPT_VERSION).toBe('3.2')
   })
 })
