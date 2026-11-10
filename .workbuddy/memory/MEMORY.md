@@ -8,12 +8,31 @@
 - 查 CI：GET /repos/byazlle/human-design-tool/actions/runs；job 日志 302 → curl -L 可直接跟随（带 token 即可）。
 
 ## 推送工作流（关键坑）
-- 本机有 TLS 拦截代理：Python urllib 直连 api.github.com 报 SSL EOF；系统 curl / git(schannel 后端) 可通。
-- 兜底脚本 scripts/push-api.py 已改为 curl 实现（--retry 5、请求体走临时文件 -d @file）。
-  用法：python scripts/push-api.py [commit]，以远端 HEAD 为基底推送单次提交 diff，绕开非快进分叉。
-- 历史分叉常因 core.autocrlf（本仓库开启）：本地提交存 CRLF、API 推送存 LF → 树不同。
-  对齐：git -c http.sslBackend=schannel fetch origin main && git reset --hard origin/main。
-- CI：push main / tag v* 触发 .github/workflows/build.yml 构建 Windows(NSIS+MSI) 与 Android(APK)。
+- **本机 TLS 实况（2026-11-10 实测，此前记载有误，已订正）**：
+  - `curl.exe` 对 api.github.com / github.com **全线 HTTP 000**：`curl: (35) schannel:
+    AcquireCredentialsHandle failed: SEC_E_NO_CREDENTIALS (0x8009030e)`。PowerShell
+    `Invoke-RestMethod` 报「基础连接已经关闭」。**即「系统 curl 可通」的旧记载不成立。**
+  - `git -c http.sslBackend=openssl` **可完成握手**（schannel 后端不行），但 `github.com:443`
+    **间歇性 reset**（README 抓取与 fetch 均多次失败）；`ls-remote` 与 `push` 曾成功，不稳定。
+  - **`api.github.com` 经 Node 内置 fetch 稳定 200**（走 Node 自带 OpenSSL）→ 首选通道。
+    `scripts/ghfetch.mjs` 即为此封装（`node scripts/ghfetch.mjs GET /rate_limit`）。
+  - `git` 不在 PATH：用 `D:\AIws\WorkBuddy\resources\vendor\PortableGit\cmd\git.exe`。
+  - push 还需 `-c credential.helper=`（禁凭据助手），否则报 `could not read Username`。
+- 兜底脚本 scripts/push-api.py 用 curl 实现，**在本机当前不可直接运行**（curl TLS 000 + 裸 git 不在 PATH），
+  但在 CI runner 上可用。用法：python scripts/push-api.py [commit]，以远端 HEAD 为基底推送单次提交 diff。
+- **分叉根因已定性（2026-11-10，勿再翻案）**：两份历史**内容 100% 相同**
+  （`git diff --ignore-cr-at-eol main origin/main` = `88 files changed, 0 insertions(+), 0 deletions(-)`，
+   blob sha 不同的条目数为 0），唯一分歧是**文件模式位**：本地 100755=57 / 远端 100755=145。
+  根因是 `scripts/push-api.py` 旧代码 `os.access(abs_path, os.X_OK)` 在 Windows 上对普通文本也返回 True。
+  **附带订正**：本仓库 blob 里**确有** 14 个文本文件混入 CRLF（.github/workflows/build.yml、.gitignore、
+  package.json、desktop/package.json、desktop/package-lock.json、scripts/build-apk.py、scripts/build-exe.py、
+  scripts/push-api.py、scripts/publish-release.py、src/components/base/GlassBackdrop.vue、
+  src/components/chart/HumanDesignBodyGraph.vue、src/services/destinyText.ts、src/styles/tokens.css、
+  .workbuddy/memory/2026-10-21.md），**但不是分叉的原因**。
+  **已废的旧建议**：`git reset --hard origin/main` —— 会丢掉本地 18 个提交，**永不可照做**。
+  现行对齐方式：`.gitattributes` + `core.autocrlf=false` + `git add --renormalize`，已落地。
+- CI：push main / tag v* 触发 .github/workflows/build.yml 构建 Windows(NSIS) 与 Android(APK)。
+
 
 ## 人类图口径（历史审查意见，非用户已确认口径）
 > 2026-11-06 现状盘点：用户明确要求「业务规则/术语/流程状态/边界不清楚时先集中提问，确认前不推断、不下结论」。
