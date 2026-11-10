@@ -1,4 +1,4 @@
-# 人类图工具（HumanDesignTool）v2.3.0
+# 人类图工具（HumanDesignTool）v2.4.0
 
 > 仓库地址（GitHub）：https://github.com/byazlle/human-design-tool
 
