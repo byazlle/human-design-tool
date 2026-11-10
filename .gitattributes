@@ -1,0 +1,57 @@
+# 行尾与文本属性（本项目唯一权威声明）
+#
+# 背景：本仓库曾因「本地 git 提交」与「scripts/push-api.py 的 API 兜底推送」双写历史，
+# 加上 Windows 上 core.autocrlf=true，导致 blob 里混有 CRLF 与 LF、并有大量文件被
+# 错误标成可执行位（100755）。此文件把规则钉死在仓库内，不再依赖各机器配置。
+
+# 默认：文本文件在仓库内统一存 LF，检出也用 LF（消除跨平台漂移）
+* text=auto eol=lf
+
+# 显式声明为文本（含无扩展名文件）
+.gitignore   text eol=lf
+.gitattributes text eol=lf
+LICENSE      text eol=lf
+THIRD-PARTY.md text eol=lf
+
+# Windows 批处理必须 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制：不做任何行尾转换、不参与 diff
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.icns  binary
+*.ttf   binary
+*.otf   binary
+*.woff  binary
+*.woff2 binary
+
+# 构建产物 / 安装包
+*.exe      binary
+*.dll      binary
+*.node     binary
+*.apk      binary
+*.aab      binary
+*.jar      binary
+*.idsig    binary
+*.keystore binary
+*.jks      binary
+*.blockmap binary
+*.asar     binary
+*.pak      binary
+*.bin      binary
+*.dat      binary
+*.wasm     binary
+
+# 文档
+*.docx binary
+*.xlsx binary
+*.pptx binary
+*.pdf  binary
+
+# lockfile：由包管理器生成，不参与 diff 噪音
+package-lock.json -diff

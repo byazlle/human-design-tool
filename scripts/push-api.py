@@ -124,6 +124,36 @@ def head_blob(path: str):
         return None
 
 
+# 路径 → git index 中的 mode 缓存。曾用 os.access(path, os.X_OK) 判断，
+# 但 Windows 上大量普通文本文件也会返回 True，导致远端树被写成 100755、
+# 与本地 100644 的树 sha 永久不一致（表现为「88 个文件只有 mode 不同」的分叉）。
+# 现在一律以 git 自身记录的 mode 为准。
+_MODE_CACHE: dict = {}
+
+
+def head_mode(path: str) -> str:
+    """取 HEAD 树里该文件的 mode（100644 / 100755 / 120000）。缺失时按 100644。"""
+    if path in _MODE_CACHE:
+        return _MODE_CACHE[path]
+    try:
+        out = subprocess.check_output(
+            ["git", "-c", "core.quotepath=false", "ls-tree", "HEAD", "--", path],
+            cwd=ROOT,
+            stderr=subprocess.DEVNULL,
+        ).decode("utf-8")
+    except subprocess.CalledProcessError:
+        out = ""
+    mode = "100644"
+    for line in out.splitlines():
+        if "\t" in line:
+            candidate = line.split("\t", 1)[0].split()[0]
+            if candidate in ("100644", "100755", "120000"):
+                mode = candidate
+                break
+    _MODE_CACHE[path] = mode
+    return mode
+
+
 def entry_for_path(path: str):
     """单个文件 → tree entry；内容取 HEAD blob（与 git 树逐字节一致），文本内联、二进制建 blob。"""
     raw = head_blob(path)
@@ -133,7 +163,8 @@ def entry_for_path(path: str):
             return {"path": path, "mode": "100644", "type": "blob", "sha": None}
         with open(abs_path, "rb") as fh:
             raw = fh.read()
-    mode = "100755" if os.access(abs_path, os.X_OK) else "100644"
+    # 一律跟随 git 记录的 mode，不看工作区可执行位（见 head_mode 注释）
+    mode = head_mode(path)
     try:
         text = raw.decode("utf-8")
         return {"path": path, "mode": mode, "type": "blob", "content": text}
