@@ -52,10 +52,14 @@ node --check desktop/preload.cjs           → OK
 4. **网页端 CORS 无解**：不返回 CORS 头的中转站在网页版仍连不上，失败文案已按 `aiTransportKind()` 给出「改用桌面 / 安卓版」的可执行建议。
 5. **B档的 8 视图骨架重排与约 106 处组件内硬编码色未逐个替换**：本版通过 `tokens.css` / `base.css` 两套覆盖做到全站「一眼不同」，个别局部 scoped 样式可能仍带 classic 痕迹。
 6. **nova 未新增独立单测**：`styleTouched` 语义与皮肤切换目前由 typecheck 与冒烟契约间接覆盖，建议后续补专门的 store 回归。
-7. 归档脚本 `VERSIONS` 已加 v3.0.0 条目；**需待 tag `v3.0.0` 存在后不带参数全量重跑** `node scripts/archive-version.mjs`，否则 `INDEX.md` 其余版本行会被覆盖。
+7. ~~归档脚本待 tag 存在后全量重跑~~ **已完成**：`node scripts/archive-version.mjs` 不带参数全量重跑，`INDEX.md` 含 13 个版本，`rlt-archive/v3.0.0/` 有源码包、本机 exe 与含 SHA256 的 MANIFEST。APK 待 CI 产出后补齐。
+8. **GitHub 密钥扫描**：`交接文件夹/2026年11月10日21点45分/交接.md`（2.48 MB）与 `2026年11月11日16点55分/16点55分.md`（3.0 MB）内含历史 API Key，首次推送被 `push declined due to repository rule violations` 拒绝。处理方式是**文件原样保留在本机**、仅用 `.git/info/exclude` 本地排除不入库，其余交接资料（含重命名为「老版本…」的目录）照常入库且 git 识别为 100% rename。未删除任何用户资料，也未放行任何密钥。
 
-## 五、版本与发布
+## 五、版本与发布状态
 
 - 根 / desktop `package.json`、`package-lock.json` → `3.0.0`；`android/AndroidManifest.xml` → `versionCode=30000` / `versionName=3.0.0`。
-- 发布链沿用 v2.5.0：提交 → 推送 main → annotated tag `v3.0.0` → CI 构建 exe / apk 并附加到 Release → 归档到 `D:\AIws\txgzml\rlt-archive\v3.0.0\`。
-- `92d1762` 与交接文件夹新增目录随本版一并入库；交接资料不删除。
+- 本地提交 `b36fa77`（父提交 `92d1762` 一并带上）；推送 main 成功：`d24dc6d..b36fa77`。
+- annotated tag `v3.0.0` → `b36fa77`，已推送；**不移动**。
+- CI：`#56`（push main）、`#57`（tag v3.0.0）由本次推送触发，构建 Windows NSIS 与 Android APK 并自动附加到 Release；结果以 GitHub Actions 页面为准。
+- 本机打包：`python scripts/build-exe.py` 成功，`release/desktop/HumanDesign-Setup-3.0.0.exe`（约 76.9 MB / 80,6xx,xxx B），已复制进 `rlt-archive/v3.0.0/installers/`。本机无交互桌面会话，GUI 冒烟以 CI 为准；若 CI 产物可用，发布件应优先取 CI 已验证的那一份。
+- 归档：`D:\AIws\txgzml\rlt-archive\v3.0.0\`（源码 1.55 MB + 安装包），`INDEX.md` 共 13 版。
