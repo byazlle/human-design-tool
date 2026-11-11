@@ -23,7 +23,7 @@ const src = readFileSync(SRC, 'utf8').replace(/\r\n/g, '\n')
 
 /** 提取常量的模板字符串正文（正文内不含反引号 / ${}） */
 function promptOf(name) {
-  const re = new RegExp('export const PROMPT_SYSTEM_' + name + ' = `([\\s\\S]*?)`', 'm')
+  const re = new RegExp('export const PROMPT_SYSTEM_' + name + '(?:\\s*:\\s*string)? = `([\\s\\S]*?)`', 'm')
   const m = re.exec(src)
   if (!m) throw new Error(`源码里找不到 PROMPT_SYSTEM_${name}`)
   return m[1]
@@ -34,6 +34,9 @@ const MAPPING = [
   { heading: '### 3.1', name: 'DETAILED', blockIndex: 2 },
   { heading: '### 5.1', name: 'FULL', blockIndex: 4 },
   { heading: '### 5.2', name: 'FUSION', blockIndex: 5 },
+  // v3.0.0：受众段落也是提示词的一部分，规范文档必须是它的权威来源
+  { heading: '### 6.1', name: 'AUDIENCE_PRO', blockIndex: 6 },
+  { heading: '### 6.2', name: 'AUDIENCE_PLAIN', blockIndex: 7 },
 ]
 
 /** 取出文档中所有 ```text 代码块正文（与测试的提取口径一致） */
@@ -55,15 +58,20 @@ for (const { heading, name } of MAPPING) {
   if (open < 0) throw new Error(`${heading} 之后没有 text 代码块`)
   const close = doc.indexOf('```', open + 8)
   if (close < 0) throw new Error(`${heading} 的代码块未闭合`)
-  doc = doc.slice(0, open) + '```text\n' + body + '\n```' + doc.slice(close + 3)
+  // 受众段落常量以换行收尾，四套正文没有；统一去掉尾部空白再写入，
+  // 让「文档块 == 常量」的逐字比对不受末尾空行影响（正文内容一个字都不改）。
+  doc = doc.slice(0, open) + '```text\n' + body.replace(/\s+$/, '') + '\n```' + doc.slice(close + 3)
 }
 
 const blocks = textBlocks(doc)
-if (blocks.length !== 6) {
-  throw new Error(`规范文档应有 6 个 text 代码块，实际 ${blocks.length} 个（不要增删代码块）`)
+// 放宽：不再把「恰好 6 块」写死。只要 MAPPING 指向的索引都存在就允许文档继续增补
+// 其他说明性代码块；真正的约束由下面逐块比对承担。
+const needed = Math.max(...MAPPING.map((m) => m.blockIndex)) + 1
+if (blocks.length < needed) {
+  throw new Error(`规范文档至少需要 ${needed} 个 text 代码块，实际 ${blocks.length} 个`)
 }
 for (const { name, blockIndex } of MAPPING) {
-  if (promptOf(name) !== blocks[blockIndex]) {
+  if (promptOf(name).replace(/\s+$/, '') !== blocks[blockIndex]) {
     throw new Error(`PROMPT_SYSTEM_${name} 与代码块 [${blockIndex}] 不一致`)
   }
 }
@@ -74,8 +82,8 @@ if (CHECK) {
     console.error('[FAIL] 规范文档与源码常量不一致，请运行 node scripts/sync-prompt-spec.mjs')
     process.exit(1)
   }
-  console.log('[OK] 规范文档四个提示词代码块与源码常量逐字一致')
+  console.log(`[OK] 规范文档 ${MAPPING.length} 个提示词代码块与源码常量逐字一致`)
 } else {
   writeFileSync(DOC, doc, 'utf8')
-  console.log('[OK] 已同步 2.1 / 3.1 / 5.1 / 5.2 四个提示词代码块（共 6 个 text 块）')
+  console.log(`[OK] 已同步 ${MAPPING.length} 个提示词代码块（含两段受众段落，共 ${blocks.length} 个 text 块）`)
 }

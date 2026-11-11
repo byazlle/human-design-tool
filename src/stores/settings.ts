@@ -13,6 +13,8 @@ const KEY = 'hdt.settings.v1'
 
 export interface Appearance {
   theme: ThemeMode
+  /** 界面皮肤：nova（默认新视觉）/ classic（可切回升级前旧观感），与明暗轴正交 */
+  skin: 'classic' | 'nova'
   fontScale: number
   bodyGraphPalette: 'default' | 'high-contrast'
   /* ── 样式自定义 ── */
@@ -26,7 +28,22 @@ export interface Appearance {
   centerOpenBold: boolean
   /** 全局专业关键字（策略 / 内在权威 等）字体颜色 */
   keywordColor: string
+  /**
+   * 是否在设置页改过样式：仅 true 时才把上述 5 个变量写成 <html> 内联样式，
+   * 否则交给皮肤 CSS 接管。见设计文档 §4.0 阻塞 A（内联样式优先级高于皮肤 CSS）。
+   * 无法用「值是否等于 DEFAULTS」推断用户意图，故必须显式标记。
+   */
+  styleTouched?: boolean
 }
+
+/** 由设置页「样式设置」写入 <html> 的 5 个内联变量（设计文档 §4.0 阻塞 A） */
+const INLINE_STYLE_VARS = [
+  '--center-defined-color',
+  '--center-open-color',
+  '--center-defined-weight',
+  '--center-open-weight',
+  '--keyword-color',
+] as const
 
 const FONT_SCALE_STEPS = [0.85, 0.92, 1, 1.1, 1.2, 1.35] as const
 
@@ -87,6 +104,7 @@ const DEFAULTS: SettingsState = {
   aiConcurrencyLimit: DEFAULT_AI_CONCURRENCY_LIMIT,
   appearance: {
     theme: 'light',
+    skin: 'nova',
     fontScale: 1,
     bodyGraphPalette: 'default',
     centerDefinedColor: '#1a1d23',
@@ -94,9 +112,29 @@ const DEFAULTS: SettingsState = {
     centerDefinedBold: true,
     centerOpenBold: false,
     keywordColor: '#5b616e',
+    styleTouched: false,
   },
   precision: { decimals: 2 },
   persistError: null,
+}
+
+/** 皮肤轴归一：只认 classic / nova，其余（含存量缺失）一律回落 nova（§5.2 默认） */
+function normalizeSkin(raw: unknown): 'classic' | 'nova' {
+  return raw === 'classic' ? 'classic' : 'nova'
+}
+
+/**
+ * 外观归一：既有字段沿用「默认值 + 存档覆盖」，新增的皮肤轴与自定义样式标记
+ * 必须显式归一，避免存档里的非法值带进 state（三个 state() 返回分支共用）。
+ */
+function normalizeAppearance(raw: unknown): Appearance {
+  const a = raw && typeof raw === 'object' ? (raw as Partial<Appearance>) : {}
+  return {
+    ...DEFAULTS.appearance,
+    ...a,
+    skin: normalizeSkin(a.skin),
+    styleTouched: a.styleTouched === true,
+  }
 }
 
 /** 从配置对象取出 5 个配置字段（剔除 id/name/时间戳等附加信息） */
@@ -222,7 +260,7 @@ export const useSettingsStore = defineStore('settings', {
         aiStepMode: normalizeStepMode(saved.aiStepMode),
         aiConcurrency: pair.concurrency,
         aiConcurrencyLimit: pair.limit,
-        appearance: { ...DEFAULTS.appearance, ...(saved.appearance ?? {}) },
+        appearance: normalizeAppearance(saved.appearance),
         precision: { ...DEFAULTS.precision, ...(saved.precision ?? {}) },
         persistError: null,
       }
@@ -247,7 +285,7 @@ export const useSettingsStore = defineStore('settings', {
         aiStepMode: normalizeStepMode(saved.aiStepMode),
         aiConcurrency: pair.concurrency,
         aiConcurrencyLimit: pair.limit,
-        appearance: { ...DEFAULTS.appearance, ...(saved.appearance ?? {}) },
+        appearance: normalizeAppearance(saved.appearance),
         precision: { ...DEFAULTS.precision, ...(saved.precision ?? {}) },
         persistError: null,
       }
@@ -263,7 +301,7 @@ export const useSettingsStore = defineStore('settings', {
       aiStepMode: normalizeStepMode(saved.aiStepMode),
       aiConcurrency: pair.concurrency,
       aiConcurrencyLimit: pair.limit,
-      appearance: { ...DEFAULTS.appearance, ...(saved.appearance ?? {}) },
+      appearance: normalizeAppearance(saved.appearance),
       precision: { ...DEFAULTS.precision, ...(saved.precision ?? {}) },
       persistError: null,
     }
@@ -296,23 +334,32 @@ export const useSettingsStore = defineStore('settings', {
       return ok
     },
 
-    /** 主题与自定义样式写入 <html>，全局生效 */
+    /** 主题、皮肤与自定义样式写入 <html>，全局生效 */
     applyToDom() {
       const root = document.documentElement
       root.dataset.theme = this.appearance.theme
       root.dataset.palette = this.appearance.bodyGraphPalette
+      root.dataset.skin = this.appearance.skin
       root.style.setProperty('--font-scale', String(this.appearance.fontScale))
-      root.style.setProperty('--center-defined-color', this.appearance.centerDefinedColor)
-      root.style.setProperty('--center-open-color', this.appearance.centerOpenColor)
-      root.style.setProperty(
-        '--center-defined-weight',
-        this.appearance.centerDefinedBold ? '700' : '400',
-      )
-      root.style.setProperty(
-        '--center-open-weight',
-        this.appearance.centerOpenBold ? '700' : '400',
-      )
-      root.style.setProperty('--keyword-color', this.appearance.keywordColor)
+      // 仅当用户在设置页确实改过样式时才写这 5 个内联变量；否则交给皮肤 CSS。
+      // 内联样式优先级高于 :root[data-skin='nova']，不修会让 nova 的九中心 /
+      // 关键字配色永远压不上去（设计文档 §4.0 阻塞 A）。
+      if (this.appearance.styleTouched === true) {
+        root.style.setProperty('--center-defined-color', this.appearance.centerDefinedColor)
+        root.style.setProperty('--center-open-color', this.appearance.centerOpenColor)
+        root.style.setProperty(
+          '--center-defined-weight',
+          this.appearance.centerDefinedBold ? '700' : '400',
+        )
+        root.style.setProperty(
+          '--center-open-weight',
+          this.appearance.centerOpenBold ? '700' : '400',
+        )
+        root.style.setProperty('--keyword-color', this.appearance.keywordColor)
+      } else {
+        // 交回皮肤 CSS：清掉可能残留的内联变量（含「恢复默认样式」后的场景）
+        INLINE_STYLE_VARS.forEach((name) => root.style.removeProperty(name))
+      }
       root.style.colorScheme = this.appearance.theme
     },
 
@@ -468,6 +515,20 @@ export const useSettingsStore = defineStore('settings', {
       this.persist()
     },
 
+    /** 界面皮肤：nova（默认）/ classic（切回旧观感）；与明暗轴正交，互相独立 */
+    setSkin(skin: 'classic' | 'nova') {
+      this.appearance.skin = normalizeSkin(skin)
+      this.persist()
+      this.applyToDom()
+    },
+
+    /** 恢复默认样式：解除自定义标记，5 个内联变量由 applyToDom 清掉，配色交回皮肤 CSS */
+    resetDefaultStyle() {
+      this.appearance.styleTouched = false
+      this.persist()
+      this.applyToDom()
+    },
+
     setTheme(theme: ThemeMode) {
       this.appearance.theme = theme
       this.persist()
@@ -505,9 +566,9 @@ export const useSettingsStore = defineStore('settings', {
       return idx >= 0 ? idx : 2
     },
 
-    /** 样式自定义：九中心颜色 / 加粗、关键字颜色 */
+    /** 样式自定义：九中心颜色 / 加粗、关键字颜色；一旦改过即标记 styleTouched */
     setStyle(patch: Partial<Appearance>) {
-      this.appearance = { ...this.appearance, ...patch }
+      this.appearance = { ...this.appearance, ...patch, styleTouched: true }
       this.persist()
       this.applyToDom()
     },

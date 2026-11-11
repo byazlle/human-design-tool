@@ -16,6 +16,17 @@ import { useReadingsStore } from '../../stores/readings'
 import { useSettingsStore, MAX_TOKEN_BUDGET } from '../../stores/settings'
 import { MIN_TOKEN_BUDGET } from '../../services/aiClient'
 import { useAiBatch } from '../../composables/useAiBatch'
+import {
+  canPickDirectory,
+  ensureDefaultOutputDir,
+  getOutputDir,
+  isAutoExport,
+  setAutoExport,
+  pickOutputDir,
+  exportBatchReadings,
+  type BatchExportItem,
+  type BatchExportResult,
+} from '../../services/batchExport'
 import { READING_ANGLES } from '../../services/readingAngles'
 import { READING_DIMENSIONS, type ReadingDimKey } from '../../services/chartFacts'
 import HdButton from '../base/HdButton.vue'
@@ -38,6 +49,12 @@ const showCustom = ref(false)
 const detailMode = ref<AiDetailMode>(settings.aiDetailMode)
 const onExisting = ref<'skip' | 'overwrite'>('skip')
 const starting = ref(false)
+/** v3.0.0：保存位置 + 完成后自动导出 md，一人一份 */
+const outputDir = ref(getOutputDir())
+const autoExport = ref(isAutoExport())
+const canPickDir = canPickDirectory()
+const exportResult = ref<BatchExportResult | null>(null)
+const exporting = ref(false)
 /** 本次批量每份解读的 token 总预算；0 = 不限制。打开时继承设置页的全局值 */
 const tokenBudgetInput = ref(String(settings.aiTokenBudget))
 const BUDGET_PRESETS = [0, 1000, 2000, 4000, 8000] as const
@@ -70,6 +87,11 @@ watch(
     scope.value = selectedIds.value.length ? 'selected' : 'all'
     detailMode.value = settings.aiDetailMode
     tokenBudgetInput.value = String(settings.aiTokenBudget)
+    exportResult.value = null
+    // 首次打开时向主进程要一个默认目录（<文档>/HumanDesign解读），不覆盖用户已选目录
+    void ensureDefaultOutputDir().then((d) => {
+      if (d) outputDir.value = d
+    })
   },
 )
 
@@ -120,9 +142,45 @@ const coveredInTarget = computed(
   () => targetIds.value.filter((id) => readings.coveredIds.has(id)).length,
 )
 
+async function chooseDir() {
+  const d = await pickOutputDir()
+  if (d) outputDir.value = d
+}
+
+function updateAutoExport() {
+  setAutoExport(autoExport.value)
+}
+
+/** 完成后自动落盘：只导有正文的项，逐份独立成功 / 失败，不整体回滚 */
+async function autoExportOutcomes() {
+  if (!autoExport.value) return
+  const items: BatchExportItem[] = lastOutcomes.value
+    .filter((o) => o.content.trim())
+    .map((o) => ({
+      archiveId: o.archiveId,
+      name: o.name,
+      title: o.title,
+      content: o.content,
+      mode: o.mode ?? detailMode.value,
+      scope: o.scope,
+      ref: o.ref,
+    }))
+  if (!items.length) return
+  exporting.value = true
+  try {
+    exportResult.value = await exportBatchReadings(items, {
+      dirPath: outputDir.value,
+      audience: settings.aiAudience,
+    })
+  } finally {
+    exporting.value = false
+  }
+}
+
 async function start() {
   if (!canRun.value) return
   starting.value = true
+  exportResult.value = null
   try {
     await run({
       archiveIds: targetIds.value,
@@ -133,6 +191,7 @@ async function start() {
       tokenBudget: effectiveBudget.value ?? undefined,
       onExisting: onExisting.value,
     })
+    await autoExportOutcomes()
   } catch {
     /* 报告已通过 ui.batch.summary 呈现，此处不再抛给用户 */
   } finally {
@@ -150,6 +209,7 @@ async function retry() {
       detailMode: detailMode.value,
       tokenBudget: effectiveBudget.value ?? undefined,
     })
+    await autoExportOutcomes()
   } catch {
     /* 同上 */
   }
@@ -295,17 +355,21 @@ const MODE_LABELS: Record<AiDetailMode, string> = {
             </div>
             <p v-if="detailMode === 'full'" class="t-xs note warn">
               「完整」档每份默认上限 8000 tokens，批量生成耗时与额度消耗都会显著增加；
-              可用下面的「单份 token 上限」压住总消耗。
+              可用下面的「单次请求 token 上限」压住总消耗。
             </p>
           </section>
 
           <!-- ⑤ 单份 token 上限（v2.5.0）：逐份独立，不再无限 token -->
           <section class="block">
-            <h3 class="t-sm block-title">单份 token 上限</h3>
+            <h3 class="t-sm block-title">单次请求 token 上限</h3>
             <p class="t-xs note">
-              每份解读（含自动续写）独立计算，N 份最多消耗约 N × 本值。填 0 表示不限制。
+              每次 AI 请求（含自动续写）独立计算，N 份档案最多消耗约 N × 本值。填 0 表示不限制。
               触顶的解读会标注「可能不完整」且不写入缓存，调高后重跑即可。
               设置页的全局值：{{ settings.aiTokenBudget === 0 ? '不限制' : `${settings.aiTokenBudget} tokens` }}。
+            </p>
+            <p class="t-xs note warn">
+              ⚠ 选「完整」档时不适用上面的估法：一份档案会拆成几十个分项 + 一次融合，
+              每个分项与融合各自套用本上限，总消耗约为「请求数 × 本值」，可能高出一到两个数量级。
             </p>
             <div class="chips">
               <button
@@ -329,6 +393,34 @@ const MODE_LABELS: Record<AiDetailMode, string> = {
               placeholder="0 = 不限制"
             />
             <p v-if="tokenBudgetError" class="t-xs note error">{{ tokenBudgetError }}</p>
+          </section>
+
+          <!-- ⑥ v3.0.0：保存位置 + 完成后自动导出，一人一份 -->
+          <section class="block">
+            <h3 class="t-sm block-title">保存位置 · 自动导出 md</h3>
+            <p class="t-xs note">
+              解读完成后每人一份 .md 自动落盘，文件名「档案名-范围-受众-时间」。
+              同名文件不覆盖，自动加 -2；内容与单盘手动导出完全一致（含页眉与免责声明）。
+            </p>
+            <label class="t-xs auto-export">
+              <input v-model="autoExport" type="checkbox" @change="updateAutoExport" />
+              完成后自动导出（每人一份）
+            </label>
+            <div v-if="canPickDir" class="dir-row">
+              <input class="input" :value="outputDir" readonly placeholder="尚未选择目录" />
+              <HdButton size="sm" variant="ghost" @click="chooseDir">选择目录</HdButton>
+            </div>
+            <p v-else class="t-xs note warn">
+              当前是网页 / 安卓环境，无法指定保存目录；导出会逐个下载到浏览器默认位置。
+            </p>
+            <p v-if="exporting" class="t-xs note">正在写入 md…</p>
+            <p v-if="exportResult" class="t-xs note" :class="{ warn: exportResult.failed.length }">
+              已导出 {{ exportResult.written.length }} 份<template v-if="exportResult.failed.length"
+                >，失败 {{ exportResult.failed.length }} 份：{{
+                  exportResult.failed.map((f) => f.name).join('、')
+                }}</template
+              ><template v-if="exportResult.dirPath"> · 目录：{{ exportResult.dirPath }}</template>
+            </p>
           </section>
 
           <section class="block">
@@ -394,7 +486,7 @@ const MODE_LABELS: Record<AiDetailMode, string> = {
             </ul>
             <p v-if="truncatedNames.length" class="t-xs note warn">
               {{ truncatedNames.length }} 份输出触顶、结尾可能缺失：{{ truncatedNames.join('、') }}。
-              调高「单份 token 上限」后重跑这几份即可。
+              调高「单次请求 token 上限」后重跑这几份即可。
             </p>
             <p v-if="!running && batch.skipped.length" class="t-xs note">
               跳过：{{ batch.skipped.join('、') }}
@@ -620,6 +712,25 @@ const MODE_LABELS: Record<AiDetailMode, string> = {
 .pop-leave-to {
   opacity: 0;
   transform: translate(-50%, -48%) scale(0.97);
+}
+
+/* v3.0.0：保存位置 */
+.auto-export {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.dir-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dir-row .input {
+  flex: 1;
+  min-width: 0;
 }
 
 @media (max-width: 768px) {

@@ -19,7 +19,7 @@ import {
 } from '../types/hd'
 import { CHANNELS, GATE_CENTER } from '../engine/gateData'
 import { ENGINE_VERSION } from '../engine/version'
-import { aiHttpRequest } from './aiTransport'
+import { aiHttpRequest, aiHttpStream, aiTransportKind, type AiHttpInit, type AiStreamEvents } from './aiTransport'
 
 /** 提示词版本：提示词正文一改就必须 +1（同时进入缓存键，见 cacheKey） */
 export const PROMPT_VERSION = '3.3'
@@ -77,6 +77,12 @@ export interface AiExplainArgs {
   signal?: AbortSignal
   /** v2.3.0：可选阶段回调，仅用于 UI 状态区。★ 不传时行为与 v2.2.1 逐字一致 */
   onStage?: (event: AiStageEvent) => void
+  /**
+   * v3.0.0：流式观测回调（连接建立 / 增量正文 / 非流式回退）。
+   * ★ 不传时完全走 v2.5.0 的一次性请求路径，请求体也不带 stream 字段——
+   *   既有调用点与全部契约测试逐字不受影响。
+   */
+  onStream?: AiStreamEvents
 }
 
 /* ── 提示词正文（逐字取自规范 §2.1 / §3.1，不要随手改写）──────── */
@@ -300,7 +306,7 @@ export function applyTokenBudget(modeMaxTokens: number, budget?: number): number
  * 不改上面四套正文（它们仍与规范文档逐字一致），也不改事实块与字数契约。
  * 只调「用词与解释深度」这一件事，两种人群的结论精确度要求相同。
  */
-const AUDIENCE_PRO: string = `
+export const PROMPT_SYSTEM_AUDIENCE_PRO: string = `
 【读者背景：有基础（专业版）】
 读者已熟悉人类图术语（类型、策略、权威、九大中心、闸门、通道、人生角色、定义型、轮回交叉）。因此：
 - 可以直接使用专业词，不必逐个展开解释，把篇幅留给这张盘的具体判断。
@@ -309,7 +315,7 @@ const AUDIENCE_PRO: string = `
 - 但仍然禁止用术语掩饰空话：专业词只在与本盘的具体判断绑定时才出现。
 `
 
-const AUDIENCE_PLAIN: string = `
+export const PROMPT_SYSTEM_AUDIENCE_PLAIN: string = `
 【读者背景：零基础（简明版）】
 读者完全没接触过人类图，也不打算先学术语。因此：
 - 凡是专业词第一次出现，先用一句大白话说清它对应的是什么生活现象，再把原词放进括号，例如「你的身体会先有反应、头脑随后才跟上（这叫『荐骨权威』）」。
@@ -320,8 +326,8 @@ const AUDIENCE_PLAIN: string = `
 
 /** 按面向人群取附加段落；不传时返回空串，保持 v2.4.0 的提示词逐字一致 */
 export function audiencePromptOf(audience?: AiAudience): string {
-  if (audience === 'plain') return AUDIENCE_PLAIN
-  if (audience === 'pro') return AUDIENCE_PRO
+  if (audience === 'plain') return PROMPT_SYSTEM_AUDIENCE_PLAIN
+  if (audience === 'pro') return PROMPT_SYSTEM_AUDIENCE_PRO
   return ''
 }
 
@@ -722,22 +728,36 @@ export async function explain(args: AiExplainArgs): Promise<string> {
       // 仅第一轮发 request-sent；续写轮不再重复
       if (round === 0) emit('request-sent')
       const remaining = Math.max(1000, deadline - Date.now())
-      const result = await aiHttpRequest({
+      const httpInit: AiHttpInit = {
         url: resolveEndpoint(cfg.baseUrl),
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${cfg.apiKey}`,
         },
-        body: JSON.stringify({
-          model: cfg.model,
-          temperature: params.temperature,
-          max_tokens: params.maxTokens,
-          messages,
-        }),
+        // 只有显式要求流式时才带 stream:true；默认请求体与 v2.5.0 逐字一致
+        body: JSON.stringify(
+          args.onStream
+            ? {
+                model: cfg.model,
+                temperature: params.temperature,
+                max_tokens: params.maxTokens,
+                messages,
+                stream: true,
+              }
+            : {
+                model: cfg.model,
+                temperature: params.temperature,
+                max_tokens: params.maxTokens,
+                messages,
+              },
+        ),
         timeoutMs: remaining,
         signal: controller.signal,
-      })
+      }
+      const result = args.onStream
+        ? await aiHttpStream(httpInit, args.onStream)
+        : await aiHttpRequest(httpInit)
 
       if (!result.ok) {
         // 传输层只回传事实，这里翻译成既有 6 类 AiError，不改任何既有文案与分类
@@ -760,10 +780,13 @@ export async function explain(args: AiExplainArgs): Promise<string> {
             'http',
           )
         }
-        throw new AiError(
-          `网络请求失败：${result.error || '未知错误'}。若是浏览器跨域限制，请确认接口允许 CORS。`,
-          'network',
-        )
+        // P3（v3.0.0）：按实际传输通道给可执行的提示，而不是一律甩锅给 CORS。
+        // 桌面 / 安卓走原生出网，不受同源策略限制，那里失败就是真实网络或配置问题。
+        const hint =
+          aiTransportKind() === 'web'
+            ? '当前是网页端，带鉴权头的请求可能被浏览器跨域策略拦截；请改用桌面版或安卓版，或确认接口允许 CORS。'
+            : '已走原生网络通道，不受浏览器跨域限制；请检查网络连通、接口地址与密钥。'
+        throw new AiError(`网络请求失败：${result.error || '未知错误'}。${hint}`, 'network')
       }
 
       let data: {

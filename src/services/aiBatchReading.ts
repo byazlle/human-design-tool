@@ -18,6 +18,7 @@
 import type { AiAudience, AiConfig, AiDetailMode, AiStepMode, BodyGraph } from '../types/hd'
 import { chartSummaryOf, explain, resolveAudience } from './aiClient'
 import { resolveSchedule } from './aiConcurrency'
+import type { AiStreamEvents } from './aiTransport'
 import { cancelledError, errText, isCancelled, withRetry } from './aiAttempt'
 import {
   buildUnifiedFacts,
@@ -184,11 +185,22 @@ export interface BatchOptions {
   /** v2.5.0 每份解读的 token 总预算；0 或不传 = 不限制 */
   tokenBudget?: number
   signal?: AbortSignal
+  /**
+   * v3.0.0 逐路流式钩子：每份档案独立一行状态。
+   * 不传时所有 explain() 仍走 v2.5.0 的一次性请求路径，行为逐字不变。
+   */
+  streams?: BatchStreamHooks
   onUpdate?: (payload: {
     progress: BatchProgress
     /** 已完成项的结果（含失败），便于调用方增量落库 */
     outcomes: BatchOutcome[]
   }) => void
+}
+
+/** v3.0.0：批量逐路状态钩子。eventsFor 每次重试都会重新调用，负责重新 begin 那一行 */
+export interface BatchStreamHooks {
+  eventsFor: (task: BatchTask) => AiStreamEvents
+  finish: (task: BatchTask, ok: boolean, error?: string) => void
 }
 
 /**
@@ -286,6 +298,7 @@ export async function runBatchReading(options: BatchOptions): Promise<BatchRepor
             audience,
             tokenBudget,
             signal,
+            onStream: options.streams?.eventsFor(task),
             onStage: (e) => {
               if (e.stage === 'completed') truncated = Boolean(e.truncated)
             },
@@ -293,11 +306,17 @@ export async function runBatchReading(options: BatchOptions): Promise<BatchRepor
         },
         signal,
       )
+      options.streams?.finish(task, true)
       return { index, cancelled: false, outcome: { ...base, content, error: '', truncated } }
     } catch (err) {
       // 取消：不记为失败，交给调用方上抛（已发布的结果不丢）
-      if (isCancelled(err, signal)) return { index, cancelled: true, outcome: { ...base, content: '', error: '' } }
-      return { index, cancelled: false, outcome: { ...base, content: '', error: errText(err) } }
+      if (isCancelled(err, signal)) {
+        options.streams?.finish(task, false, '已取消')
+        return { index, cancelled: true, outcome: { ...base, content: '', error: '' } }
+      }
+      const message = errText(err)
+      options.streams?.finish(task, false, message)
+      return { index, cancelled: false, outcome: { ...base, content: '', error: message } }
     }
   }
 

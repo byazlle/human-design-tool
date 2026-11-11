@@ -230,3 +230,149 @@
   --hd-channel: #8a909c;
   --hd-single-accent: #ffffff;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+ * v3.0.0 · nova 视觉皮肤（B档）
+ * 只追加覆盖，不改动上方 :root / :root[data-theme='dark'] / high-contrast 的任何一行。
+ * 皮肤轴 data-skin 与明暗轴 data-theme 正交；nova 默认明暗仍为 light（§4.0 阻塞 B）。
+ * 数据语义三色（业务语义，原值保留）与人体图几何 / 坐标 / 通道路由一律不动。
+ * 浅色：纸感米白底 + 靛蓝主色 + 琥珀强调；深色：深墨底 + 更高对比。
+ * 正文对比度经 WCAG 校验均 ≥ 4.5:1；--fs-* 阶梯均不小于既有值。
+ * ══════════════════════════════════════════════════════════════════════ */
+
+:root[data-skin='nova'] {
+  /* 表面与文字：纸感米白 */
+  --bg-base: #f4f1e9;
+  --surface: #fffdf7;
+  --surface-2: #ece7da;
+  --border: #e3dbc9;
+  --border-strong: #cdc3ac;
+  --text-primary: #211f2e;
+  --text-secondary: #4b4760;
+  --text-muted: #625d70;
+
+  /* 操作：靛蓝主色 + 琥珀强调 */
+  --action-primary: #3f3aa8;
+  --action-primary-hover: #2f2b83;
+  --action-ghost-bg: #fffdf7;
+  --focus-ring: #a4510a;
+
+  /* 九中心 / 关键字：未标记 styleTouched 时由皮肤接管（§4.0 阻塞 A） */
+  --center-defined-color: #3730a3;
+  --center-open-color: #6b6579;
+  --keyword-color: #8a4a0c;
+
+  /* 圆角：更大 */
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-pill: 999px;
+
+  /* 分层投影（无边框卡片靠阴影与留白分割） */
+  --elev-card: 0 1px 2px rgba(33, 31, 46, 0.06), 0 10px 28px rgba(33, 31, 46, 0.09);
+  --elev-panel: 0 2px 8px rgba(33, 31, 46, 0.08), 0 16px 40px rgba(33, 31, 46, 0.15);
+  --elev-dialog: 0 6px 16px rgba(33, 31, 46, 0.12), 0 28px 72px rgba(33, 31, 46, 0.24);
+
+  /* 字体：更紧的标题栅格 + 明确字号阶梯，数据用等宽 */
+  --font-sans: 'Inter', 'HarmonyOS Sans SC', 'PingFang SC', 'Microsoft YaHei', 'Segoe UI',
+    system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', Consolas, 'Liberation Mono', monospace;
+  --fs-display: 26px;
+  --fs-title: 18px;
+  --fs-body: 14px;
+  --fs-data: 13px;
+  --fs-sm: 12px;
+  --fs-xs: 11px;
+
+  /* 更长的层级过渡 */
+  --dur-fast: 180ms;
+  --dur-base: 300ms;
+  --dur-slow: 560ms;
+
+  /* 人体图：浅色档保留青色底板（不做跨档突变），中心 / 闸门 / 通道改靛墨层次 */
+  --hd-center-defined: #2e2a56;
+  --hd-center-undef: #fbf8ef;
+  --hd-center-defined-top: #4c46a2;
+  --hd-center-defined-bottom: #2b275e;
+  --hd-center-undef-top: #fffdf6;
+  --hd-center-undef-bottom: #ece5d5;
+  --hd-gate-bg: #fffdf6;
+  --hd-gate-stroke: #2e2a56;
+  --hd-gate-lit-fill: #4c46a2;
+  --hd-gate-idle-bg: #f3ede0;
+  --hd-gate-ring: #8b85a9;
+  --hd-channel: #7b76a4;
+  --hd-channel-halo: rgba(255, 253, 246, 0.92);
+  --hd-ch-base-halo: rgba(70, 64, 110, 0.42);
+  --hd-single-accent: #3f3aa8;
+  --hd-plate-top: #dceef0;
+  --hd-plate-mid: #c4e3e7;
+  --hd-plate-bottom: #e8f4f1;
+  --hd-plate-figure: rgba(255, 255, 255, 0.7);
+  --hd-tube: #fffdf7;
+  --hd-tube-edge: rgba(60, 100, 110, 0.3);
+  --hd-tube-v2: #e2eceb;
+  --hd-tube-edge-v2: rgba(70, 100, 110, 0.42);
+}
+
+:root[data-skin='nova'][data-theme='dark'] {
+  /* 深墨底 + 更高对比（主按钮文字在 HdButton 里为硬编码深墨，故主色必须亮） */
+  --bg-base: #0e1120;
+  --surface: #181d31;
+  --surface-2: #222842;
+  --border: #2c3450;
+  --border-strong: #414c70;
+  --text-primary: #f5f3ff;
+  --text-secondary: #c3c9e2;
+  --text-muted: #9aa4c4;
+  --action-primary: #aab4ff;
+  --action-primary-hover: #c9d0ff;
+  --action-ghost-bg: transparent;
+  --focus-ring: #fbbf24;
+  --center-defined-color: #c7d2fe;
+  --center-open-color: #9aa4c4;
+  --keyword-color: #fbbf24;
+  --elev-card: 0 1px 2px rgba(0, 0, 0, 0.5), 0 10px 28px rgba(0, 0, 0, 0.55);
+  --elev-panel: 0 2px 8px rgba(0, 0, 0, 0.55), 0 16px 40px rgba(0, 0, 0, 0.6);
+  --elev-dialog: 0 6px 16px rgba(0, 0, 0, 0.6), 0 28px 72px rgba(0, 0, 0, 0.68);
+
+  /* 人体图：深墨底板 + 高对比通道 */
+  --hd-center-defined: #f5f3ff;
+  --hd-center-undef: #1b2239;
+  --hd-center-defined-top: #ffffff;
+  --hd-center-defined-bottom: #cbc8f0;
+  --hd-center-undef-top: #1c233c;
+  --hd-center-undef-bottom: #10162b;
+  --hd-gate-bg: #151b30;
+  --hd-gate-stroke: #eae8ff;
+  --hd-gate-lit-fill: #aab4ff;
+  --hd-gate-idle-bg: #1d2540;
+  --hd-gate-ring: #9aa6d2;
+  --hd-channel: #a9b2e6;
+  --hd-channel-halo: rgba(12, 17, 34, 0.92);
+  --hd-ch-base-halo: rgba(4, 7, 18, 0.62);
+  --hd-single-accent: #f5f3ff;
+  --hd-plate-top: #151b30;
+  --hd-plate-mid: #0c1122;
+  --hd-plate-bottom: #19213c;
+  --hd-plate-figure: rgba(165, 190, 255, 0.09);
+  --hd-tube: #e9edfb;
+  --hd-tube-edge: rgba(0, 0, 0, 0.5);
+  --hd-tube-v2: #232c48;
+  --hd-tube-edge-v2: rgba(190, 205, 255, 0.22);
+}
+
+/* 高对比人体图配色在 nova 下仍优先于皮肤色：保留既有设置项语义 */
+:root[data-skin='nova'][data-palette='high-contrast'] {
+  --hd-center-defined: #1a1d23;
+  --hd-gate-stroke: #000000;
+  --hd-channel: #4a5160;
+  --hd-single-accent: #1a1d23;
+}
+
+:root[data-skin='nova'][data-palette='high-contrast'][data-theme='dark'] {
+  --hd-center-defined: #ffffff;
+  --hd-gate-stroke: #ffffff;
+  --hd-channel: #8a909c;
+  --hd-single-accent: #ffffff;
+}

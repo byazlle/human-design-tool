@@ -25,6 +25,7 @@ import {
 } from './aiAttempt'
 import { READING_ANGLES } from './readingAngles'
 import { gateInsightOf } from './gateInsight'
+import type { AiStreamEvents } from './aiTransport'
 import { CENTER_TEXT, getChannel, getGate } from './interpretations'
 import { CHANNEL_BY_KEY, GATE_CENTER, GATE_NAMES } from '../engine/gateData'
 import {
@@ -109,6 +110,13 @@ export interface FullReadingOptions extends FullReadingPlan {
   audience?: AiAudience
   /** v2.5.0 单份（每个分项 / 融合各算一份）token 总预算；0 或不传 = 不限制 */
   tokenBudget?: number
+  /** v3.0.0 逐路流式：每个分项与融合各一行状态；不传时保持 v2.5.0 一次性请求路径 */
+  streams?: FullStreamHooks
+}
+
+export interface FullStreamHooks {
+  eventsFor: (key: string, label: string) => AiStreamEvents
+  finish: (key: string, ok: boolean, error?: string) => void
 }
 
 /* ── 事实文本：全部取自项目既有离线释义 ─────────────────── */
@@ -398,6 +406,7 @@ export async function runFullReading(options: FullReadingOptions): Promise<FullR
       audience,
       tokenBudget,
       signal,
+      onStream: options.streams?.eventsFor(task.key, task.title),
     })
 
   /** 单项：失败重试 1 次；取消向上抛，不当作失败 */
@@ -405,10 +414,13 @@ export async function runFullReading(options: FullReadingOptions): Promise<FullR
     if (signal?.aborted) throw cancelled(signal)
     try {
       const content = await withRetry(() => callTask(tasks[index]), signal)
+      options.streams?.finish(tasks[index].key, true)
       return { index, content }
     } catch (err) {
       if (isCancelled(err, signal)) throw err
-      return { index, error: errText(err) }
+      const message = errText(err)
+      options.streams?.finish(tasks[index].key, false, message)
+      return { index, error: message }
     }
   }
 
@@ -508,17 +520,21 @@ export async function runFullReading(options: FullReadingOptions): Promise<FullR
           audience,
           tokenBudget,
           signal,
+          onStream: options.streams?.eventsFor('fusion', fusionAngle),
         }),
       signal,
     )
     const split = splitFusion(raw)
     fusion = split.fusion
     finalSummary = split.summary
+    options.streams?.finish('fusion', true)
   } catch (err) {
     if (isCancelled(err, signal)) throw cancelled(signal)
     // 融合失败不伪造：跳过该项，报告仍由分项构成
+    const message = errText(err)
     skipped.push('全盘整合与最终总结论')
-    failed.push(`全盘整合与最终总结论：${errText(err)}`)
+    failed.push(`全盘整合与最终总结论：${message}`)
+    options.streams?.finish('fusion', false, message)
     fusion = ''
     finalSummary = ''
   }

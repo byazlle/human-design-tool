@@ -15,6 +15,7 @@ import { useArchiveStore } from '../stores/archive'
 import { useReadingsStore, makeReading } from '../stores/readings'
 import { useSettingsStore } from '../stores/settings'
 import { useUiStore } from '../stores/ui'
+import { useAiStreams } from './useAiStreams'
 import { runBatchReading, buildBatchTasks, type BatchOutcome, type BatchReport } from '../services/aiBatchReading'
 import { angleOf } from '../services/readingAngles'
 import { ALL_READING_DIMS, type ReadingDimKey } from '../services/chartFacts'
@@ -40,7 +41,24 @@ export function useAiBatch() {
   const readings = useReadingsStore()
   const settings = useSettingsStore()
   const ui = useUiStore()
+  const streams = useAiStreams()
   const { batch: batchState } = storeToRefs(ui)
+
+  /** v3.0.0：每份档案一行实时状态，key 与档案 id 绑定，并发不串台 */
+  const streamKey = (archiveId: string) => `batch:${archiveId}`
+  const streamHooks = {
+    eventsFor: (task: { archiveId: string; name: string }) => {
+      const key = streamKey(task.archiveId)
+      streams.begin(key, task.name)
+      return {
+        onConnected: () => streams.connected(key),
+        onDelta: (text: string) => streams.delta(key, text),
+        onFallback: (reason: string) => streams.fallback(key, reason),
+      }
+    },
+    finish: (task: { archiveId: string }, ok: boolean, error?: string) =>
+      streams.finish(streamKey(task.archiveId), ok, error),
+  }
 
   const controller = ref<AbortController | null>(null)
   /** 已完成的项（含失败），用于「重跑失败项」与结果列表 */
@@ -175,6 +193,7 @@ export function useAiBatch() {
         audience: settings.aiAudience,
         tokenBudget: options.tokenBudget ?? settings.aiTokenBudget,
         signal: ctrl.signal,
+        streams: streamHooks,
         onUpdate: ({ progress, outcomes }) => {
           ui.setBatchProgress(progress)
           // 增量落库：每一有结果的项立刻写盘，中途取消或刷新都不丢已完成的部分

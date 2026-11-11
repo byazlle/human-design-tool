@@ -23,6 +23,7 @@ import { useSettingsStore } from '../../stores/settings'
 import { useUiStore } from '../../stores/ui'
 import { useBreakpoint } from '../../composables/useBreakpoint'
 import { useAiStatus } from '../../composables/useAiStatus'
+import { PANEL_STREAM_KEY, useAiStreams } from '../../composables/useAiStreams'
 import type { AiDetailMode } from '../../types/hd'
 import type {
   AiProgress,
@@ -64,6 +65,15 @@ const emit = defineEmits<{
 const settings = useSettingsStore()
 const ui = useUiStore()
 const status = useAiStatus()
+const streams = useAiStreams()
+/** v3.0.0：单面板的流式观测行；不新增第二个 status 容器，也不碰 progress-wrap */
+const streamRow = computed(() => streams.snapshots.value.get(PANEL_STREAM_KEY) ?? null)
+/** 完整档逐路：只列未结束的分项 / 融合行，纯展示、无任何交互调用 */
+const fullRows = computed(() =>
+  streams.list.value.filter(
+    (s) => s.key.startsWith('full:') && s.phase !== 'done' && s.phase !== 'idle',
+  ),
+)
 const { isMobile } = useBreakpoint()
 
 const hasContent = computed(() => props.content.trim().length > 0)
@@ -350,6 +360,21 @@ function confirmApply() {
           </div>
           <!-- 终态同义提示：B 区独立静态行，不依赖 progress，置 null 后仍渲染 -->
           <p v-if="terminalHint" class="t-xs t-muted terminal-hint">{{ terminalHint }}</p>
+
+          <!-- v3.0.0 流式观测：四态 + 真实字/秒。总长未知，不用百分比进度条 -->
+          <div v-if="streamRow" class="stream-row" aria-live="off">
+            <div class="stream-head">
+              <span class="stream-dot" :class="streamRow.phase" />
+              <span class="t-xs">{{ streamRow.text }}</span>
+            </div>
+            <div class="stream-track" :class="{ active: streamRow.phase === 'receiving' }">
+              <span class="stream-pulse" />
+            </div>
+            <p v-if="streamRow.hint" class="t-xs t-muted stream-hint">{{ streamRow.hint }}</p>
+          </div>
+          <pre v-if="ui.aiReading.streamText" class="stream-live" aria-live="off">{{
+            ui.aiReading.streamText
+          }}</pre>
         </div>
 
         <!-- C 报告工具区（展示控制） -->
@@ -379,6 +404,15 @@ function confirmApply() {
 
         <!-- D 展示区（唯一独立滚动；只读，无破坏性 / 业务可点击控件） -->
         <main class="zone zone-d" data-zone="D" ref="bodyEl">
+          <!-- v3.0.0 完整档逐路流式：每个在途分项一行，纯展示 -->
+          <ul v-if="fullRows.length" class="full-stream" role="list" aria-live="off">
+            <li v-for="r in fullRows" :key="r.key" class="full-stream-item" role="listitem">
+              <span class="fs-dot" :class="r.phase" />
+              <span class="fs-label">{{ r.label }}</span>
+              <span class="fs-text">{{ r.text }}</span>
+              <span v-if="r.hint" class="fs-hint">{{ r.hint }}</span>
+            </li>
+          </ul>
           <!-- AI-11：重新生成失败时旧内容保留在下方并带常驻标注 -->
           <p v-if="error && hasContent" class="stale-note">以下为上一次结果</p>
 
@@ -828,6 +862,148 @@ function confirmApply() {
   .rise-enter-from,
   .rise-leave-to {
     transform: translateY(24px);
+  }
+}
+
+/* v3.0.0 流式观测行：四态 + 真实字/秒，脉冲条不是百分比填充 */
+.stream-row {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--surface-2, #f0f2f5);
+}
+.stream-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary, #5b616e);
+}
+.stream-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--status-loading, #8a909c);
+}
+.stream-dot.connected,
+.stream-dot.fallback {
+  background: var(--status-warning, #d97706);
+}
+.stream-dot.receiving,
+.stream-dot.done {
+  background: var(--status-success, #1f9d55);
+}
+.stream-dot.failed {
+  background: var(--status-error, #d92d20);
+}
+.stream-dot.receiving {
+  animation: stream-blink 1.2s ease-in-out infinite;
+}
+.stream-track {
+  position: relative;
+  height: 3px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border, #e2e5ea);
+}
+.stream-pulse {
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  border-radius: 999px;
+  background: var(--action-primary, #1a1d23);
+  opacity: 0;
+}
+.stream-track.active .stream-pulse {
+  opacity: 0.75;
+  animation: stream-slide 1.6s ease-in-out infinite;
+}
+.stream-hint {
+  margin: 4px 0 0;
+}
+.stream-live {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-sans, sans-serif);
+  font-size: var(--fs-sm, 12px);
+  line-height: 1.7;
+  color: var(--text-secondary, #5b616e);
+  background: var(--surface-2, #f0f2f5);
+  border-radius: var(--radius-sm, 6px);
+}
+.full-stream {
+  margin: 0 0 var(--sp-3, 12px);
+  padding: 8px 10px;
+  list-style: none;
+  border-radius: var(--radius-md, 10px);
+  background: var(--surface-2, #f0f2f5);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.full-stream-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--fs-xs, 11px);
+  color: var(--text-secondary, #5b616e);
+}
+.fs-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--status-loading, #8a909c);
+}
+.fs-dot.connected,
+.fs-dot.fallback {
+  background: var(--status-warning, #d97706);
+}
+.fs-dot.receiving {
+  background: var(--status-success, #1f9d55);
+}
+.fs-dot.failed {
+  background: var(--status-error, #d92d20);
+}
+.fs-label {
+  min-width: 88px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary, #1a1d23);
+}
+.fs-text {
+  flex: 1;
+  min-width: 0;
+}
+.fs-hint {
+  color: var(--status-warning, #d97706);
+}
+@keyframes stream-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(350%);
+  }
+}
+@keyframes stream-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stream-track.active .stream-pulse,
+  .stream-dot.receiving {
+    animation: none;
   }
 }
 </style>

@@ -37,6 +37,21 @@ interface DesktopFileApi {
   }>
   saveReport?: (payload: SaveReportPayload) => Promise<FileResult>
   savePdf?: (payload: SavePdfPayload) => Promise<FileResult>
+  /** v3.0.0 批量导出目录能力；老安装包缺这些字段时前端退化为逐个下载 */
+  defaultDir?: () => Promise<DirResult>
+  pickDir?: () => Promise<DirResult>
+  writeInDir?: (payload: {
+    dirPath: string
+    fileName: string
+    content: string
+  }) => Promise<FileResult>
+}
+
+export interface DirResult {
+  ok: boolean
+  canceled?: boolean
+  dirPath?: string
+  error?: string
 }
 
 interface DesktopAiApi {
@@ -55,6 +70,31 @@ interface DesktopAiApi {
     errorKind?: string
   }>
   cancel?: (id: string) => void
+  /** v3.0.0 流式请求：payload 与 request 一致，结果形态与 request 一致 */
+  stream?: (payload: {
+    id: string
+    url: string
+    method: string
+    headers: Record<string, string>
+    body?: string
+    timeoutMs: number
+  }) => Promise<{
+    ok?: boolean
+    status?: number
+    bodyText?: string
+    error?: string
+    errorKind?: string
+  }>
+  /** v3.0.0 订阅流式事件，返回取消订阅函数；老安装包缺字段时前端降级为整段请求 */
+  onStreamEvent?: (
+    handler: (payload: {
+      id: string
+      kind: 'connected' | 'delta' | 'fallback'
+      text?: string
+      status?: number
+      reason?: string
+    }) => void,
+  ) => () => void
 }
 
 interface DesktopBridge {

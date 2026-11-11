@@ -10,7 +10,7 @@
  */
 import { useUiStore } from '../stores/ui'
 import { makeReading, useReadingsStore } from '../stores/readings'
-import type { AiDetailMode } from '../types/hd'
+import type { AiAudience, AiDetailMode } from '../types/hd'
 
 const HISTORY_KEY = 'hdt.ai.history.v1'
 const HISTORY_LIMIT = 50
@@ -24,8 +24,15 @@ export interface AiResultSnapshot {
   scope?: string
   /** 引用对象；与 aiClient.cacheKey 同口径 */
   ref?: string
-  /** 生成档位；缺省按「详细」回填 */
+  /**
+   * 生成档位；缺省回落到本次请求锁定的 `ui.aiReading.resultMode`，再兜底 detailed。
+   * v3.0.0 之前无条件缺省 detailed，导致其余 4 个视图存进档案的档位是错的。
+   */
   mode?: AiDetailMode
+  /** 面向人群；缺省回落到生成时锁定的受众（不是设置页当前值） */
+  audience?: AiAudience
+  /** 输出是否因 token 上限触顶；缺省回落到生成时记录的标记 */
+  truncated?: boolean
 }
 
 export async function copyAiResult(content: string): Promise<void> {
@@ -59,12 +66,15 @@ export function saveAiResult(snapshot: AiResultSnapshot): void {
     // scope / ref 缺省取当前面板正在展示的解读——调用方只需给出档案归属
     const scope = snapshot.scope ?? ui.aiReading.scope ?? 'single'
     const ref = snapshot.ref ?? ui.aiReading.ref ?? '-'
+    const meta = ui.aiReading
     const ok = readings.put(
       makeReading({
         archiveId: snapshot.archiveId,
         scope,
         ref,
-        mode: snapshot.mode ?? 'detailed',
+        mode: snapshot.mode ?? meta.resultMode ?? 'detailed',
+        audience: snapshot.audience ?? meta.resultAudience ?? 'pro',
+        truncated: snapshot.truncated ?? meta.resultTruncated ?? false,
         title: snapshot.title,
         content: snapshot.content,
       }),

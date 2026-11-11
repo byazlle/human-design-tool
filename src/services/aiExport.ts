@@ -113,7 +113,7 @@ function utcDate(iso?: string): string {
 }
 
 /** 文件名去掉 Windows/Unix 非法字符，长度截断，避免另存为对话框报错 */
-function safeFileName(s: string): string {
+export function safeFileName(s: string): string {
   const cleaned = s
     .replace(/[\\/:*?"<>|\r\n\t]/g, '_')
     .replace(/\s+/g, ' ')

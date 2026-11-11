@@ -1,4 +1,4 @@
-# 人类图工具（HumanDesignTool）v2.5.0
+# 人类图工具（HumanDesignTool）v3.0.0
 
 > 仓库地址（GitHub）：https://github.com/byazlle/human-design-tool
 
@@ -16,9 +16,13 @@
 ```bash
 npm install
 npm run dev        # http://127.0.0.1:5173
-npm test           # 内核 + 交互 + 数据管理 + 几何 + AI 并发与提示词（323 项）
+npm test           # 内核 + 交互 + 数据管理 + 几何 + AI 并发 / 提示词 / 流式（345 项）
 npm run build      # 产出 dist/（可直接静态托管）
 ```
+
+> **v3.0.0 新变化**：默认启用 `nova` 视觉皮肤（设置页可切回 `classic`）；所有 AI 请求带真实
+> 四态进度与实时字/秒，批量与完整档逐路显示；批量解读可选目录，完成后自动导出
+> 每人一份的 Markdown。详见 `CHANGELOG.md` 与 `docs/VERIFY-v3.0.0.md`。
 
 ## 功能范围
 

@@ -125,6 +125,9 @@ function saveAi() {
     archiveId: panelArchive.value?.id,
     scope: aiState.value.scope || 'single',
     ref: aiState.value.ref ?? (ui.panel ? String(ui.panel.ref) : '-'),
+    mode: aiState.value.resultMode,
+    audience: aiState.value.resultAudience,
+    truncated: aiState.value.resultTruncated,
   })
 }
 

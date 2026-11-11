@@ -823,11 +823,16 @@ function regenerateAll() {
 
         <!-- 单份 token 上限（v2.5.0）：批量生成时逐份独立适用 -->
         <div class="budget-settings">
-          <span class="t-sm">单份解读 token 上限</span>
+          <span class="t-sm">单次解读 token 上限</span>
           <span class="t-xs t-muted">
-            一份解读（含自动续写）的总预算；批量生成时每份独立计算，不再无限消耗。
-            填 0 表示不限制，按所选档位的默认额度执行。触顶时结果会标注「可能不完整」且不写入缓存，
-            调高上限后重新生成即可。
+            这是「一次 AI 请求」（含自动续写）的总预算，不是「一份档案」的总预算；
+            批量生成时每份档案各算一次。填 0 表示不限制，按所选档位的默认额度执行。
+          </span>
+          <span class="t-xs t-muted">
+            ⚠「完整」档会把一份档案拆成几十个分项 + 一次融合，每个分项与融合各算一次预算，
+            实际消耗约为「请求数 × 本值」；选「完整」时请按这个量级估，别按一份估。
+            「上限」是近似值：下限 {{ MIN_TOKEN_BUDGET }} tokens，填值低于 600 时三轮合计会超过所填数。
+            触顶时结果会标注「可能不完整」且不写入缓存，调高上限后重新生成即可。
           </span>
           <div class="budget-field">
             <HdField
@@ -925,6 +930,29 @@ function regenerateAll() {
         <h2 class="t-title">外观</h2>
         <p class="t-sm">深浅色、字号与人体图配色全局生效，立即应用。</p>
       </header>
+
+      <div class="seg">
+        <span class="t-sm seg-label">界面皮肤</span>
+        <div class="seg-ctl" role="group" aria-label="界面皮肤">
+          <button
+            type="button"
+            :class="{ on: settings.appearance.skin === 'nova' }"
+            :aria-pressed="settings.appearance.skin === 'nova'"
+            @click="settings.setSkin('nova')"
+          >
+            nova（新视觉）
+          </button>
+          <button
+            type="button"
+            :class="{ on: settings.appearance.skin === 'classic' }"
+            :aria-pressed="settings.appearance.skin === 'classic'"
+            @click="settings.setSkin('classic')"
+          >
+            classic（旧观感）
+          </button>
+        </div>
+        <span class="t-xs t-muted">nova 为全新配色与卡片语言；切回 classic 可随时恢复升级前的旧观感，两档均可独立切换深浅色。</span>
+      </div>
 
       <div class="seg">
         <span class="t-sm seg-label">主题</span>
@@ -1044,6 +1072,15 @@ function regenerateAll() {
             {{ FONT_LABELS[i] }}
           </button>
         </div>
+      </div>
+
+      <!-- 恢复默认样式：仅在用户改过自定义配色后出现 -->
+      <div v-if="settings.appearance.styleTouched" class="seg">
+        <span class="t-sm seg-label">自定义样式</span>
+        <HdButton size="sm" variant="ghost" @click="settings.resetDefaultStyle()">
+          恢复默认样式
+        </HdButton>
+        <span class="t-xs t-muted">已自定义九中心 / 关键字配色；恢复后由当前皮肤接管配色。</span>
       </div>
 
     </section>

@@ -16,6 +16,7 @@
  * 这一层只负责「把一次 HTTP 往返搬过去」，不理解 chat/completions 的语义。
  */
 import { getDesktopBridge } from './desktopBridge'
+import { SseDecoder, parseSseDelta, synthChatResponse, type SseFrame } from './sse'
 
 export interface AiHttpInit {
   url: string
@@ -53,6 +54,28 @@ interface NativeAiApi {
     errorKind?: string
   }>
   cancel?: (id: string) => void
+  /** v3.0.0 流式：老安装包没有这两个字段时自动退回一次性请求 */
+  stream?: (payload: {
+    id: string
+    url: string
+    method: string
+    headers: Record<string, string>
+    body?: string
+    timeoutMs: number
+  }) => Promise<{
+    ok?: boolean
+    status?: number
+    bodyText?: string
+    error?: string
+    errorKind?: string
+  }>
+  onStreamEvent?: (handler: (payload: {
+    id: string
+    kind: 'connected' | 'delta' | 'fallback'
+    text?: string
+    status?: number
+    reason?: string
+  }) => void) => () => void
 }
 
 /** 安卓原生桥的形态（MainActivity 里 `addJavascriptInterface` 注入） */
@@ -266,4 +289,185 @@ export async function aiHttpRequest(init: AiHttpInit): Promise<AiHttpResult> {
   const android = androidAi()
   if (android) return androidRequest(android, init)
   return browserRequest(init)
+}
+
+/* ── v3.0.0 流式通道 ──────────────────────────────────────────────────
+ * 四态的「已连接」必须是真实事件：桌面 net.request 的 response、网页 fetch resolve。
+ * 绝不用定时器伪造。安卓端按设计降级为整段返回，并明示原因。
+ * 流式结果仍合成 OpenAI 兼容 JSON 返回，explain() 的解析/续写逻辑零改动。
+ */
+export interface AiStreamEvents {
+  /** 连接已建立，还没收到首个 delta */
+  onConnected?: () => void
+  /** 收到一段增量正文（可能一个字，也可能十几个字） */
+  onDelta?: (text: string) => void
+  /** 接口不支持 SSE 或通道不具备流式能力，已退回整段返回 */
+  onFallback?: (reason: string) => void
+}
+
+const streamEvents = new Map<string, AiStreamEvents>()
+let unsubscribeStream: (() => void) | null = null
+
+function ensureStreamListener(api: NativeAiApi): void {
+  if (unsubscribeStream || !api.onStreamEvent) return
+  unsubscribeStream = api.onStreamEvent((p) => {
+    const e = streamEvents.get(p.id)
+    if (!e) return
+    if (p.kind === 'connected') e.onConnected?.()
+    else if (p.kind === 'delta' && p.text) e.onDelta?.(p.text)
+    else if (p.kind === 'fallback') e.onFallback?.(p.reason || '该接口不支持流式，已改用整段返回')
+  })
+}
+
+function clampTimeout(v: number | undefined): number {
+  return Math.max(1000, Math.min(3600000, v ?? 60000))
+}
+
+/** 桌面主进程流：delta 只走 IPC 事件，最终结果仍由 invoke 一次性返回 */
+async function desktopStream(
+  api: NativeAiApi,
+  init: AiHttpInit,
+  events: AiStreamEvents,
+): Promise<AiHttpResult> {
+  const id = nextId()
+  const timeoutMs = clampTimeout(init.timeoutMs)
+  ensureStreamListener(api)
+  streamEvents.set(id, events)
+  const onAbort = () => api.cancel?.(id)
+  if (init.signal) {
+    if (init.signal.aborted) {
+      streamEvents.delete(id)
+      return { ok: false, status: 0, bodyText: '', error: '已取消', errorKind: 'cancelled' }
+    }
+    init.signal.addEventListener('abort', onAbort)
+  }
+  try {
+    const raw = await api.stream!({
+      id,
+      url: init.url,
+      method: init.method ?? 'POST',
+      headers: init.headers ?? {},
+      body: init.body,
+      timeoutMs,
+    })
+    const abortedByUser = Boolean(init.signal?.aborted)
+    return {
+      ok: Boolean(raw.ok),
+      status: Number(raw.status) || 0,
+      bodyText: typeof raw.bodyText === 'string' ? raw.bodyText : '',
+      error: abortedByUser ? '已取消' : raw.error,
+      errorKind: abortedByUser
+        ? 'cancelled'
+        : raw.errorKind === 'timeout'
+          ? 'timeout'
+          : raw.error
+            ? 'network'
+            : undefined,
+    }
+  } finally {
+    streamEvents.delete(id)
+    if (init.signal) init.signal.removeEventListener('abort', onAbort)
+  }
+}
+
+/** 网页流：fetch + ReadableStream + SSE 分帧，非 SSE 响应自动回退 */
+async function browserStream(init: AiHttpInit, events: AiStreamEvents): Promise<AiHttpResult> {
+  const controller = new AbortController()
+  const timeoutMs = clampTimeout(init.timeoutMs)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  const onAbort = () => controller.abort()
+  if (init.signal) {
+    if (init.signal.aborted) {
+      clearTimeout(timer)
+      return { ok: false, status: 0, bodyText: '', error: '已取消', errorKind: 'cancelled' }
+    }
+    init.signal.addEventListener('abort', onAbort)
+  }
+
+  try {
+    const res = await fetch(init.url, {
+      method: init.method ?? 'POST',
+      headers: init.headers,
+      body: init.body,
+      signal: controller.signal,
+    })
+    // fetch resolve = 连接建立（真实信号，不是猜的）
+    events.onConnected?.()
+    const ctype = String(res.headers?.get?.('content-type') ?? '').toLowerCase()
+    // 先判类型再取 reader：getReader() 会锁住 body，之后再调 res.text() 会抛错
+    if (!ctype.includes('text/event-stream')) {
+      events.onFallback?.('该接口不支持流式，已改用整段返回')
+      const bodyText = await res.text().catch(() => '')
+      return { ok: res.ok, status: res.status, bodyText }
+    }
+    const reader = res.body?.getReader?.()
+    if (!reader) {
+      events.onFallback?.('当前环境不支持流式读取，已改用整段返回')
+      const bodyText = await res.text().catch(() => '')
+      return { ok: res.ok, status: res.status, bodyText }
+    }
+
+    const decoder = new TextDecoder()
+    const sse = new SseDecoder()
+    let content = ''
+    let finishReason: string | null = null
+    const consume = (frames: SseFrame[]) => {
+      for (const f of frames) {
+        const d = parseSseDelta(f.data)
+        if (d.text) {
+          content += d.text
+          events.onDelta?.(d.text)
+        }
+        if (d.finishReason) finishReason = d.finishReason
+      }
+    }
+    for (;;) {
+      const { value, done } = await reader.read()
+      if (done) break
+      if (value) consume(sse.push(decoder.decode(value, { stream: true })))
+    }
+    consume(sse.finish())
+    if (!res.ok) return { ok: false, status: res.status, bodyText: content }
+    return { ok: true, status: res.status, bodyText: synthChatResponse(content, finishReason) }
+  } catch (err) {
+    const aborted = (err as Error)?.name === 'AbortError'
+    if (aborted) {
+      const byUser = Boolean(init.signal?.aborted)
+      return {
+        ok: false,
+        status: 0,
+        bodyText: '',
+        error: byUser ? '已取消' : `请求超时（${Math.round(timeoutMs / 1000)} 秒）`,
+        errorKind: byUser ? 'cancelled' : 'timeout',
+      }
+    }
+    return {
+      ok: false,
+      status: 0,
+      bodyText: '',
+      error: (err as Error)?.message || '未知错误',
+      errorKind: 'network',
+    }
+  } finally {
+    clearTimeout(timer)
+    if (init.signal) init.signal.removeEventListener('abort', onAbort)
+  }
+}
+
+/**
+ * 流式优先的一次 HTTP 往返。调用方不传 events 时请直接用 `aiHttpRequest()`——
+ * 默认路径保持 v2.5.0 的逐字行为，避免波及既有契约测试。
+ */
+export async function aiHttpStream(
+  init: AiHttpInit,
+  events: AiStreamEvents = {},
+): Promise<AiHttpResult> {
+  const desktop = desktopAi()
+  if (desktop?.stream && desktop.onStreamEvent) return desktopStream(desktop, init, events)
+  const android = androidAi()
+  if (android) {
+    events.onFallback?.('安卓端使用整段返回，进度按请求阶段显示')
+    return aiHttpRequest(init)
+  }
+  return browserStream(init, events)
 }

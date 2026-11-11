@@ -445,3 +445,116 @@ svg {
     min-height: 44px;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+ * v3.0.0 · nova 皮肤：卡片语言 / 页面骨架增强
+ * 只在 :root[data-skin='nova'] 作用域内追加新规则；既有选择器、类名、结构零改动。
+ * 冒烟冻结契约与单元测试静态断言所依赖的选择器 / 类名 / 结构一律不触碰。
+ * ══════════════════════════════════════════════════════════════════════ */
+
+/* 卡片：无边框 + 分层投影 + 更大圆角，靠留白与阴影分割 */
+:root[data-skin='nova'] .card,
+:root[data-skin='nova'] .glass,
+:root[data-skin='nova'] .glass-soft,
+:root[data-skin='nova'] .glass-strong,
+:root[data-skin='nova'] .glass-float {
+  border-color: transparent;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-card);
+  transition:
+    transform var(--dur-slow) var(--ease-out),
+    box-shadow var(--dur-slow) var(--ease-out),
+    border-color var(--dur-base) ease;
+}
+:root[data-skin='nova'] .glass-strong,
+:root[data-skin='nova'] .glass-float {
+  box-shadow: var(--elev-panel);
+}
+:root[data-skin='nova'] .glass-float {
+  border-radius: var(--radius-pill);
+}
+:root[data-skin='nova'] .card:hover,
+:root[data-skin='nova'] .glass:hover {
+  box-shadow: var(--elev-panel);
+}
+
+/* 悬浮胶囊工具条：只改外观与外边距，保留 sticky / 定位 / 内部结构 */
+:root[data-skin='nova'] header.toolbar {
+  margin: var(--sp-2) var(--sp-3);
+  border-color: transparent;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--elev-panel);
+  transition: box-shadow var(--dur-slow) var(--ease-out);
+}
+
+/* 更紧的标题栅格 */
+:root[data-skin='nova'] h1,
+:root[data-skin='nova'] h2,
+:root[data-skin='nova'] h3,
+:root[data-skin='nova'] h4,
+:root[data-skin='nova'] .t-display,
+:root[data-skin='nova'] .t-title {
+  letter-spacing: -0.025em;
+  line-height: 1.28;
+  font-weight: 650;
+}
+
+/* 数据用等宽字体（数字对齐） */
+:root[data-skin='nova'] .t-data,
+:root[data-skin='nova'] .t-mono,
+:root[data-skin='nova'] .precision dd {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* 选中态：琥珀强调 */
+:root[data-skin='nova'] ::selection,
+:root[data-skin='nova']::selection {
+  background: rgba(164, 81, 10, 0.22);
+  color: var(--text-primary);
+}
+
+/* 滚动条：靛蓝拇指 + 细槽 */
+:root[data-skin='nova'] * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--action-primary) transparent;
+}
+:root[data-skin='nova'] *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+:root[data-skin='nova'] *::-webkit-scrollbar-track {
+  background: transparent;
+}
+:root[data-skin='nova'] *::-webkit-scrollbar-thumb {
+  background: var(--action-primary);
+  border: 3px solid transparent;
+  border-radius: var(--radius-pill);
+  background-clip: padding-box;
+}
+
+/* 更长层级过渡：抬起 / 选项 / 分段控件统一拉长 */
+:root[data-skin='nova'] .lift,
+:root[data-skin='nova'] .dm-option,
+:root[data-skin='nova'] .preset-btn,
+:root[data-skin='nova'] .seg-ctl button {
+  transition-duration: var(--dur-slow);
+}
+
+/* 无障碍：nova 追加的过渡与动效全部关闭 */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-skin='nova'] .card,
+  :root[data-skin='nova'] .glass,
+  :root[data-skin='nova'] .glass-soft,
+  :root[data-skin='nova'] .glass-strong,
+  :root[data-skin='nova'] .glass-float,
+  :root[data-skin='nova'] header.toolbar,
+  :root[data-skin='nova'] .lift,
+  :root[data-skin='nova'] .dm-option,
+  :root[data-skin='nova'] .preset-btn,
+  :root[data-skin='nova'] .seg-ctl button {
+    animation: none !important;
+    transition: none !important;
+  }
+}

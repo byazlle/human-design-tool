@@ -15,6 +15,7 @@ import {
   PROMPT_VERSION,
   buildUserPrompt,
   cacheKey,
+  audiencePromptOf,
   resolveDetailMode,
   resolveRequestParams,
   systemPromptOf,
@@ -224,12 +225,15 @@ describe('提示词的关键契约（字数 / 结构）', () => {
     let m: RegExpExecArray | null
     while ((m = re.exec(md))) codeBlocks.push(m[1].replace(/\s+$/, ''))
     // 文档里依次是：1.3 事实块模板、2.1 精简全文、3.1 详细全文、4.6 验收夹具、
-    //               5.1 完整版分项全文、5.2 完整版融合全文
-    expect(codeBlocks).toHaveLength(6)
+    //               5.1 完整版分项全文、5.2 完整版融合全文、6.1 专业版受众、6.2 简明版受众
+    // v3.0.0 放宽为下限：规范文档允许继续增补说明性代码块，不再写死「恰好 6 块」。
+    expect(codeBlocks.length).toBeGreaterThanOrEqual(8)
     expect(PROMPT_SYSTEM_CONCISE).toBe(codeBlocks[1])
     expect(PROMPT_SYSTEM_DETAILED).toBe(codeBlocks[2])
     expect(PROMPT_SYSTEM_FULL).toBe(codeBlocks[4])
     expect(PROMPT_SYSTEM_FUSION).toBe(codeBlocks[5])
+    expect(audiencePromptOf('pro').replace(/\s+$/, '')).toBe(codeBlocks[6])
+    expect(audiencePromptOf('plain').replace(/\s+$/, '')).toBe(codeBlocks[7])
   })
 
   it('提示词版本为 3.3（旧缓存不得串档）', () => {

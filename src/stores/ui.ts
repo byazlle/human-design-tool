@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import type { CenterId } from '../types/hd'
+import type { AiAudience, AiDetailMode, CenterId } from '../types/hd'
 import type { AiProgress, FullReport } from '../types/report'
 import type { BatchProgress } from '../services/aiBatchReading'
 
@@ -24,6 +24,16 @@ export interface AiReadingState {
   progress: AiProgress | null
   /** 完整版结构化报告（#9）；生成中即为已完成分项的快照 */
   report: FullReport | null
+  /**
+   * v3.0.0：本次解读的生成元数据（生成时锁定，不随设置页改动而漂移）。
+   * 保存进档案时必须用这三个值——此前 saveAiResult 把档位缺省成 detailed、
+   * 受众丢成 undefined，导致「简明版记录挡住专业版批量」的静默跳过。
+   */
+  resultAudience?: AiAudience
+  resultTruncated?: boolean
+  resultMode?: AiDetailMode
+  /** v3.0.0：流式期间已收到的增量正文（纯文本预览，不进持久化） */
+  streamText: string
 }
 
 export interface ToastAction {
@@ -105,6 +115,10 @@ export const useUiStore = defineStore('ui', {
       error: null,
       progress: null,
       report: null,
+      resultAudience: undefined,
+      resultTruncated: false,
+      resultMode: undefined,
+      streamText: '',
     },
     batch: { ...BATCH_IDLE, failed: [], skipped: [] },
     toast: null,
@@ -139,7 +153,21 @@ export const useUiStore = defineStore('ui', {
         error: null,
         progress: null,
         report: null,
+        resultAudience: undefined,
+        resultTruncated: false,
+        resultMode: undefined,
+        streamText: '',
       }
+    },
+    /** 锁定本次解读的生成元数据（由 useAiReading 在请求发起时调用） */
+    setAiResultMeta(meta: { audience?: AiAudience; mode?: AiDetailMode; truncated?: boolean }) {
+      this.aiReading.resultAudience = meta.audience
+      this.aiReading.resultMode = meta.mode
+      if (meta.truncated !== undefined) this.aiReading.resultTruncated = meta.truncated
+    },
+    /** 流式增量：只追加纯文本预览，不动 content / loading / error 的既有语义 */
+    appendAiStreamText(text: string) {
+      this.aiReading.streamText += text
     },
     setAiLoading(loading: boolean) {
       this.aiReading.loading = loading
@@ -153,6 +181,8 @@ export const useUiStore = defineStore('ui', {
       this.aiReading.error = null
       this.aiReading.progress = null
       this.aiReading.report = null
+      this.aiReading.resultTruncated = false
+      this.aiReading.streamText = ''
     },
     /** 完整版：进度与「已完成分项快照」一起更新，面板可边生成边看 */
     setAiProgress(progress: AiProgress | null) {
@@ -163,6 +193,7 @@ export const useUiStore = defineStore('ui', {
     },
     setAiContent(content: string) {
       this.aiReading.content = content
+      this.aiReading.streamText = ''
       this.aiReading.loading = false
       this.aiReading.error = null
     },

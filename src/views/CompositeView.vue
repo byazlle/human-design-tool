@@ -311,6 +311,9 @@ function saveAi() {
     archiveId: archiveA.value?.id,
     scope: aiState.value.scope || 'composite',
     ref: `${aId.value}:${bId.value}`,
+    mode: aiState.value.resultMode,
+    audience: aiState.value.resultAudience,
+    truncated: aiState.value.resultTruncated,
   })
 }
 </script>

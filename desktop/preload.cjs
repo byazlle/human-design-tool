@@ -29,6 +29,10 @@ contextBridge.exposeInMainWorld('hdDesktop', {
     // 需求 #10：报告导出（按扩展名 filters / base64 二进制 / PDF 打印）
     saveReport: (payload) => ipcRenderer.invoke('file:save-report', payload),
     savePdf: (payload) => ipcRenderer.invoke('file:save-pdf', payload),
+    // v3.0.0：批量解读选目录 + 静默逐份写 md
+    defaultDir: () => ipcRenderer.invoke('dir:default'),
+    pickDir: () => ipcRenderer.invoke('dir:pick'),
+    writeInDir: (payload) => ipcRenderer.invoke('file:write-in-dir', payload),
   },
 
   /**
@@ -41,5 +45,13 @@ contextBridge.exposeInMainWorld('hdDesktop', {
   ai: {
     request: (payload) => ipcRenderer.invoke('ai:request', payload),
     cancel: (id) => ipcRenderer.send('ai:cancel', id),
+    // 发起流式请求；返回与 ai:request 完全相同形态的结果对象
+    stream: (payload) => ipcRenderer.invoke('ai:stream', payload),
+    // 订阅流式事件，返回取消订阅函数
+    onStreamEvent: (handler) => {
+      const listener = (_event, payload) => handler(payload)
+      ipcRenderer.on('ai:stream-event', listener)
+      return () => ipcRenderer.removeListener('ai:stream-event', listener)
+    },
   },
 })

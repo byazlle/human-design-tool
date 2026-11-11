@@ -19,6 +19,8 @@ import {
 } from '../services/aiFullReading'
 import { serializeFullReport } from '../services/aiExport'
 import { useAiStatus } from './useAiStatus'
+import { PANEL_STREAM_KEY, useAiStreams } from './useAiStreams'
+import type { AiStreamEvents } from '../services/aiTransport'
 import type { AiDetailMode, AiStepMode, BodyGraph } from '../types/hd'
 
 interface RunOptions {
@@ -79,9 +81,58 @@ export function useAiReading() {
   const settings = useSettingsStore()
   // 模块级单例：5 个盘面视图各自调用也只拿到同一份快照
   const status = useAiStatus()
+  const streams = useAiStreams()
 
   const state = computed(() => ui.aiReading)
   const configured = computed(() => settings.aiConfigured)
+
+  /** v3.0.0：完整档逐路状态，每个分项与融合各一行（用户选「乙：并发也逐路显示」） */
+  const fullStreamKey = (key: string) => `full:${key}`
+  const fullStreamHooks = {
+    eventsFor: (key: string, label: string) => {
+      const k = fullStreamKey(key)
+      streams.begin(k, label)
+      return {
+        onConnected: () => streams.connected(k),
+        onDelta: (text: string) => streams.delta(k, text),
+        onFallback: (reason: string) => streams.fallback(k, reason),
+      }
+    },
+    finish: (key: string, ok: boolean, error?: string) =>
+      streams.finish(fullStreamKey(key), ok, error),
+  }
+
+  /**
+   * v3.0.0：单次档的流式观测。delta 逐字进 per-task 注册表（不丢字），
+   * 正文预览按 250ms 节流写进 ui，避免每个 delta 触发一次 Vue 渲染。
+   */
+  function makeStreamEvents(label: string): { events: AiStreamEvents; flush: () => void } {
+    streams.begin(PANEL_STREAM_KEY, label)
+    let pending = ''
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const flush = () => {
+      if (timer !== null) {
+        clearTimeout(timer)
+        timer = null
+      }
+      if (pending) {
+        ui.appendAiStreamText(pending)
+        pending = ''
+      }
+    }
+    return {
+      events: {
+        onConnected: () => streams.connected(PANEL_STREAM_KEY),
+        onDelta: (text) => {
+          streams.delta(PANEL_STREAM_KEY, text)
+          pending += text
+          if (timer === null) timer = setTimeout(flush, 250)
+        },
+        onFallback: (reason) => streams.fallback(PANEL_STREAM_KEY, reason),
+      },
+      flush,
+    }
+  }
 
   function abort() {
     const hadController = Boolean(activeController)
@@ -147,6 +198,7 @@ export function useAiReading() {
         aiConcurrencyLimit: settings.aiConcurrencyLimit,
         audience: settings.aiAudience,
         tokenBudget: settings.aiTokenBudget,
+        streams: fullStreamHooks,
         ...(options.fullPlan ?? {}),
       })
       if (own.signal.aborted) {
@@ -186,6 +238,9 @@ export function useAiReading() {
     } else {
       ui.openAi(options.scope, options.ref, options.title)
     }
+    // v3.0.0：生成元数据在请求发起时锁定，保存进档案时不读「当前设置」——
+    // 用户可能生成后改了受众 / 档位，用当前值会把记录标错，进而挡住批量跳过判定。
+    ui.setAiResultMeta({ audience: settings.aiAudience, mode, truncated: false })
 
     const configError = validateAiConfig(settings.ai)
     if (configError) {
@@ -198,6 +253,7 @@ export function useAiReading() {
     abort()
     // abort() 可能把上一轮状态标成 cancelled；begin() 在它之后重置，避免串台
     status.begin(mode, settings.ai.timeoutMs)
+    const stream = makeStreamEvents(options.title)
     const own = new AbortController()
     activeController = own
     if (externalSignal) {
@@ -213,6 +269,8 @@ export function useAiReading() {
       try {
         await runFull(options, own)
       } finally {
+        stream.flush()
+        streams.finish(PANEL_STREAM_KEY, !ui.aiReading.error, ui.aiReading.error ?? '')
         if (activeController === own) activeController = null
       }
       return
@@ -231,18 +289,26 @@ export function useAiReading() {
         audience: settings.aiAudience,
         tokenBudget: settings.aiTokenBudget,
         signal: own.signal,
+        onStream: stream.events,
         onStage: (e) => {
           status.applyStage(e)
-          if (e.stage === 'completed' && e.truncated) {
-            ui.notify('本次输出已达到 token 上限，内容可能不完整；可调高上限后重新生成', 'info')
+          if (e.stage === 'completed') {
+            ui.setAiResultMeta({ truncated: Boolean(e.truncated) })
+            if (e.truncated) {
+              ui.notify('本次输出已达到 token 上限，内容可能不完整；可调高上限后重新生成', 'info')
+            }
           }
         },
       })
       if (own.signal.aborted) {
         ui.setAiLoading(false)
+        stream.flush()
+        streams.finish(PANEL_STREAM_KEY, false, '已取消')
         return
       }
       ui.setAiContent(content)
+      stream.flush()
+      streams.finish(PANEL_STREAM_KEY, true)
       status.finish('completed')
     } catch (err) {
       // 主动取消（关闭面板 / 卸载）不算错误，也不写入状态
@@ -253,6 +319,8 @@ export function useAiReading() {
       const message =
         err instanceof AiError ? err.message : `调用失败：${(err as Error).message ?? '未知错误'}`
       ui.setAiError(message)
+      stream.flush()
+      streams.finish(PANEL_STREAM_KEY, false, message)
       const kind = errorKindOf(err)
       status.finish(terminalPhaseOf(kind), kind)
     } finally {

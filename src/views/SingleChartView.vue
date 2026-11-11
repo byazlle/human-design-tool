@@ -240,7 +240,9 @@ function saveAi() {
     // 面板未记录 scope 时按单点解读归属，档案至少能收到一份可回看的记录
     scope: aiState.value.scope || 'single',
     ref: aiState.value.ref ?? (sel ? String(sel.ref) : '-'),
-    mode: settings.aiDetailMode,
+    mode: aiState.value.resultMode ?? settings.aiDetailMode,
+    audience: aiState.value.resultAudience ?? settings.aiAudience,
+    truncated: aiState.value.resultTruncated ?? false,
   })
 }
 

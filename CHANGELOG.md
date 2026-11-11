@@ -2,6 +2,32 @@
 
 遵循「主版本.功能版本.修订版本」；版本号唯一来源为根 `package.json`。
 
+## v3.0.0（2026-11-11）
+
+> 主题：**nova 视觉体系 + 全链路流式进度 + 批量解读自动导出 + P1/P2/P3 收口**。
+> 不改计算内核、盘面数据结构、`SCHEMA_VERSION`、备份格式与人类图业务口径。
+> 提示词正文逐字未变，`PROMPT_VERSION` 保持 3.3（受众段落只是改为规范文档的一等代码块）。
+
+### 新增
+
+- **nova 视觉皮肤（B档，默认启用）**：新增与明暗轴正交的 `data-skin = classic | nova`，设置页可切回旧观感。纸感米白 / 深墨底、靛蓝主色 + 琥珀强调、无边框分层投影卡片、更紧的标题栅格、数据等宽、悬浮胶囊工具条、更长层级过渡（遵循 `prefers-reduced-motion`）。人体图只改颜色变量，几何与通道路由零改动；九中心与关键字配色通过 `appearance.styleTouched` 显式标记避免被内联样式压过。默认明暗仍为 `light`，保住 CI 深色冒烟断言的真实性。
+- **全链路 SSE 流式进度**：`aiTransport` 新增 `aiHttpStream()`，桌面端主进程 `net.request` + `ai:stream-event` IPC、网页端 `fetch` + ReadableStream、安卓端明示降级为整段返回。四态（请求已发出 / 已连接·无回复 / 正在输出 / 已完成）全部来自真实事件，不用定时器伪造；实时速率按「累计有效字符 ÷ 时间」以**字/秒**显示（不假装成 tok/s），附已收字数、耗时、卡顿提示。非 SSE 接口自动回退并明示。
+- **逐路显示（用户选乙）**：新增 `useAiStreams` per-task 注册表（模块级 Map + 250ms 节流，逐字不丢），批量每份档案一行（可折叠）、完整档每个在途分项 / 融合一行（D 区纯展示）、单面板一行含逐字正文预览。流式结果合成 OpenAI 兼容 JSON 返回，`explain()` 的解析与续写逻辑零改动；不传 `onStream` 时请求体与 v2.5.0 逐字一致。
+- **批量解读保存位置 + 自动导出 md**：批量对话框可选输出目录（桌面端 `dir:pick` / `dir:default`，记住上次选择，默认 `<文档>/HumanDesign解读`），完成后自动逐份落盘 `<档案名>-<范围>-<受众>-<本地时间>.md`，一人一份；复用 `reportToMarkdown()` 与手动导出逐字一致。`flag:'wx'` 保证不覆盖，同名自动 `-2`；逐份独立成功 / 失败并给出清单。网页 / 安卓退化为逐个下载并明示。
+
+### 修复
+
+- **P1（静默错误）**：`saveAiResult()` 此前把档位缺省成 `detailed`、受众与截断标记整个丢掉，导致「简明版手动存档挡住专业版批量」被跳过。现在 `ui.aiReading` 在请求发起时锁定 `resultMode / resultAudience / resultTruncated`，5 个视图的 `saveAiResult` 全量补传，`makeReading` 带上；新增回归钉住该场景。
+- **P2**：`docs/spec/AI-PROMPT-v2.0.md` 补「六、面向人群附加段落」，两段受众正文成为受 `sync-prompt-spec.mjs` 逐字校验的代码块；块数断言从「恰好 6 块」放宽为按 MAPPING 索引校验，允许文档继续增补。
+- **P2**：设置页与批量对话框点明「单次请求 token 上限」语义 —— 完整档每个分项与融合各算一次，总消耗约为「请求数 × 本值」，不是「一份 × 本值」；并说明下限 200 带来的近似性。
+- **P3**：`aiTransportKind()` 接进网络失败归类，网页端提示跨域并建议桌面 / 安卓版，原生通道提示检查网络与配置；`92d1762` 随本版推送；交接文件夹新增目录照常入库，不删除用户资料。
+
+### 验证
+
+- `npm run typecheck` 0 错；`npm run test` **28 文件 / 345 项全绿**（新增 `aiResultActions` 4 项、`batchExport` 8 项、`aiStream` 10 项）；`npm run build` 通过；`node scripts/sync-prompt-spec.mjs --check` 通过。
+- 新增纯函数 `src/services/sse.ts`（跨 chunk 分帧 / delta 解析 / 合成响应）、`src/services/batchExport.ts`、`src/composables/useAiStreams.ts`。
+- 计算内核 / 路由表 / 备份格式 / `AiProgress` 8 字段 / 五区结构 / 既有冒烟选择器与文案零改动；无新增运行时依赖。
+
 ## v2.5.0（2026-11-10）
 
 > 主题：**单份 token 预算 + 专业版/简明版受众 + 通用中转站兼容与模型自动获取**。

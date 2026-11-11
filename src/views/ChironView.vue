@@ -138,6 +138,9 @@ function saveAi() {
     archiveId: archive.value?.id,
     scope: 'chiron',
     ref: result.value ? String(result.value.natalChiron.gate) : '-',
+    mode: aiState.value.resultMode,
+    audience: aiState.value.resultAudience,
+    truncated: aiState.value.resultTruncated,
   })
 }
 
