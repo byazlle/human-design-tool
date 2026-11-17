@@ -60,6 +60,20 @@
 - 连接盘（合盘）没有类型/权威/轮回交叉，只有电磁/妥协/主导/同伴四动力学。
 - Chiron 不属于 13 体，不参与类型/权威/通道判定。
 
+## 回路（Circuitry）口径（v3.2.0 落地，已核对，勿再翻案）
+- 数据唯一来源 `src/engine/circuitData.ts`，人工整理稿 `docs/CIRCUITRY.md`，测试 `tests/circuit.test.ts`。
+- 三大组：个体 Individual 15 条 / 集体 Collective（俗称社会回路）14 条 / 部落 Tribal 7 条 = 36。
+- 七个条目：知晓 9、居中 2、整合 4、理解（逻辑）7、感知（抽象）7、意志（自我）5、防御 2。
+- **整合通道不是独立回路**，是个体组内通道群（10-20 / 10-57 / 20-34 / 34-57），不占「六个基础子回路」名额。
+- **10-34 属居中、20-57 属知晓**，都不在整合里。部分教材把整合并入居中（写成「居中 7 条」）属体系分歧，
+  UI 与文档如实标注但不改口径。
+- 统计只数已定义通道；并列第一时不下主导结论（tied=true）；表外通道进 unknown 并提示。
+
+## 盘面文档导出（v3.2.0）
+- `src/services/chartExport.ts` → 复用 aiExport 的 MD/Word/HTML/PDF 保存链路；
+  `ReportInput.modeLabel` 覆盖页眉（写「文档类型：完整盘面」），`reportFileName` 同步取它。
+- 改动 AI 报告页眉/文件名时，记得 `tests/aiExport.test.ts` 断言「解读档位：精简/详细/完整」逐字不变。
+
 ## 验证命令
 - 类型+构建：npm run build（vue-tsc --noEmit && vite build）
 - 测试：npm run test（vitest，2026-11-06 实测 5 文件 / 32 项全绿；`npm run typecheck`、`npm run build` 亦通过）
