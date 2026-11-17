@@ -164,7 +164,7 @@ function run() {
 
 .dim-chip.on,
 .angle-chip.on {
-  background: rgba(124, 58, 237, 0.14);
+  background: rgba(63, 58, 168, 0.14);
   border-color: var(--owner-shared);
   color: var(--text-primary);
   font-weight: 600;
@@ -184,9 +184,9 @@ function run() {
 }
 
 .custom-input:focus {
-  outline: 2px solid rgba(124, 58, 237, 0.28);
+  outline: 2px solid rgba(63, 58, 168, 0.28);
   outline-offset: 1px;
-  border-color: rgba(124, 58, 237, 0.4);
+  border-color: rgba(63, 58, 168, 0.4);
 }
 
 .composer :deep(.hd-btn) {

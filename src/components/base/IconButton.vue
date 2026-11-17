@@ -19,7 +19,7 @@ const emit = defineEmits<{ click: [] }>()
     :title="label"
     @click="emit('click')"
   >
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <template v-if="icon === 'plus'">
         <path d="M12 5v14M5 12h14" />
       </template>
@@ -120,15 +120,14 @@ const emit = defineEmits<{ click: [] }>()
 .icon-btn:hover {
   background: rgba(16, 24, 40, 0.06);
   color: var(--text-primary);
-  transform: translateY(-1px);
 }
 :root[data-theme='dark'] .icon-btn:hover {
   background: rgba(255, 255, 255, 0.1);
 }
 
 .icon-btn.active {
-  background: rgba(124, 58, 237, 0.14);
-  color: var(--owner-shared);
+  background: var(--surface-2);
+  color: var(--text-primary);
 }
 
 @media (max-width: 768px) {

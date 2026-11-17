@@ -242,7 +242,7 @@ function applyPreset(value: Exclude<LayoutPreset, 'custom'>) {
 .preset.on {
   border-color: var(--action-primary);
   color: var(--text-primary);
-  background: rgba(124, 58, 237, 0.1);
+  background: rgba(63, 58, 168, 0.1);
 }
 
 .intro,

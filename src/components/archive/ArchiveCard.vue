@@ -117,13 +117,12 @@ const definedCount = computed(
 }
 
 .card-wrap:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--glass-shadow-float);
+  border-color: var(--border-strong);
 }
 
 .card-wrap.selected {
-  border-color: rgba(124, 58, 237, 0.65);
-  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.5), var(--glass-shadow-float);
+  border-color: var(--action-primary);
+  box-shadow: 0 0 0 1px var(--action-primary), var(--elev-card);
 }
 
 .check {
@@ -162,7 +161,7 @@ const definedCount = computed(
 
 .name {
   font-size: calc(var(--fs-body) * var(--font-scale));
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .date {
@@ -174,7 +173,7 @@ const definedCount = computed(
 .fail-badge {
   display: inline-block;
   padding: 0 6px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   background: var(--status-error);
   color: #fff;
   font-size: calc(var(--fs-xs) * var(--font-scale));

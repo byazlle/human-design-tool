@@ -376,3 +376,14 @@
   --hd-channel: #8a909c;
   --hd-single-accent: #ffffff;
 }
+
+/* ── unslop 设计复核：静音外壳，色彩只留给人体图 ─────────────────────
+   Informed by unslop by Damir Sokolovsky (@heydamir), CC BY 4.0. */
+:root {
+  --glow-1: transparent;
+  --glow-2: transparent;
+  --glow-3: transparent;
+  --glow-4: transparent;
+  --glow-5: transparent;
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+}

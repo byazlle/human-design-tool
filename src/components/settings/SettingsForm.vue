@@ -829,7 +829,7 @@ function regenerateAll() {
             批量生成时每份档案各算一次。填 0 表示不限制，按所选档位的默认额度执行。
           </span>
           <span class="t-xs t-muted">
-            ⚠「完整」档会把一份档案拆成几十个分项 + 一次融合，每个分项与融合各算一次预算，
+            注意：「完整」档会把一份档案拆成几十个分项 + 一次融合，每个分项与融合各算一次预算，
             实际消耗约为「请求数 × 本值」；选「完整」时请按这个量级估，别按一份估。
             「上限」是近似值：下限 {{ MIN_TOKEN_BUDGET }} tokens，填值低于 600 时三轮合计会超过所填数。
             触顶时结果会标注「可能不完整」且不写入缓存，调高上限后重新生成即可。
@@ -1342,7 +1342,7 @@ header p {
 
 .dm-option.on {
   border-color: var(--action-primary);
-  background: rgba(124, 58, 237, 0.1);
+  background: rgba(63, 58, 168, 0.1);
 }
 
 .step-mode,
@@ -1414,7 +1414,7 @@ header p {
 .preset-btn.on {
   border-color: var(--action-primary);
   color: var(--text-primary);
-  background: rgba(124, 58, 237, 0.1);
+  background: rgba(63, 58, 168, 0.1);
 }
 
 /* ── 多 AI 配置 ─────────────────────────────── */

@@ -251,10 +251,10 @@ tbody tr:last-child td {
   transition: background var(--dur-fast) ease;
 }
 .row:hover {
-  background: rgba(124, 58, 237, 0.06);
+  background: rgba(63, 58, 168, 0.06);
 }
 .row.opened {
-  background: rgba(124, 58, 237, 0.08);
+  background: rgba(63, 58, 168, 0.08);
 }
 
 .planet-cell {
@@ -278,7 +278,7 @@ tbody tr:last-child td {
   height: auto;
   padding: var(--sp-2) var(--sp-3) var(--sp-3) calc(var(--sp-3) + 12px);
   white-space: normal;
-  background: rgba(124, 58, 237, 0.05);
+  background: rgba(63, 58, 168, 0.05);
   border-bottom: 1px solid var(--border);
   line-height: 1.6;
 }

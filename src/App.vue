@@ -94,7 +94,7 @@ onMounted(() => {
   flex: none;
   padding: 4px 10px;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
 }
 
@@ -107,8 +107,8 @@ onMounted(() => {
   align-items: center;
   gap: var(--sp-1);
   max-width: min(92vw, 520px);
-  padding: 10px 18px;
-  border-radius: var(--radius-pill);
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
   background: var(--glass-bg-float);
   border: 1px solid var(--glass-border);
   color: var(--text-primary);
@@ -132,7 +132,7 @@ onMounted(() => {
   flex: none;
   margin-left: var(--sp-2);
   padding: 2px 10px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   border: 1px solid currentColor;
   color: inherit;
   font-size: calc(var(--fs-xs) * var(--font-scale));
@@ -149,7 +149,7 @@ onMounted(() => {
 .toast-enter-active {
   transition:
     opacity var(--dur-base) var(--ease-out),
-    transform var(--dur-slow) var(--ease-spring);
+    transform var(--dur-base) var(--ease-out);
 }
 .toast-leave-active {
   transition:
@@ -159,6 +159,6 @@ onMounted(() => {
 .toast-enter-from,
 .toast-leave-to {
   opacity: 0;
-  transform: translate(-50%, 14px) scale(0.94);
+  transform: translate(-50%, 8px);
 }
 </style>

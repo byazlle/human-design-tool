@@ -13,8 +13,8 @@ function onInput(e: Event) {
 <template>
   <div class="search">
     <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-      <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2" />
-      <path d="M16.5 16.5 21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+      <circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="1.6" />
+      <path d="M16.5 16.5 21 21" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
     </svg>
     <input
       type="search"
@@ -45,8 +45,8 @@ function onInput(e: Event) {
 
 .search:focus-within {
   background: var(--glass-bg-float);
-  border-color: rgba(124, 58, 237, 0.4);
-  outline: 2px solid rgba(124, 58, 237, 0.28);
+  border-color: var(--border-strong);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
 

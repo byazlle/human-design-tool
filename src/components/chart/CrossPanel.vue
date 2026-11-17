@@ -175,8 +175,8 @@ const detailOpen = ref(true)
 .angle-box {
   padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius-md);
-  background: rgba(124, 58, 237, 0.07);
-  border: 1px solid rgba(124, 58, 237, 0.18);
+  background: rgba(63, 58, 168, 0.07);
+  border: 1px solid rgba(63, 58, 168, 0.18);
   display: flex;
   flex-direction: column;
   gap: 4px;

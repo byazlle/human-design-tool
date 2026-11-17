@@ -29,7 +29,7 @@ const settings = useSettingsStore()
   <header class="toolbar">
     <div class="left">
       <button v-if="backLabel" type="button" class="back" :aria-label="backLabel" @click="emit('back')">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
           <path d="M15 5l-7 7 7 7" />
         </svg>
         <span class="back-text">{{ backLabel }}</span>
@@ -66,7 +66,7 @@ const settings = useSettingsStore()
   height: 56px;
   box-sizing: border-box;
   flex: none;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5), 0 6px 24px -18px rgba(16, 24, 40, 0.4);
+  box-shadow: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -88,7 +88,7 @@ const settings = useSettingsStore()
 /* SK-2 / AC-7：标题单行省略，不换行、不挤压右侧操作 */
 .title {
   font-size: calc(var(--fs-display) * var(--font-scale));
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -106,7 +106,7 @@ const settings = useSettingsStore()
   font-size: calc(var(--fs-sm) * var(--font-scale));
 }
 .back:hover {
-  background: rgba(124, 58, 237, 0.1);
+  background: var(--surface-2);
   color: var(--text-primary);
 }
 

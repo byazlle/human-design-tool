@@ -363,11 +363,11 @@ function onChannelClick(key: string) {
 }
 
 .channel-item:hover {
-  background: rgba(124, 58, 237, 0.06);
+  background: rgba(63, 58, 168, 0.06);
 }
 
 .channel-item.on {
-  background: rgba(124, 58, 237, 0.1);
+  background: rgba(63, 58, 168, 0.1);
 }
 
 .check {
@@ -492,7 +492,7 @@ function onChannelClick(key: string) {
 
 .act-gate.on {
   border-color: var(--owner-shared);
-  background: rgba(124, 58, 237, 0.12);
+  background: rgba(63, 58, 168, 0.12);
 }
 
 .act-gate .num {
@@ -568,7 +568,7 @@ function onChannelClick(key: string) {
 
 .center-dot-btn.on {
   border-color: var(--owner-shared);
-  background: rgba(124, 58, 237, 0.12);
+  background: rgba(63, 58, 168, 0.12);
   color: var(--owner-shared);
 }
 

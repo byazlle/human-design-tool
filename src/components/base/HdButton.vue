@@ -50,26 +50,7 @@ withDefaults(
   transform: scale(0.97);
 }
 
-/* 主按钮的液态高光：悬停时一道斜向反光扫过 */
-.v-primary::after {
-  content: '';
-  position: absolute;
-  top: -30%;
-  bottom: -30%;
-  left: 0;
-  width: 42%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.34), transparent);
-  transform: translateX(-140%) skewX(-16deg);
-  pointer-events: none;
-}
-.v-primary:hover:not(:disabled)::after {
-  animation: btn-sheen 720ms var(--ease-out);
-}
-@keyframes btn-sheen {
-  to {
-    transform: translateX(360%) skewX(-16deg);
-  }
-}
+/* 主按钮保持实色，不用扫光动画 */
 
 .s-sm {
   min-height: 32px;
@@ -99,9 +80,8 @@ withDefaults(
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
 }
 .v-ghost:hover:not(:disabled) {
-  background: var(--glass-bg-float);
-  box-shadow: 0 6px 18px -10px rgba(16, 24, 40, 0.35);
-  transform: translateY(-1px);
+  background: var(--surface-2);
+  box-shadow: var(--elev-card);
 }
 
 .v-danger {
@@ -112,7 +92,6 @@ withDefaults(
 .v-danger:hover:not(:disabled) {
   border-color: var(--action-danger);
   background: rgba(217, 45, 32, 0.08);
-  transform: translateY(-1px);
 }
 
 .hd-btn:disabled {

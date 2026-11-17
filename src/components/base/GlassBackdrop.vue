@@ -15,8 +15,6 @@
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background:
-    radial-gradient(1000px 560px at 8% -10%, var(--glow-1), transparent 55%),
-    radial-gradient(820px 520px at 95% 4%, var(--glow-2), transparent 55%);
+  background: var(--bg-base);
 }
 </style>

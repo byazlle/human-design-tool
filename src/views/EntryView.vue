@@ -322,7 +322,7 @@ function goSettings() {
             />
           </div>
           <p class="t-sm msg-warning warn">
-            ⚠ 出生分钟对闸门影响极大：约 4 分钟的误差即可能改变通道判定，请尽量准确填写。
+            注意：出生分钟影响闸门判定，约 4 分钟误差即可改变通道。请尽量填写准确时刻。
           </p>
           <label class="tz">
             <span class="t-sm">时区</span>
@@ -442,14 +442,14 @@ function goSettings() {
 .select-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
 .gender-ctl {
   display: inline-flex;
-  gap: 2px;
-  padding: 2px;
+  gap: 4px;
+  padding: 4px;
   background: var(--surface-2);
   border-radius: var(--radius-md);
 }
@@ -498,7 +498,8 @@ select {
 
 .warn {
   padding: var(--sp-2) var(--sp-3);
-  background: rgba(217, 119, 6, 0.08);
+  background: var(--surface-2);
+  border-left: 2px solid var(--status-warning);
   border-radius: var(--radius-sm);
 }
 
@@ -508,10 +509,10 @@ select {
 
 .mode-switch {
   display: inline-flex;
-  padding: 3px;
+  padding: 4px;
   background: var(--surface-2);
   border-radius: var(--radius-md);
-  gap: 2px;
+  gap: 4px;
 }
 
 .mode-switch button {

@@ -171,11 +171,11 @@ function keyOf(p: StarPosition): string {
 }
 
 .row:hover {
-  background: rgba(124, 58, 237, 0.1);
+  background: rgba(63, 58, 168, 0.1);
 }
 
 .row.sel {
-  background: rgba(124, 58, 237, 0.18);
+  background: rgba(63, 58, 168, 0.18);
 }
 
 .glyph {

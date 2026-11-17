@@ -75,7 +75,7 @@ const configured = computed(() => settings.aiConfigured)
   font-size: calc(var(--fs-xs) * var(--font-scale));
 }
 .go:hover {
-  background: rgba(124, 58, 237, 0.1);
+  background: rgba(63, 58, 168, 0.1);
 }
 
 /* 手机底部固定条用 compact；热区 ≥44×44 */

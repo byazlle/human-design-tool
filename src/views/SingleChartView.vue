@@ -697,7 +697,7 @@ async function regenerateFromRecord(record: ReadingRecord) {
 }
 
 .angle-chip.on {
-  background: rgba(124, 58, 237, 0.14);
+  background: rgba(63, 58, 168, 0.14);
   border-color: var(--owner-shared);
   color: var(--text-primary);
   font-weight: 600;
@@ -807,7 +807,7 @@ async function regenerateFromRecord(record: ReadingRecord) {
 }
 
 .destiny-item summary:hover {
-  background: rgba(124, 58, 237, 0.08);
+  background: rgba(63, 58, 168, 0.08);
 }
 
 .d-desc {

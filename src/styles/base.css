@@ -274,15 +274,6 @@ svg {
   }
 }
 
-@keyframes sheen {
-  0% {
-    transform: translateX(-120%) skewX(-14deg);
-  }
-  100% {
-    transform: translateX(320%) skewX(-14deg);
-  }
-}
-
 .animate-rise {
   animation: rise-in var(--dur-slow) var(--ease-out) both;
 }
@@ -458,33 +449,34 @@ svg {
 :root[data-skin='nova'] .glass-soft,
 :root[data-skin='nova'] .glass-strong,
 :root[data-skin='nova'] .glass-float {
-  border-color: transparent;
+  border-color: var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--elev-card);
   transition:
-    transform var(--dur-slow) var(--ease-out),
-    box-shadow var(--dur-slow) var(--ease-out),
-    border-color var(--dur-base) ease;
+    background-color var(--dur-fast) ease,
+    border-color var(--dur-fast) ease;
 }
 :root[data-skin='nova'] .glass-strong,
 :root[data-skin='nova'] .glass-float {
-  box-shadow: var(--elev-panel);
+  box-shadow: var(--elev-card);
 }
 :root[data-skin='nova'] .glass-float {
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
 }
 :root[data-skin='nova'] .card:hover,
 :root[data-skin='nova'] .glass:hover {
-  box-shadow: var(--elev-panel);
+  border-color: var(--border-strong);
+  box-shadow: var(--elev-card);
 }
 
-/* 悬浮胶囊工具条：只改外观与外边距，保留 sticky / 定位 / 内部结构 */
+/* 悬浮胶囊工具条：改为平面栏，去掉胶囊与发光阴影 */
 :root[data-skin='nova'] header.toolbar {
-  margin: var(--sp-2) var(--sp-3);
-  border-color: transparent;
-  border-radius: var(--radius-pill);
-  box-shadow: var(--elev-panel);
-  transition: box-shadow var(--dur-slow) var(--ease-out);
+  margin: 0;
+  border-color: var(--border);
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  transition: none;
 }
 
 /* 更紧的标题栅格 */
@@ -494,9 +486,9 @@ svg {
 :root[data-skin='nova'] h4,
 :root[data-skin='nova'] .t-display,
 :root[data-skin='nova'] .t-title {
-  letter-spacing: -0.025em;
-  line-height: 1.28;
-  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1.35;
+  font-weight: 500;
 }
 
 /* 数据用等宽字体（数字对齐） */
@@ -505,20 +497,19 @@ svg {
 :root[data-skin='nova'] .precision dd {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
-/* 选中态：琥珀强调 */
 :root[data-skin='nova'] ::selection,
 :root[data-skin='nova']::selection {
-  background: rgba(164, 81, 10, 0.22);
+  background: rgba(63, 58, 168, 0.18);
   color: var(--text-primary);
 }
 
-/* 滚动条：靛蓝拇指 + 细槽 */
+/* 滚动条：中性色，不用主色抢注意力 */
 :root[data-skin='nova'] * {
   scrollbar-width: thin;
-  scrollbar-color: var(--action-primary) transparent;
+  scrollbar-color: var(--border-strong) transparent;
 }
 :root[data-skin='nova'] *::-webkit-scrollbar {
   width: 10px;
@@ -528,9 +519,9 @@ svg {
   background: transparent;
 }
 :root[data-skin='nova'] *::-webkit-scrollbar-thumb {
-  background: var(--action-primary);
+  background: var(--border-strong);
   border: 3px solid transparent;
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   background-clip: padding-box;
 }
 

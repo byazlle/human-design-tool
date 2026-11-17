@@ -1,4 +1,4 @@
-# 人类图工具（HumanDesignTool）v3.0.0
+# 人类图工具（HumanDesignTool）v3.1.0
 
 > 仓库地址（GitHub）：https://github.com/byazlle/human-design-tool
 
@@ -20,7 +20,9 @@ npm test           # 内核 + 交互 + 数据管理 + 几何 + AI 并发 / 提�
 npm run build      # 产出 dist/（可直接静态托管）
 ```
 
-> **v3.0.0 新变化**：默认启用 `nova` 视觉皮肤（设置页可切回 `classic`）；所有 AI 请求带真实
+> **v3.1.0 新变化**：按 unslop 方法重做界面观感 —— 移除背景径向色洗与装饰性动效，工具栏/标签/按钮/悬浮坞去胶囊化，全界面强调色统一到品牌靛蓝，标题降重、数据保持等宽对齐，警告文案去 emoji。计算内核与人类图口径零改动。详见 `CHANGELOG.md`。
+>
+> **v3.0.0 变化**：默认启用 `nova` 视觉皮肤（设置页可切回 `classic`）；所有 AI 请求带真实
 > 四态进度与实时字/秒，批量与完整档逐路显示；批量解读可选目录，完成后自动导出
 > 每人一份的 Markdown。详见 `CHANGELOG.md` 与 `docs/VERIFY-v3.0.0.md`。
 

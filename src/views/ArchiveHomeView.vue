@@ -315,7 +315,7 @@ function confirmRemove() {
 .batch-entry {
   min-height: 32px;
   padding: 0 var(--sp-3);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-strong);
   font-size: calc(var(--fs-sm) * var(--font-scale));
   color: var(--action-primary);
@@ -323,7 +323,7 @@ function confirmRemove() {
 }
 
 .batch-entry:hover {
-  background: rgba(124, 58, 237, 0.1);
+  background: var(--surface-2);
 }
 
 @media (max-width: 768px) {

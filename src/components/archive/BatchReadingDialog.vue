@@ -368,7 +368,7 @@ const MODE_LABELS: Record<AiDetailMode, string> = {
               设置页的全局值：{{ settings.aiTokenBudget === 0 ? '不限制' : `${settings.aiTokenBudget} tokens` }}。
             </p>
             <p class="t-xs note warn">
-              ⚠ 选「完整」档时不适用上面的估法：一份档案会拆成几十个分项 + 一次融合，
+              注意：选「完整」档时不适用上面的估法：一份档案会拆成几十个分项 + 一次融合，
               每个分项与融合各自套用本上限，总消耗约为「请求数 × 本值」，可能高出一到两个数量级。
             </p>
             <div class="chips">
@@ -610,7 +610,7 @@ const MODE_LABELS: Record<AiDetailMode, string> = {
 }
 
 .chip.on {
-  background: rgba(124, 58, 237, 0.14);
+  background: rgba(63, 58, 168, 0.14);
   border-color: var(--owner-shared);
   color: var(--text-primary);
   font-weight: 600;

@@ -47,8 +47,8 @@ const emit = defineEmits<{ open: []; composite: []; batch: []; remove: []; clear
   margin: 0 auto;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  box-shadow: var(--elev-panel);
+  border-radius: var(--radius-md);
+  box-shadow: var(--elev-card);
   z-index: var(--z-toolbar);
 }
 
@@ -60,7 +60,7 @@ const emit = defineEmits<{ open: []; composite: []; batch: []; remove: []; clear
 .btn {
   min-height: 32px;
   padding: 0 var(--sp-3);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border-strong);
   font-size: calc(var(--fs-sm) * var(--font-scale));
   color: var(--text-primary);
