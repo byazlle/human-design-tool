@@ -12,6 +12,7 @@ import {
   TYPE_LABELS,
 } from '../../types/hd'
 import { CHANNELS, GATE_CENTER, GATE_NAMES } from '../../engine/gateData'
+import { analyzeCircuitry, circuitryBrief } from '../../engine/circuitData'
 import { CENTER_TEXT, getChannel, getGate } from '../../services/interpretations'
 
 const props = withDefaults(
@@ -156,6 +157,9 @@ function buildOffline(): string {
   } else {
     lines.push('已激活通道（0）：这张盘没有形成完整通道')
   }
+
+  // 回路分布（v3.2.0）：只叙述结构，不替模型下人格结论
+  lines.push(circuitryBrief(analyzeCircuitry(props.chart.channels.map((ch) => ch.key))))
 
   if (c.hangingGates.length) {
     lines.push(

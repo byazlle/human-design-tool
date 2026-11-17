@@ -122,7 +122,8 @@ export function safeFileName(s: string): string {
 }
 
 export function reportFileName(input: ReportInput, format: ReportFormat): string {
-  return `${safeFileName(input.title)}-${MODE_LABEL[input.mode]}-${utcDate(input.generatedAt)}.${REPORT_EXTENSIONS[format]}`
+  const modePart = input.modeLabel ?? MODE_LABEL[input.mode]
+  return `${safeFileName(input.title)}-${modePart}-${utcDate(input.generatedAt)}.${REPORT_EXTENSIONS[format]}`
 }
 
 function metaText(meta?: ReportMeta): string[] {
@@ -172,10 +173,13 @@ export function serializeFullReport(report: FullReport): string {
 /** 三档统一入口：返回带页眉与免责声明的 Markdown 全文 */
 export function reportToMarkdown(input: ReportInput): string {
   const body = (input.report ? serializeFullReport(input.report) : input.content).trim()
+  // 盘面文档（v3.2.0）用 modeLabel 覆盖档位文案；不传时逐字保持既有 AI 报告页眉
+  const headLabel = input.modeLabel ? '文档类型' : '解读档位'
+  const headValue = input.modeLabel ?? MODE_LABEL[input.mode]
   const head = [
     `# ${input.title.trim() || 'AI 解读报告'}`,
     '',
-    `> 解读档位：${MODE_LABEL[input.mode]}｜生成时间：${utcDateTime(input.generatedAt)}`,
+    `> ${headLabel}：${headValue}｜生成时间：${utcDateTime(input.generatedAt)}`,
     ...metaText(input.meta),
     `> 全文约 ${charCount(body)} 字`,
     '',

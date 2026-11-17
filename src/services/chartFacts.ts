@@ -27,6 +27,7 @@ import {
 import { gateInsightOf } from './gateInsight'
 import { crossReadingOf } from './crossData'
 import { GATE_NAMES } from '../engine/gateData'
+import { analyzeCircuitry, circuitryBrief } from '../engine/circuitData'
 
 /** 可勾选的盘面维度（原 AiComposer 的 DimKey，语义不变） */
 export type ReadingDimKey =
@@ -138,7 +139,15 @@ export function buildUnifiedFacts(chart: BodyGraph, dims: ReadingDimKey[]): stri
       const t = getChannel(ch.key)
       return `${ch.key} ${t.title.split(' · ').slice(1).join(' · ') || ch.key}：${firstSentence(t.text)}`
     })
-    parts.push(`【已激活通道】（共 ${lines.length} 条）\n${lines.join('\n') || '无'}`)
+    /*
+     * 回路分布（v3.2.0）：作为「已激活通道」段的**同一段内**附加行追加，
+     * 不单独占一段——`tests/chartFacts.test.ts` 用 `split('\n\n')` 的段首标题
+     * 钉住维度顺序，独立成段会让段数从 8 变 9。用单换行即不影响顺序断言。
+     */
+    const circuit = circuitryBrief(analyzeCircuitry(c.channels.map((ch) => ch.key)))
+    parts.push(
+      `【已激活通道】（共 ${lines.length} 条）\n${lines.join('\n') || '无'}\n${circuit}`,
+    )
   }
   if (dims.includes('gates')) {
     const lines = c.gates.map((g) => {

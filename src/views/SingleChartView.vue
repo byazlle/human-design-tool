@@ -16,6 +16,7 @@ import AppToolbar from '../components/base/AppToolbar.vue'
 import HumanDesignBodyGraph from '../components/chart/HumanDesignBodyGraph.vue'
 import BoardMeta from '../components/chart/BoardMeta.vue'
 import ActivationPanels from '../components/chart/ActivationPanels.vue'
+import CircuitPanel from '../components/chart/CircuitPanel.vue'
 import GateChannelPanel from '../components/panel/GateChannelPanel.vue'
 import AiReadingHost from '../components/panel/AiReadingHost.vue'
 import HdButton from '../components/base/HdButton.vue'
@@ -32,6 +33,9 @@ import {
   unifiedScopeRef,
 } from '../services/chartFacts'
 import { destinyReadings } from '../services/destinyText'
+import { exportChartDocument } from '../services/chartExport'
+import { REPORT_FORMATS, REPORT_FORMAT_LABELS } from '../services/aiExport'
+import type { ReportFormat } from '../types/report'
 import PlanetColumn from '../components/chart/PlanetColumn.vue'
 import DetailCard from '../components/chart/DetailCard.vue'
 import CrossPanel from '../components/chart/CrossPanel.vue'
@@ -231,6 +235,25 @@ async function requestFullReading() {
   await requestUnifiedAi({ dimensions: ['channels', 'gates', 'centers', 'strategy', 'definition', 'authority', 'cross', 'profile'], angleKey: angleKey.value, customDirection: '' })
 }
 
+/* ── 一键导出盘面文档（v3.2.0）───────────────────────────
+ * 导出的是结构事实（显/潜意识 13 星、九中心、回路、通道、闸门、类型策略权威），
+ * 不含 AI 结论；四种格式共用同一份 Markdown 序列化（services/chartExport.ts）。
+ */
+const exportMenu = ref(false)
+const exporting = ref<ReportFormat | null>(null)
+
+async function doExportChart(format: ReportFormat = 'docx') {
+  exportMenu.value = false
+  if (!archive.value || !chart.value) return
+  exporting.value = format
+  try {
+    const res = await exportChartDocument(archive.value, chart.value, format)
+    ui.notify(res.message, res.ok ? (res.canceled ? 'info' : 'success') : 'error')
+  } finally {
+    exporting.value = null
+  }
+}
+
 function saveAi() {
   const sel = ui.panel
   saveAiResult({
@@ -352,6 +375,26 @@ async function regenerateFromRecord(record: ReadingRecord) {
           </HdButton>
           <HdButton size="sm" variant="ghost" @click="router.push(`/chiron/${id}`)"> 凯龙回归 </HdButton>
           <HdButton size="sm" @click="router.push(`/compare/${id}`)"> 双盘对比 </HdButton>
+          <span class="export-wrap">
+            <div v-if="exportMenu" class="export-backdrop" @click="exportMenu = false" />
+            <HdButton size="sm" variant="ghost" :loading="!!exporting" @click="exportMenu = !exportMenu">
+              导出文档
+            </HdButton>
+            <div v-if="exportMenu" class="export-menu" role="menu">
+              <p class="export-menu__hint t-xs">整盘资料（不含 AI 结论）</p>
+              <button
+                v-for="f in REPORT_FORMATS"
+                :key="f"
+                type="button"
+                role="menuitem"
+                class="export-item"
+                @click="doExportChart(f)"
+              >
+                <span>{{ REPORT_FORMAT_LABELS[f] }}</span>
+                <span class="t-xs muted">{{ exporting === f ? '导出中…' : `.${f}` }}</span>
+              </button>
+            </div>
+          </span>
           <HdButton size="sm" variant="danger" @click="askDelete">删除</HdButton>
           <HdButton size="sm" :loading="aiState.loading" @click="requestFullReading">
             全盘 AI 解读
@@ -509,6 +552,13 @@ async function regenerateFromRecord(record: ReadingRecord) {
         @center-click="ui.openCenter($event, 'single')"
       />
 
+      <!-- ③.5 回路分布（个体 / 集体 / 部落 + 六个基础子回路 + 整合通道） -->
+      <CircuitPanel
+        :chart="chart"
+        :compact="isMobile"
+        @channel-click="ui.openChannel($event, 'single')"
+      />
+
         </template>
         <template #cross>
       <!-- ④ 轮回交叉 -->
@@ -555,6 +605,7 @@ async function regenerateFromRecord(record: ReadingRecord) {
       <HdButton size="sm" variant="ghost" @click="editOpen = true">编辑</HdButton>
       <HdButton size="sm" variant="ghost" @click="router.push(`/chiron/${id}`)">凯龙</HdButton>
       <HdButton size="sm" variant="ghost" @click="router.push(`/compare/${id}`)">对比</HdButton>
+      <HdButton size="sm" variant="ghost" :loading="!!exporting" @click="doExportChart('docx')">导出</HdButton>
       <HdButton size="sm" variant="danger" @click="askDelete">删除</HdButton>
       <HdButton size="sm" :loading="aiState.loading" @click="requestFullReading">全盘 AI</HdButton>
     </div>
@@ -887,5 +938,61 @@ async function regenerateFromRecord(record: ReadingRecord) {
   .graph-wrap {
     grid-column: 1 / -1;
   }
+}
+
+/* ── 导出文档下拉（v3.2.0）────────────────────────────────
+ * 点按钮开菜单，点菜单外任意处关闭（透明遮罩，不引入新层级令牌）。 */
+.export-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.export-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-toolbar);
+  background: transparent;
+}
+
+.export-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: calc(var(--z-toolbar) + 1);
+  min-width: 168px;
+  padding: 6px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--elev-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.export-menu__hint {
+  padding: 2px 8px 4px;
+  color: var(--text-muted);
+}
+
+.export-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  font-size: calc(var(--fs-sm) * var(--font-scale));
+  color: var(--text-primary);
+}
+
+.export-item:hover {
+  background: var(--surface-2);
+}
+
+.muted {
+  color: var(--text-muted);
 }
 </style>

@@ -62,6 +62,12 @@ export interface ReportInput {
   meta?: ReportMeta
   /** ISO 时间；不传则取当前时间 */
   generatedAt?: string
+  /**
+   * 页眉里的档位文案覆盖（v3.2.0）。
+   * 「一键导出盘面文档」不是 AI 解读，不能写成「解读档位：完整」，
+   * 传入后页眉改用「文档类型」+ 该文案；不传则完全保持既有行为。
+   */
+  modeLabel?: string
 }
 
 /** 完整版编排的实时进度（Q3.4：显示当前到哪一项 + 预计剩余） */

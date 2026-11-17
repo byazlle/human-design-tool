@@ -8,18 +8,23 @@
 - 查 CI：GET /repos/byazlle/human-design-tool/actions/runs；job 日志 302 → curl -L 可直接跟随（带 token 即可）。
 
 ## 推送工作流（关键坑）
-- **本机 TLS 实况（2026-11-10 实测，此前记载有误，已订正）**：
-  - `curl.exe` 对 api.github.com / github.com **全线 HTTP 000**：`curl: (35) schannel:
-    AcquireCredentialsHandle failed: SEC_E_NO_CREDENTIALS (0x8009030e)`。PowerShell
-    `Invoke-RestMethod` 报「基础连接已经关闭」。**即「系统 curl 可通」的旧记载不成立。**
-  - `git -c http.sslBackend=openssl` **可完成握手**（schannel 后端不行），但 `github.com:443`
-    **间歇性 reset**（README 抓取与 fetch 均多次失败）；`ls-remote` 与 `push` 曾成功，不稳定。
-  - **`api.github.com` 经 Node 内置 fetch 稳定 200**（走 Node 自带 OpenSSL）→ 首选通道。
-    `scripts/ghfetch.mjs` 即为此封装（`node scripts/ghfetch.mjs GET /rate_limit`）。
-  - `git` 不在 PATH：用 `D:\AIws\WorkBuddy\resources\vendor\PortableGit\cmd\git.exe`。
-  - push 还需 `-c credential.helper=`（禁凭据助手），否则报 `could not read Username`。
-- 兜底脚本 scripts/push-api.py 用 curl 实现，**在本机当前不可直接运行**（curl TLS 000 + 裸 git 不在 PATH），
-  但在 CI runner 上可用。用法：python scripts/push-api.py [commit]，以远端 HEAD 为基底推送单次提交 diff。
+- **本机 TLS 实况（2026-11-17 最新实测，通道会变，每次先探测）**：
+  - 通道随时间变化，不可假定：**2026-11-10** curl.exe 全线 HTTP 000、Node fetch 稳定 200；
+    **2026-11-17 完全反过来**——`curl.exe` 对 api.github.com 带 token 稳 200，`node scripts/ghfetch.mjs`
+    却报 `fetch failed`，`git push`（openssl 后端 + askpass，classic PAT）报
+    `Password authentication is not supported for Git operations`。**发布前先各探一次再选通道。**
+  - 2026-11-17 可用通道：**curl.exe + .env 里的 classic PAT**（`Authorization: Bearer`）走 api.github.com 正常。
+  - `git` 裸命令**现已在 PATH**（git version 2.55 可用）；PortableGit 路径仍可作后备：
+    `D:\AIws\WorkBuddy\resources\vendor\PortableGit\cmd\git.exe`。
+- **可靠发布路径（2026-11-17 验证通过，v3.1.0）**：
+  1. 改版本号（根/desktop package.json、package-lock 两处、AndroidManifest versionName+versionCode）→ 提交。
+  2. 推 main：`python scripts/push-api.py HEAD`（走 curl+API，自动 tree 对齐补历史遗漏文件）。
+  3. 推 tag（无需 git push）：`POST /git/tags`（annotated，object=**远端** main sha）拿 tag sha →
+     `POST /git/refs` `{ref:refs/tags/vX.Y.Z, sha:<tag sha>}`，触发 CI 的 tag 工作流。
+  4. CI tag 工作流 4 job（测试/Win/Android/附加 Release）全绿后，Release 自动建好并附双安装包。
+  5. 验证：`GET /repos/.../releases/tags/vX.Y.Z` 查 assets 大小+state。
+- 兜底脚本 scripts/push-api.py：用法 `python scripts/push-api.py [commit]`，以远端 HEAD 为基底
+  推送单次提交 diff；依赖 curl 通道。curl 不通时不可用。
 - **分叉根因已定性（2026-11-10，勿再翻案）**：两份历史**内容 100% 相同**
   （`git diff --ignore-cr-at-eol main origin/main` = `88 files changed, 0 insertions(+), 0 deletions(-)`，
    blob sha 不同的条目数为 0），唯一分歧是**文件模式位**：本地 100755=57 / 远端 100755=145。
