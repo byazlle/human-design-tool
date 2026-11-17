@@ -52,7 +52,7 @@ node --check desktop/preload.cjs           → OK
 4. **网页端 CORS 无解**：不返回 CORS 头的中转站在网页版仍连不上，失败文案已按 `aiTransportKind()` 给出「改用桌面 / 安卓版」的可执行建议。
 5. **B档的 8 视图骨架重排与约 106 处组件内硬编码色未逐个替换**：本版通过 `tokens.css` / `base.css` 两套覆盖做到全站「一眼不同」，个别局部 scoped 样式可能仍带 classic 痕迹。
 6. **nova 未新增独立单测**：`styleTouched` 语义与皮肤切换目前由 typecheck 与冒烟契约间接覆盖，建议后续补专门的 store 回归。
-7. ~~归档脚本待 tag 存在后全量重跑~~ **已完成**：`node scripts/archive-version.mjs` 不带参数全量重跑，`INDEX.md` 含 13 个版本，`rlt-archive/v3.0.0/` 有源码包、本机 exe 与含 SHA256 的 MANIFEST。APK 待 CI 产出后补齐。
+7. ~~归档脚本待 tag 存在后全量重跑~~ **已完成**：`node scripts/archive-version.mjs` 不带参数全量重跑，`INDEX.md` 含 13 个版本，`rlt-archive/v3.0.0/` 有源码包、**CI 产出的双安装包**与含 SHA256 的 MANIFEST。
 8. **GitHub 密钥扫描**：`交接文件夹/2026年11月10日21点45分/交接.md`（2.48 MB）与 `2026年11月11日16点55分/16点55分.md`（3.0 MB）内含历史 API Key，首次推送被 `push declined due to repository rule violations` 拒绝。处理方式是**文件原样保留在本机**、仅用 `.git/info/exclude` 本地排除不入库，其余交接资料（含重命名为「老版本…」的目录）照常入库且 git 识别为 100% rename。未删除任何用户资料，也未放行任何密钥。
 
 ## 五、版本与发布状态
@@ -60,6 +60,7 @@ node --check desktop/preload.cjs           → OK
 - 根 / desktop `package.json`、`package-lock.json` → `3.0.0`；`android/AndroidManifest.xml` → `versionCode=30000` / `versionName=3.0.0`。
 - 本地提交 `b36fa77`（父提交 `92d1762` 一并带上）；推送 main 成功：`d24dc6d..b36fa77`。
 - annotated tag `v3.0.0` → `b36fa77`，已推送；**不移动**。
-- CI：`#56`（push main）、`#57`（tag v3.0.0）由本次推送触发，构建 Windows NSIS 与 Android APK 并自动附加到 Release；结果以 GitHub Actions 页面为准。
-- 本机打包：`python scripts/build-exe.py` 成功，`release/desktop/HumanDesign-Setup-3.0.0.exe`（约 76.9 MB / 80,6xx,xxx B），已复制进 `rlt-archive/v3.0.0/installers/`。本机无交互桌面会话，GUI 冒烟以 CI 为准；若 CI 产物可用，发布件应优先取 CI 已验证的那一份。
-- 归档：`D:\AIws\txgzml\rlt-archive\v3.0.0\`（源码 1.55 MB + 安装包），`INDEX.md` 共 13 版。
+- CI：`#56`（push main）与 `#57`（tag v3.0.0）**均 success**。Release `441528040` 由 CI 自动创建（非 draft / 非 prerelease），附 `HumanDesign-Setup-3.0.0.exe` **80,591,233 B** 与 `HumanDesign-3.0.0.apk` **640,686 B**。
+- 本机打包：`python scripts/build-exe.py` 成功产出约 76.9 MB 的 exe；随后**下载 CI 已验证产物覆盖本地**（PE `MZ` / APK `PK` 文件头与字节数均已校验），归档与 `release/` 里现在都是 CI 版本。本机无交互桌面会话，GUI 冒烟以 CI 为准。
+- 归档：`D:\AIws\txgzml\rlt-archive\v3.0.0\`（源码 1.55 MB + 双安装包 + 含 SHA256 的 MANIFEST），`INDEX.md` 共 13 版。
+- 后续 docs 提交 `cdf94e9`（发布状态补充）已推 main；**tag 不移动**，仍指向 `b36fa77`。
