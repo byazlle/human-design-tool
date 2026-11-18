@@ -110,6 +110,32 @@ describe('中断的跨实例语义', () => {
     a.stop()
   })
 
+  it('视图 scope 销毁不中断在途请求（AI 工作区后台运行契约）', async () => {
+    const settings = useSettingsStore()
+    settings.saveAi({ ...CFG })
+    explainMock.mockImplementation(pendingUntilAborted)
+
+    // 模拟盘面视图发起请求后切页：其 effectScope 被销毁
+    const a = runOn((r) => r.run({ scope: 'gate', ref: '9', title: '闸门 9', offline: '离线事实' }))
+    await nextTick()
+    expect(useUiStore().aiReading.loading).toBe(true)
+    a.scope.stop()
+
+    // 关键断言：scope 已停但请求仍在途，状态没有被取消污染
+    const ui = useUiStore()
+    expect(ui.aiReading.error).toBeNull()
+    expect(ui.aiReading.content).toBe('')
+    expect(ui.aiReading.loading).toBe(true)
+
+    // 只有显式取消（工作区的"取消解读"）才能结束它
+    const bScope = effectScope()
+    const b = bScope.run(() => useAiReading())!
+    b.abort()
+    await a.promise
+    bScope.stop()
+    expect(ui.aiReading.loading).toBe(false)
+  })
+
   it('面板关闭会中断在途请求（watch 仍在同一份 controller 上生效）', async () => {
     const settings = useSettingsStore()
     settings.saveAi({ ...CFG })

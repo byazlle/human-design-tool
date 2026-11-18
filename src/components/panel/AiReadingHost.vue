@@ -46,7 +46,7 @@ function goSettings() {
 
 <template>
   <AiReadingPanel
-    :open="aiState.open"
+    :open="aiState.open && !ui.aiPanelSuspended"
     :title="aiState.title"
     :content="aiState.content"
     :loading="aiState.loading"

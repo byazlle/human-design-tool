@@ -324,7 +324,6 @@ function saveAi() {
 
     <!-- R-4：AI 配置状态标识 + 未配置去设置 -->
     <div class="sk-banner ai-config-row">
-      <span class="t-xs t-muted">合盘 AI 解读状态</span>
       <AiConfigBadge @settings="goSettings" />
     </div>
 

@@ -411,7 +411,6 @@ async function regenerateFromRecord(record: ReadingRecord) {
 
     <!-- R-4：AI 配置状态标识 + 未配置去设置 -->
     <div class="sk-banner ai-config-row">
-      <span class="t-xs t-muted">本盘 AI 解读状态</span>
       <AiConfigBadge @settings="goSettings" />
     </div>
 
@@ -444,7 +443,6 @@ async function regenerateFromRecord(record: ReadingRecord) {
         <template #angles>
       <!-- AI 全维度组合解读（电脑端 / 手机端同一组件） -->
       <div class="angle-bar card">
-        <span class="t-xs angle-label">AI 综合解读</span>
         <AiComposer :loading="aiState.loading" @run="requestUnifiedAi" />
       </div>
 

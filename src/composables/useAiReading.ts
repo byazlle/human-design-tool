@@ -2,13 +2,16 @@
  * AI 解读的编排：把「请求 → 状态 → 面板」串起来。
  * 失败时只展示错误与重试，绝不写入伪造内容（DESIGN.md §7）。
  *
- * 取消：面板关闭或组件卸载时 abort 在途请求，避免返回后仍写入 ui.aiReading。
+ * 取消：仅由显式动作触发——用户点"取消"或关闭面板（watch(open)）。
+ * ★ 不再在 scope 销毁时 abort：AI 请求归工作区所有，不绑在短生命周期的盘面 View 上。
+ *   切页 / 最小化只是改变"在哪显示"，请求必须在后台继续跑完并落进同一份状态。
+ *
  * 重试：模块级记住上一次请求参数（不进 UI 状态模型），「重试」按上次 scope/ref 重跑。
  *
  * v2.3.0 / T-5：接入模块级单例 useAiStatus（三档统一状态区）。
  * ★ T-C5 的 degradedNotified 去重、两个并发参数拼装、`...(options.fullPlan ?? {})` 位置逐字不动。
  */
-import { computed, onScopeDispose, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useUiStore } from '../stores/ui'
 import { useSettingsStore } from '../stores/settings'
 import { AiError, chartSummaryOf, explain, validateAiConfig } from '../services/aiClient'
@@ -146,15 +149,14 @@ export function useAiReading() {
     }
   }
 
-  // 面板关闭 → 取消在途请求
+  // 面板关闭 → 取消在途请求。这是唯一由"显示层"触发的中断：
+  // 路由切换 / 组件卸载一律不 abort，保证工作区最小化后请求继续在后台执行。
   watch(
     () => ui.aiReading.open,
     (open) => {
       if (!open) abort()
     },
   )
-  // 组件卸载 → 取消在途请求
-  onScopeDispose(abort)
 
   /**
    * #9 完整版编排：进度与「已完成分项快照」实时写入 UI，取消 / 失败都不写伪造内容。

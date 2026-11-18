@@ -1,0 +1,351 @@
+/**
+ * 工作区设计层（v3.5.0）
+ *
+ * 原则：只追加，不覆盖既有 tokens.css 的语义变量。
+ * 既有明暗主题 / nova 皮肤 / high-contrast 人体图配色全部继续生效；
+ * 本文件只提供 AI 工作区与其伴生组件使用的 ws-* 类。
+ *
+ * 视觉立场：绘图桌上的仪器面板。颜色只属于人体图和解读正文，
+ * 外壳一律中性、发丝边框、极轻颗粒、柔阴影。没有彩色渐变、没有发光、没有弹跳。
+ */
+
+.ws-shell {
+  --ws-bg: var(--bg-base);
+  --ws-surface: var(--surface);
+  --ws-surface-2: var(--surface-2);
+  --ws-border: var(--border);
+  --ws-fg: var(--text-primary);
+  --ws-fg-2: var(--text-secondary);
+  --ws-fg-3: var(--text-muted);
+  --ws-accent: var(--action-primary);
+  --ws-glass: rgba(255, 255, 255, 0.82);
+  --ws-glass-2: rgba(255, 255, 255, 0.66);
+  --ws-shadow: 0 1px 2px rgba(16, 20, 28, 0.04), 0 12px 32px rgba(16, 20, 28, 0.07);
+  --ws-shadow-float: 0 2px 4px rgba(16, 20, 28, 0.05), 0 16px 48px rgba(16, 20, 28, 0.12);
+  --ws-radius: 12px;
+  --ws-radius-sm: 8px;
+  --ws-line: 1px solid var(--ws-border);
+  --ws-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:root[data-theme='dark'] .ws-shell,
+.ws-shell[data-theme='dark'] {
+  --ws-glass: rgba(27, 30, 36, 0.86);
+  --ws-glass-2: rgba(27, 30, 36, 0.72);
+  --ws-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.35);
+  --ws-shadow-float: 0 2px 4px rgba(0, 0, 0, 0.45), 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+/* 颗粒：只铺一层静态噪点，不动画、不混色。弱到只在近距离可辨。 */
+.ws-grain {
+  position: relative;
+}
+.ws-grain::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.022;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+}
+
+/* 毛玻璃只用于浮层。@supports 兜底：不支持时用实色，不留透明洞。 */
+.ws-glass {
+  background: var(--ws-surface);
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ws-glass {
+    background: var(--ws-glass);
+    -webkit-backdrop-filter: blur(18px) saturate(1.08);
+    backdrop-filter: blur(18px) saturate(1.08);
+  }
+}
+
+.ws-card {
+  border: var(--ws-line);
+  border-radius: var(--ws-radius);
+  background: var(--ws-surface);
+  box-shadow: var(--ws-shadow);
+}
+
+.ws-hairline {
+  border-bottom: var(--ws-line);
+}
+
+.ws-label {
+  color: var(--ws-fg-3);
+  font-size: calc(var(--fs-xs) * var(--font-scale));
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.ws-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 状态灯：全站唯一的"签名细节"。只有三态，无呼吸、无循环。 */
+.ws-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ws-fg-3);
+}
+.ws-dot[data-state='running'] {
+  background: var(--status-warning);
+}
+.ws-dot[data-state='done'] {
+  background: var(--status-success);
+}
+.ws-dot[data-state='error'] {
+  background: var(--status-error);
+}
+
+/* 控件：统一 32/36 高，圆角嵌套一致，hover 只变色不位移。 */
+.ws-control {
+  height: 32px;
+  padding: 0 12px;
+  border: var(--ws-line);
+  border-radius: var(--ws-radius-sm);
+  background: var(--ws-surface);
+  color: var(--ws-fg);
+  font-size: calc(var(--fs-sm) * var(--font-scale));
+  transition:
+    background-color var(--dur-fast) ease,
+    border-color var(--dur-fast) ease,
+    color var(--dur-fast) ease;
+}
+.ws-control:hover:not(:disabled) {
+  background: var(--ws-surface-2);
+  border-color: var(--border-strong);
+}
+.ws-control:focus-visible,
+.ws-chip:focus-visible,
+.ws-row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.ws-control:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ws-control--primary {
+  background: var(--ws-accent);
+  border-color: var(--ws-accent);
+  color: var(--surface);
+  font-weight: 500;
+}
+:root[data-theme='dark'] .ws-control--primary,
+.ws-shell[data-theme='dark'] .ws-control--primary {
+  color: #11141a;
+}
+.ws-control--primary:hover:not(:disabled) {
+  background: var(--action-primary-hover);
+  border-color: var(--action-primary-hover);
+  color: var(--surface);
+}
+:root[data-theme='dark'] .ws-control--primary:hover:not(:disabled) {
+  color: #11141a;
+}
+
+/* 选择片：非 pill 堆砌，同一行内只有单选组用片段式控件。 */
+.ws-chip {
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--ws-radius-sm);
+  background: transparent;
+  color: var(--ws-fg-2);
+  font-size: calc(var(--fs-xs) * var(--font-scale));
+  transition:
+    background-color var(--dur-fast) ease,
+    color var(--dur-fast) ease;
+}
+.ws-chip:hover {
+  background: var(--ws-surface-2);
+  color: var(--ws-fg);
+}
+.ws-chip[aria-pressed='true'] {
+  background: var(--ws-surface-2);
+  border-color: var(--ws-border);
+  color: var(--ws-fg);
+  font-weight: 500;
+}
+
+/* 表格：表头/数值/选中/焦点四种状态可辨，不用斑马纹和色块。 */
+.ws-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: calc(var(--fs-data) * var(--font-scale));
+}
+.ws-table th {
+  padding: 8px 10px;
+  border-bottom: var(--ws-line);
+  color: var(--ws-fg-3);
+  font-size: calc(var(--fs-xs) * var(--font-scale));
+  font-weight: 500;
+  text-align: left;
+}
+.ws-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--ws-border);
+  color: var(--ws-fg-2);
+  vertical-align: middle;
+}
+.ws-table tbody tr:hover td {
+  background: var(--ws-surface-2);
+}
+.ws-table tbody tr[aria-selected='true'] td {
+  background: var(--ws-surface-2);
+  color: var(--ws-fg);
+}
+.ws-table td.num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 滚动渐入：只做一次，不做逐卡飞入；尊重 reduced-motion。 */
+.ws-reveal {
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 320ms var(--ws-ease),
+    transform 320ms var(--ws-ease);
+}
+.ws-reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-reveal,
+  .ws-reveal.is-visible {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .ws-control,
+  .ws-chip {
+    transition: none;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+ * v3.5.0 · nova 冷中性收敛
+ *
+ * 不改 tokens.css / base.css 任何既有行：同样的选择器在本文件（加载顺序在后）
+ * 再声明一次，只换值。用户切到 classic 仍是升级前观感；两档明暗都重新收敛。
+ * 色彩只留给人体图底板与状态灯，外壳全部回到冷中性石墨。
+ * ══════════════════════════════════════════════════════════════════════ */
+:root[data-skin='nova'] {
+  --bg-base: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #e4e7ec;
+  --border-strong: #c8ced8;
+  --text-primary: #181b21;
+  --text-secondary: #555c69;
+  --text-muted: #858c99;
+
+  --action-primary: #1a1d23;
+  --action-primary-hover: #2e333d;
+  --action-ghost-bg: #ffffff;
+  --focus-ring: #1a1d23;
+
+  --center-defined-color: #22262f;
+  --center-open-color: #858c99;
+  --keyword-color: #4b5563;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  --elev-card: 0 1px 2px rgba(16, 20, 28, 0.04), 0 8px 24px rgba(16, 20, 28, 0.06);
+  --elev-panel: 0 2px 8px rgba(16, 20, 28, 0.06), 0 16px 40px rgba(16, 20, 28, 0.1);
+  --elev-dialog: 0 4px 12px rgba(16, 20, 28, 0.08), 0 24px 64px rgba(16, 20, 28, 0.16);
+
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --dur-slow: 360ms;
+
+  --hd-center-defined: #22262f;
+  --hd-center-undef: #fbfcfd;
+  --hd-center-defined-top: #39404e;
+  --hd-center-defined-bottom: #1e222a;
+  --hd-center-undef-top: #ffffff;
+  --hd-center-undef-bottom: #eef1f5;
+  --hd-gate-bg: #ffffff;
+  --hd-gate-stroke: #22262f;
+  --hd-gate-lit-fill: #39404e;
+  --hd-gate-idle-bg: #f5f7fa;
+  --hd-gate-ring: #8a919d;
+  --hd-channel: #7b8492;
+  --hd-channel-halo: rgba(255, 255, 255, 0.92);
+  --hd-ch-base-halo: rgba(70, 78, 92, 0.42);
+  --hd-single-accent: #1a1d23;
+  --hd-plate-top: #d7edf0;
+  --hd-plate-mid: #bfdfe4;
+  --hd-plate-bottom: #e3f1f1;
+  --hd-plate-figure: rgba(255, 255, 255, 0.7);
+  --hd-tube: #ffffff;
+  --hd-tube-edge: rgba(60, 100, 110, 0.3);
+  --hd-tube-v2: #e6ecf4;
+  --hd-tube-edge-v2: rgba(70, 100, 110, 0.42);
+}
+
+:root[data-skin='nova'][data-theme='dark'] {
+  --bg-base: #101216;
+  --surface: #191c22;
+  --surface-2: #22262e;
+  --border: #2b3039;
+  --border-strong: #3c434e;
+  --text-primary: #f2f4f7;
+  --text-secondary: #aeb4bf;
+  --text-muted: #7b828e;
+
+  --action-primary: #eceef2;
+  --action-primary-hover: #ffffff;
+  --action-ghost-bg: transparent;
+  --focus-ring: #f2f4f7;
+
+  --center-defined-color: #eceef2;
+  --center-open-color: #7b828e;
+  --keyword-color: #d9dee7;
+
+  --elev-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --elev-panel: 0 2px 8px rgba(0, 0, 0, 0.45), 0 16px 40px rgba(0, 0, 0, 0.45);
+  --elev-dialog: 0 4px 12px rgba(0, 0, 0, 0.5), 0 24px 64px rgba(0, 0, 0, 0.6);
+
+  --hd-center-defined: #f2f4f7;
+  --hd-center-undef: #1c212a;
+  --hd-center-defined-top: #ffffff;
+  --hd-center-defined-bottom: #d3d9e2;
+  --hd-center-undef-top: #1c212a;
+  --hd-center-undef-bottom: #141920;
+  --hd-gate-bg: #161a21;
+  --hd-gate-stroke: #e4e8ee;
+  --hd-gate-lit-fill: #c9d0da;
+  --hd-gate-idle-bg: #1d222b;
+  --hd-gate-ring: #9aa4b3;
+  --hd-channel: #a9b2e6;
+  --hd-channel-halo: rgba(12, 15, 20, 0.92);
+  --hd-ch-base-halo: rgba(4, 7, 12, 0.62);
+  --hd-single-accent: #f2f4f7;
+  --hd-plate-top: #123941;
+  --hd-plate-mid: #0b2830;
+  --hd-plate-bottom: #153d45;
+  --hd-plate-figure: rgba(165, 200, 210, 0.09);
+  --hd-tube: #dfe9ec;
+  --hd-tube-edge: rgba(0, 0, 0, 0.42);
+  --hd-tube-v2: #262c35;
+  --hd-tube-edge-v2: rgba(190, 205, 220, 0.22);
+}
+
+:root[data-skin='nova'] ::selection,
+:root[data-skin='nova']::selection {
+  background: rgba(26, 29, 35, 0.14);
+}

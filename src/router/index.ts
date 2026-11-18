@@ -50,6 +50,12 @@ const router = createRouter({
       component: () => import('../views/EntryView.vue'),
     },
     {
+      /** AI 一级工作区：解读从侧栏附属能力升级为可最小化、可后台运行的完整页面 */
+      path: '/ai',
+      name: 'ai-workspace',
+      component: () => import('../views/AiWorkspaceView.vue'),
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('../views/SettingsView.vue'),

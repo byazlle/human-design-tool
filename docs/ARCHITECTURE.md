@@ -33,13 +33,21 @@ BirthInput ──computeChart()──► BodyGraph
   （SVG 渲染）              （清单 + 多选）             （盘面信息 / 星体两翼）
                                   │
                                   ▼
-                          useAiReading → services/aiClient → AiReadingPanel（Markdown）
+                          useAiReading → services/aiClient
+                                  │
+                  ┌───────────────┴────────────────┐
+                  ▼                                ▼
+        AiWorkspaceView（/ai 完整页）      AiReadingPanel（侧栏兼容层）
+        + AiMiniDock（最小化胶囊）          ui.aiPanelSuspended 控制显示位置
 ```
 
 - `BodyGraph` 由 `engine/bodygraph.ts` 产出：centers / gates / channels / hangingGates /
   personality / design / type / authority / profile / definition / incarnationCross。
 - 意识的判定不需要额外字段：`chart.personality` 与 `chart.design` 的 `gate` 集合
   直接决定每条通道是「红 / 黑 / 条纹」。
+- **两条 AI 显示路径共用一份状态**：`ui.aiReading` 是单一槽位，`activeController` 是模块级单例。
+  请求生命周期不绑在任何 View 上；只有显式取消或关闭可见面板才中断。详见
+  [docs/AI-WORKSPACE.md](AI-WORKSPACE.md)。
 
 ## 3. 关键模块
 
@@ -54,6 +62,8 @@ BirthInput ──computeChart()──► BodyGraph
 | 渲染 | 底板 + 数据两层 SVG | `HumanDesignBodyGraph.vue` |
 | 解读内容 | 闸门/通道/中心/类型/星体/闸门洞察/人生轨迹/角度 | `src/services/*` |
 | AI | 请求、缓存（选择集/角度入 key）、错误护栏 | `services/aiClient.ts` `composables/useAiReading.ts` |
+| AI 工作区 | 一级页面 / 最小化胶囊 / 跨页状态与来源记录 | `views/AiWorkspaceView.vue` `components/panel/AiMiniDock.vue` `stores/ui.ts` |
+| 样式收敛层 | 冷中性 token 覆盖与 ws-* 组件样式，只追加 | `styles/workspace.css` |
 
 ## 4. 状态与持久化
 
@@ -151,3 +161,12 @@ MainActivity 通过 shouldInterceptRequest 从 assets/www 读取
 - `src/services/aiRelationshipReading.ts` 只消费 `CompositeResult` 已有字段与 `compositeDimensions` / `interpretations` / `gateData` 的既有离线释义，不新增任何人类图判定。
 - 规范 §3.8 合规：`mergedAsChart()` 的 `type / authority / definition` 只是渲染占位，`baseFacts()` 对 `personality` 与 `design` 均为空的合图自动切为关系场事实块，绝不写入 `【类型】` / `【内在权威】` / `定义型：`；`tests/aiRelationshipReading.test.ts` 对此有回归。
 - 覆盖边界：整盘类（单人整盘 / 合盘 / 双盘对比）在「完整」档走多轮；凯龙回归盘（§3.9 扩展层）与闸门 / 通道 / 中心单点解读仍只发单次请求。
+
+## 10. AI 工作区与后台运行（v3.5.0）
+
+- 路由新增 `/ai`（name `ai-workspace`），不加入 `DERIVED_ROUTE_NAMES`，不改变既有返回按钮语义。
+- `App.vue` 监听 `ui.aiReading.open`：从任意盘面页发起解读时自动跳到工作区，只记来源路径并挂起侧栏，**不修改 `open`**。
+- `useAiReading` 删除 `onScopeDispose(abort)`：`AbortController` 仍是模块级单例，但生命周期改由显式动作控制——点「取消解读」或关闭可见面板才中断。
+- `ui.aiPanelSuspended` 只控制侧栏是否让位；`ui.aiReturnPath` 供最小化原路返回。两者都是纯 UI 状态，不持久化、不进备份。
+- 侧栏 `AiReadingPanel.vue` 与冒烟脚本依赖的选择器完全未动；`styles/workspace.css` 是加载顺序在后的追加层，`classic` 皮肤不受冷中性收敛影响。
+- 完整契约、三维决策与测试防线见 [docs/AI-WORKSPACE.md](AI-WORKSPACE.md)。

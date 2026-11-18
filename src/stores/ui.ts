@@ -97,6 +97,14 @@ interface UiState {
   panel: PanelSelection | null
   drawerOpen: boolean
   aiReading: AiReadingState
+  /**
+   * AI 工作区接管标记：为 true 时旧侧栏面板让位给 /ai 完整页面。
+   * 只控制"在哪显示"，不控制请求生命周期——请求始终由 useAiReading 的模块级
+   * controller 持有，切页不中断；显式取消/关闭才 abort。
+   */
+  aiPanelSuspended: boolean
+  /** 进入 AI 工作区前的来源路径，用于"最小化"原路返回 */
+  aiReturnPath: string | null
   batch: BatchState
   toast: { text: string; kind: 'info' | 'success' | 'error'; action?: ToastAction } | null
 }
@@ -121,6 +129,8 @@ export const useUiStore = defineStore('ui', {
       streamText: '',
     },
     batch: { ...BATCH_IDLE, failed: [], skipped: [] },
+    aiPanelSuspended: false,
+    aiReturnPath: null,
     toast: null,
   }),
 
@@ -158,6 +168,24 @@ export const useUiStore = defineStore('ui', {
         resultMode: undefined,
         streamText: '',
       }
+      this.aiPanelSuspended = false
+    },
+    /**
+     * 工作区接管：记录来源并让旧侧栏隐藏。
+     * 不触碰 aiReading.open —— 那会触发 useAiReading 的 watch(open) 而误中止请求。
+     */
+    enterAiWorkspace(fromPath?: string) {
+      if (fromPath && fromPath !== '/ai' && fromPath.startsWith('/')) this.aiReturnPath = fromPath
+      this.aiPanelSuspended = true
+    },
+    /** 从工作区最小化：恢复旧侧栏显示（有在途结果时用户可在原页继续看到） */
+    exitAiWorkspace() {
+      this.aiPanelSuspended = false
+    },
+    consumeAiReturnPath(): string {
+      const path = this.aiReturnPath ?? '/'
+      this.aiReturnPath = null
+      return path
     },
     /** 锁定本次解读的生成元数据（由 useAiReading 在请求发起时调用） */
     setAiResultMeta(meta: { audience?: AiAudience; mode?: AiDetailMode; truncated?: boolean }) {

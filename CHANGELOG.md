@@ -2,6 +2,32 @@
 
 遵循「主版本.功能版本.修订版本」；版本号唯一来源为根 `package.json`。
 
+## v3.5.0（2026-11-18）
+
+> 主题：**UI / 页面逻辑全链路重构，AI 从侧栏附属升级为一级工作区**。
+> 计算内核、提示词、并发编排、缓存键、解读记录格式与 schema 全部零改动；
+> 既有侧栏面板作为兼容层一行未动。
+
+### 一、AI 完整页面 + 最小化 + 后台运行
+
+- 新增路由 `/ai`（`views/AiWorkspaceView.vue`）：两栏布局，左栏档案 / 维度 / 角度 / 档位表单与「最近解读」表格，右栏流式进度与 Markdown 正文，底部复制 / 保存 / 重新生成 / 四格式导出。
+- 新增 `components/panel/AiMiniDock.vue`：除工作区外常驻右下角，状态灯 + 阶段文案，点击回到工作区；支持键盘与 `aria-live`。
+- **生命周期解耦**：删除 `useAiReading` 的 `onScopeDispose(abort)`。请求不再随发起视图销毁而中断，只有显式「取消解读」或关闭可见面板才中止。`App.vue` 的自动跳转只改显示位置，不碰 `ui.aiReading.open`。
+- `stores/ui.ts` 新增两个不持久化的纯 UI 字段：`aiPanelSuspended`（侧栏让位）与 `aiReturnPath`（最小化原路返回）。
+
+### 二、视觉收敛（stable / restrained）
+
+- 新增 `styles/workspace.css` 作为**纯追加层**：`nova` 从米白 + 靛紫收敛为冷灰纸 + 石墨；颜色只留给人体图底板与状态灯。
+- 毛玻璃仅用于浮层，不支持时用实色兜底；静态 SVG 颗粒透明度 0.022；发丝边框、两级柔阴影、140/220ms 过渡；`prefers-reduced-motion` 全关。
+- 删掉 5 处「XX AI 解读状态」标语与「AI 综合解读」小标题；凯龙盘的业务口径说明保留。
+
+### 三、约束与验证
+
+- `AiReadingPanel.vue` 未改：`aiConcurrency.acceptance.test.ts` 的 QA-B4 逐字静态断言继续通过；桌面冒烟依赖的选择器未动。
+- 新增回归测试「视图 scope 销毁不中断在途请求」，防止后台运行语义被回退。
+- `npm test` 32 文件 / **408 项**全绿；`npm run typecheck`、`npm run build` 通过。
+- 新文档 `docs/AI-WORKSPACE.md`，同步更新 `README.md` 与 `docs/ARCHITECTURE.md`。
+
 ## v3.3.0（2026-11-18）
 
 > 主题：**轮回交叉主题名 + 解读白话口径重写 + 主页批量导入/计算/导出**。

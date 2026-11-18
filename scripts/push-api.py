@@ -57,6 +57,13 @@ def api(path: str, method: str = "GET", payload=None, timeout: int = 300):
     cmd = [
         "curl", "-sS", "-m", str(timeout),
         "--retry", "5", "--retry-delay", "2", "--retry-all-errors",
+    ]
+    # Windows schannel 在部分代理环境下会因无法检查吊销而报
+    # CRYPT_E_NO_REVOCATION_CHECK（curl 返回 000），显式关闭吊销检查即可恢复。
+    # 只在 Windows 追加，Linux/macOS 的 curl 不认识这个参数。
+    if os.name == "nt":
+        cmd.append("--ssl-no-revoke")
+    cmd += [
         "-X", method, "-o", out_path, "-w", "%{http_code}", url,
         "-H", f"Authorization: Bearer {TOKEN}",
         "-H", "Accept: application/vnd.github+json",
