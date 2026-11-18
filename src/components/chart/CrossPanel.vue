@@ -6,6 +6,7 @@
 import { computed, ref } from 'vue'
 import type { BodyGraph } from '../../types/hd'
 import { crossReadingOf } from '../../services/crossData'
+import { crossEnglishFullName } from '../../services/crossNames'
 
 const props = defineProps<{ chart: BodyGraph }>()
 
@@ -22,7 +23,10 @@ const detailOpen = ref(true)
       <div>
         <p class="t-xs">轮回交叉 INCARNATION CROSS</p>
         <h3 class="t-title name">{{ reading.name }}</h3>
-        <p class="t-xs en">{{ reading.angle.en }} · {{ reading.angle.key === 'juxtaposition' ? 'Fixed Fate' : reading.angle.key === 'left' ? 'Transpersonal' : 'Personal Destiny' }}</p>
+        <p class="t-xs en">
+          {{ reading.theme ? crossEnglishFullName(reading.theme) : reading.angle.en }} ·
+          {{ reading.angle.key === 'juxtaposition' ? 'Fixed Fate' : reading.angle.key === 'left' ? 'Transpersonal' : 'Personal Destiny' }}
+        </p>
       </div>
       <button type="button" class="chev" :class="{ on: detailOpen }" aria-label="展开/收起" @click="detailOpen = !detailOpen">▾</button>
     </header>

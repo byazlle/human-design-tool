@@ -69,6 +69,22 @@
   UI 与文档如实标注但不改口径。
 - 统计只数已定义通道；并列第一时不下主导结论（tied=true）；表外通道进 unknown 并提示。
 
+## 轮回交叉主题名（v3.3.0，已核对）
+- 192 = 右 16×4 + 左 32×2 + 并列 64×1；英文去重 **111** 个主题（社区常说 112）。
+  名字只由「人格太阳/地球轴 + 角度」决定；四闸门按实算，教材示例不替换。
+- 数据 `src/services/crossNames.ts`；文档 `docs/CROSS-NAMES.md`；测试 `tests/crossNames.test.ts`。
+- 中文是**本项目工作译名**，英文并列显示为权威标识，不在 UI 里假装官方定稿。
+
+## 提示词（v3.4）
+- 四套 PROMPT_SYSTEM_* 共用【说人话：本项目硬约束】，精简/详细另有【轮回交叉怎么讲】。
+- **改完必须** `node scripts/sync-prompt-spec.mjs`（`--check` 只校验），否则 ai-prompt 逐字比对失败。
+- 版本号在 `aiClient.ts` 的 `PROMPT_VERSION`；tests 里有三处硬断言（aiStage / aiClientContinuation / aiConcurrency 静态契约），改版本要一起改。
+
+## 批量导入 / 导出（v3.3.0）
+- `services/batchTable.ts`（解析 / CSV）+ `services/batchChart.ts`（计算 / 日期展开 / 档案导出）+ `components/archive/BatchImportDialog.vue`。
+- C 列 8 位日期：按分钟扫 1440 次/天（≈1s），指纹去重输出当天所有不同的图，序号 `7-1`、姓名 `李四（1）`，原因与差异写 T 列。
+- 导出 A–T 20 列，UTF-8 BOM；失败行保留并写原因。文档 `docs/BATCH-IMPORT.md`。
+
 ## 盘面文档导出（v3.2.0）
 - `src/services/chartExport.ts` → 复用 aiExport 的 MD/Word/HTML/PDF 保存链路；
   `ReportInput.modeLabel` 覆盖页眉（写「文档类型：完整盘面」），`reportFileName` 同步取它。

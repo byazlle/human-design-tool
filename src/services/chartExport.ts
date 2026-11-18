@@ -27,6 +27,7 @@ import {
   groupChannels,
 } from '../engine/circuitData'
 import { CENTER_TEXT, getChannel, getGate } from './interpretations'
+import { crossNameOf } from './crossData'
 import { exportReport, type ExportResult } from './aiExport'
 import { firstSentence } from './chartFacts'
 import type { ReportFormat, ReportInput } from '../types/report'
@@ -219,7 +220,7 @@ export function buildChartDocument(
       `- **内在权威**：${AUTHORITY_LABELS[chart.authority]}（${chart.authority}）`,
       `- **人生角色**：${chart.profile}`,
       `- **定义类型**：${DEFINITION_LABELS[chart.definition]}（${chart.definition}）`,
-      `- **轮回交叉**：${chart.incarnationCross || '这张盘未显示'}`,
+      `- **轮回交叉**：${crossNameOf(chart.personality, chart.design, chart.profile)}`,
       `- **已定义中心**：${
         chart.centers.filter((c) => c.defined).map((c) => SHORT_CENTER[c.id]).join('、') || '无'
       }`,

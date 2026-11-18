@@ -12,10 +12,13 @@ import ArchiveCanvas from '../components/archive/ArchiveCanvas.vue'
 import MobileArchiveList from '../components/archive/MobileArchiveList.vue'
 import BulkActionBar from '../components/archive/BulkActionBar.vue'
 import BatchReadingDialog from '../components/archive/BatchReadingDialog.vue'
+import BatchImportDialog from '../components/archive/BatchImportDialog.vue'
 import EmptyState from '../components/base/EmptyState.vue'
 import ConfirmDialog from '../components/base/ConfirmDialog.vue'
 import HdButton from '../components/base/HdButton.vue'
 import type { Archive } from '../types/hd'
+import { rowsFromArchives } from '../services/batchChart'
+import { toCsv } from '../services/batchTable'
 
 const router = useRouter()
 const archiveStore = useArchiveStore()
@@ -40,6 +43,35 @@ function openBatch() {
     return
   }
   batchOpen.value = true
+}
+
+/* ── 批量导入 / 导出（v3.3.0）────────────────────────── */
+const importOpen = ref(false)
+
+/** 把当前档案库按导入表格的同一套列导出（A–T），失败的档案带备注 */
+function exportAllData() {
+  const list = archiveStore.archives
+  if (!list.length) {
+    ui.notify('还没有档案可导出', 'info')
+    return
+  }
+  const { rows, missing } = rowsFromArchives(list)
+  const csv = toCsv(rows)
+  const stamp = new Date()
+  const name = `人类图档案数据-${stamp.getFullYear()}${String(stamp.getMonth() + 1).padStart(2, '0')}${String(stamp.getDate()).padStart(2, '0')}.csv`
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 2000)
+  ui.notify(
+    missing.length
+      ? `已导出 ${rows.length} 份，其中 ${missing.length} 份未计算（已在备注列标注）`
+      : `已导出 ${rows.length} 份档案数据`,
+    'success',
+  )
 }
 
 function open(id: string) {
@@ -183,6 +215,18 @@ function confirmRemove() {
         >
           批量解读
         </button>
+        <button type="button" class="batch-entry" title="按模板批量导入人员并计算" @click="importOpen = true">
+          批量导入
+        </button>
+        <button
+          v-if="list.length"
+          type="button"
+          class="batch-entry"
+          title="把档案库按 A–T 列导出 CSV"
+          @click="exportAllData"
+        >
+          导出数据
+        </button>
       </template>
     </AppToolbar>
 
@@ -258,6 +302,8 @@ function confirmRemove() {
       @confirm="confirmRemove"
       @cancel="cancelRemove"
     />
+
+    <BatchImportDialog :open="importOpen" @close="importOpen = false" />
 
     <BatchReadingDialog :open="batchOpen" @close="batchOpen = false" />
   </div>

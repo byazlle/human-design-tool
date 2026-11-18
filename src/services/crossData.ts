@@ -5,10 +5,22 @@
  * 角度由人格太阳爻位决定：右角度 7 个角色（1/3、1/4、2/4、2/5、3/5、3/6、4/6），
  * 并列仅 4/1，左角度 4 个角色（5/1、5/2、6/2、6/3）。
  *
- * 192 个交叉的注册专有名称属于 Jovian Archive 商业资料，为避免臆造，
- * 本项目以「角度 + 四闸门标准名」结构化命名，并以每个闸门的
- * 关键词 / 使命主题 / 高阶表现 / 低频卡点组合出完整释义。
+ * v3.3.0 起补上通行主题名（192 交叉 / 111 个不重复英文主题，见 crossNames.ts）：
+ * 名称只由「人格太阳/地球轴 + 角度」决定，闸门仍按实算输出，不用教材示例替换。
+ * 中文名为本项目工作译名（社区译法不统一），英文名并列显示作为权威标识。
+ * 释义仍以四闸门的关键词 / 使命主题 / 高阶表现 / 低频卡点组合而成，不搬用版权文本。
  */
+
+/* v3.3.0：交叉主题名（192 交叉 / 111 个不重复英文主题）。
+ * 名称只由「人格太阳/地球轴 + 角度」决定；闸门仍以实算为准。 */
+import {
+  angleKeyOf,
+  crossEnglishFullName,
+  crossThemeOf,
+  type CrossTheme,
+} from './crossNames'
+
+export type ThemeInfo = CrossTheme
 
 export interface GateCrossTheme {
   /** 闸门关键词（交叉释义的原子主题） */
@@ -131,8 +143,10 @@ export interface CrossGateRole {
 }
 
 export interface CrossReading {
-  /** 结构化标准名，如「右角度交叉 · 41/31 | 44/28」 */
+  /** 结构化标准名，如「右角度交叉之服务（Service）· 17/18 | 58/52」 */
   name: string
+  /** 主题名（v3.3.0）：192 交叉 / 111 个不重复英文主题 */
+  theme: ThemeInfo | null
   angle: CrossAngleInfo
   gates: CrossGateRole[]
   /** 核心释义 */
@@ -154,6 +168,27 @@ function themeOf(gate: number): GateCrossTheme {
       low: '',
     }
   )
+}
+
+/**
+ * 只要交叉名（用于导出表格 / 事实块 / 报告）。
+ * 四闸门缺任意一颗时返回提示串，而不是抛错——导入的旧快照可能没有完整 13 星。
+ */
+export function crossNameOf(
+  personality: Array<{ planet: string; gate: number }>,
+  design: Array<{ planet: string; gate: number }>,
+  profile: string,
+): string {
+  const pSun = personality.find((p) => p.planet === 'Sun')
+  const pEarth = personality.find((p) => p.planet === 'Earth')
+  const dSun = design.find((p) => p.planet === 'Sun')
+  const dEarth = design.find((p) => p.planet === 'Earth')
+  if (!pSun || !pEarth || !dSun || !dEarth) return '交叉四闸门不完整（这张盘缺少太阳或地球落点）'
+  const angle = angleKeyOf(profile)
+  const angleLabel = angle === 'right' ? '右角度' : angle === 'left' ? '左角度' : '并列'
+  const theme = crossThemeOf(pSun.gate, pEarth.gate, angle)
+  const gates = `${pSun.gate}/${pEarth.gate} | ${dSun.gate}/${dEarth.gate}`
+  return theme ? `${theme.label}（${theme.en}）· ${gates}` : `${angleLabel}交叉 · ${gates}`
 }
 
 export function crossReadingOf(
@@ -179,9 +214,16 @@ export function crossReadingOf(
     { role: '设计地球（无意识扎根）', roleDesc: '无意识主题的稳定支点与栖息方式', side: 'd', gate: dEarth.gate, line: dEarth.line, gateName: themeOf(dEarth.gate).keyword, theme: themeOf(dEarth.gate) },
   ]
 
-  const name = `${angle.label} · ${pSun.gate}/${pEarth.gate} | ${dSun.gate}/${dEarth.gate}`
+  // v3.3.0：交叉名 = 角度 + 主题名 + 四闸门。查不到主题时退回结构化写法，绝不臆造名字。
+  const theme = crossThemeOf(pSun.gate, pEarth.gate, angleKeyOf(profile))
+  const name = theme
+    ? `${theme.label}（${theme.en}）· ${pSun.gate}/${pEarth.gate} | ${dSun.gate}/${dEarth.gate}`
+    : `${angle.label} · ${pSun.gate}/${pEarth.gate} | ${dSun.gate}/${dEarth.gate}`
 
   const summary = [
+    theme
+      ? `你的轮回交叉是「${theme.label}」（${crossEnglishFullName(theme)}）。名称只是这组交叉的主题标签，真正决定表达方式的仍是下面四条闸门。`
+      : '',
     `你的轮回交叉是${angle.label}，由四条主题线织成：显意识一侧是「${themeOf(pSun.gate).keyword}」（人格太阳 ${pSun.gate}）落在「${themeOf(pEarth.gate).keyword}」（人格地球 ${pEarth.gate}）之上；潜意识一侧是「${themeOf(dSun.gate).keyword}」（设计太阳 ${dSun.gate}）落在「${themeOf(dEarth.gate).keyword}」（设计地球 ${dEarth.gate}）之上。`,
     angle.desc,
     `四个主题的关系是：${themeOf(pSun.gate).mission}——这需要${themeOf(pEarth.gate).keyword}式的落地方式来承载；而背后还有一双你看不见的手：${themeOf(dSun.gate).mission}，它以${themeOf(dEarth.gate).keyword}为支点。`,
@@ -217,5 +259,5 @@ export function crossReadingOf(
     `识别方法：这些状态出现时往往伴随「用力过度但没有结果」。回到策略与内在权威，是所有低频状态的共同出口。`,
   ].join('\n')
 
-  return { name, angle, gates: roles, summary, mission, highState, lowState }
+  return { name, theme, angle, gates: roles, summary, mission, highState, lowState }
 }

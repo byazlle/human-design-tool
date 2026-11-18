@@ -50,6 +50,7 @@ function makeChart(): BodyGraph {
     ],
     design: [
       { planet: 'Sun', longitude: 200.71, gate: 57, line: 1, color: 5, tone: 6, base: 2 },
+      { planet: 'Earth', longitude: 20.71, gate: 51, line: 4, color: 2, tone: 3, base: 1 },
       { planet: 'Moon', longitude: 88.05, gate: 10, line: 2, color: 3, tone: 1, base: 4 },
     ],
     meta: {
@@ -105,7 +106,9 @@ describe('buildChartDocument：维度覆盖', () => {
     expect(md).toContain('骶骨权威（Sacral）')
     expect(md).toContain('2/4')
     expect(md).toContain('二分定义（Split）')
-    expect(md).toContain('右角度交叉之四方之道')
+    // v3.3.0：交叉列改为「角度交叉之主题（English）· 四闸门」，由实算四闸门查表得出
+    expect(md).toContain('右角度交叉之')
+    expect(md).toContain('· 34/20 | 57/51')
   })
 
   it('出生信息与两次计算时刻都在', () => {

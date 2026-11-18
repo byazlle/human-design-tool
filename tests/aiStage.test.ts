@@ -77,7 +77,7 @@ describe('explain() 可选 onStage · 向后兼容', () => {
     fetchMock.mockResolvedValue(okResponse())
     const result = await explain(args())
     expect(result).toBe('解读正文')
-    expect(PROMPT_VERSION).toBe('3.3')
+    expect(PROMPT_VERSION).toBe('3.4')
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
