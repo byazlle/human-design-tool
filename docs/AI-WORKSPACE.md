@@ -33,21 +33,23 @@ v3.5.0 把解读升级为**一级页面 + 最小化 + 后台运行**，同时保
 1. 用户在工作区点「取消解读」→ `abort()`；
 2. 用户关闭可见的侧栏面板 → `ui.closeAi()` 使 `open=false` → 保留的 `watch(open)` 调用 `abort()`。
 
-新增的 `watch(open)` 自动跳转只改显示位置，**不碰 `open`**：
+**不自动跳转。** 各盘面页的 AI 按钮保持原有侧栏行为——这是桌面冒烟自检的冻结契约
+（`AI 未配置时打开面板并提示` 依赖侧栏出现）。工作区通过常驻右下角胶囊进入：
 
 ```ts
-// App.vue
-watch(() => ui.aiReading.open, (open) => {
-  if (open && route.path !== '/ai') {
-    ui.enterAiWorkspace(route.fullPath)  // 只记来源 + 挂起侧栏
-    void router.push('/ai')
-  }
-})
+// AiMiniDock.vue
+function open() {
+  ui.enterAiWorkspace(route.fullPath)  // 只记来源 + 挂起侧栏
+  void router.push('/ai')
+}
 ```
 
-`enterAiWorkspace()` 刻意不写 `ui.aiReading.open`——写了就会触发上面的 watch 链从而误中止请求。
+`enterAiWorkspace()` 刻意不写 `ui.aiReading.open`——它是"是否显示侧栏"的开关，
+`useAiReading` 的 `watch(open)` 会在 `false` 时中止请求。
 
 最小化走 `exitAiWorkspace()` + `consumeAiReturnPath()`，同样不碰 `open`。
+这样从盘面发起的解读会先在侧栏显示，用户随时可以点胶囊进入完整页面继续看；
+离开工作区后侧栏恢复，后台请求照常跑完。
 
 ### 状态字段
 

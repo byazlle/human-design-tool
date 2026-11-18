@@ -928,31 +928,8 @@ function regenerateAll() {
     <section class="group">
       <header>
         <h2 class="t-title">外观</h2>
-        <p class="t-sm">深浅色、字号与人体图配色全局生效，立即应用。</p>
+        <p class="t-sm">深浅色与字号全局生效，立即应用。</p>
       </header>
-
-      <div class="seg">
-        <span class="t-sm seg-label">界面皮肤</span>
-        <div class="seg-ctl" role="group" aria-label="界面皮肤">
-          <button
-            type="button"
-            :class="{ on: settings.appearance.skin === 'nova' }"
-            :aria-pressed="settings.appearance.skin === 'nova'"
-            @click="settings.setSkin('nova')"
-          >
-            nova（新视觉）
-          </button>
-          <button
-            type="button"
-            :class="{ on: settings.appearance.skin === 'classic' }"
-            :aria-pressed="settings.appearance.skin === 'classic'"
-            @click="settings.setSkin('classic')"
-          >
-            classic（旧观感）
-          </button>
-        </div>
-        <span class="t-xs t-muted">nova 为全新配色与卡片语言；切回 classic 可随时恢复升级前的旧观感，两档均可独立切换深浅色。</span>
-      </div>
 
       <div class="seg">
         <span class="t-sm seg-label">主题</span>
@@ -976,87 +953,16 @@ function regenerateAll() {
 
       <div class="seg">
         <span class="t-sm seg-label">字号</span>
-        <span class="t-xs t-muted">字号已移至下方「样式设置」，提供 6 档可调。</span>
-      </div>
-
-      <div class="seg">
-        <span class="t-sm seg-label">人体图配色</span>
-        <div class="seg-ctl" role="group" aria-label="人体图配色">
-          <button
-            type="button"
-            :class="{ on: settings.appearance.bodyGraphPalette === 'default' }"
-            @click="settings.setPalette('default')"
-          >
-            标准
-          </button>
-          <button
-            type="button"
-            :class="{ on: settings.appearance.bodyGraphPalette === 'high-contrast' }"
-            @click="settings.setPalette('high-contrast')"
-          >
-            高对比
-          </button>
-        </div>
+        <span class="t-xs t-muted">在下方「样式设置」调整，提供 6 档。</span>
       </div>
     </section>
 
     <!-- 样式设置 -->
     <section class="group">
       <header>
-        <h2 class="t-title">样式设置</h2>
-        <p class="t-sm">九中心状态与专业关键字配色全局生效，立即应用；页面模块排布请在「自定义页面布局」中调整。</p>
+        <h2 class="t-title">字号</h2>
+        <p class="t-sm">字号全局生效，立即应用；页面模块排布请在「自定义页面布局」中调整。</p>
       </header>
-
-      <!-- 九中心定义 / 开放 -->
-      <div class="style-rows">
-        <div class="style-row">
-          <span class="t-sm row-label">九中心 · 已定义</span>
-          <label class="color-pick">
-            <input
-              type="color"
-              :value="settings.appearance.centerDefinedColor"
-              @input="settings.setStyle({ centerDefinedColor: ($event.target as HTMLInputElement).value })"
-            />
-            <span class="t-xs">{{ settings.appearance.centerDefinedColor }}</span>
-          </label>
-          <HdToggle
-            compact
-            label="加粗"
-            :model-value="settings.appearance.centerDefinedBold"
-            @update:model-value="settings.setStyle({ centerDefinedBold: $event })"
-          />
-        </div>
-
-        <div class="style-row">
-          <span class="t-sm row-label">九中心 · 开放</span>
-          <label class="color-pick">
-            <input
-              type="color"
-              :value="settings.appearance.centerOpenColor"
-              @input="settings.setStyle({ centerOpenColor: ($event.target as HTMLInputElement).value })"
-            />
-            <span class="t-xs">{{ settings.appearance.centerOpenColor }}</span>
-          </label>
-          <HdToggle
-            compact
-            label="加粗"
-            :model-value="settings.appearance.centerOpenBold"
-            @update:model-value="settings.setStyle({ centerOpenBold: $event })"
-          />
-        </div>
-
-        <div class="style-row">
-          <span class="t-sm row-label">专业关键字<br /><span class="t-xs">（策略、内在权威等）</span></span>
-          <label class="color-pick">
-            <input
-              type="color"
-              :value="settings.appearance.keywordColor"
-              @input="settings.setStyle({ keywordColor: ($event.target as HTMLInputElement).value })"
-            />
-            <span class="t-xs">{{ settings.appearance.keywordColor }}</span>
-          </label>
-        </div>
-      </div>
 
       <!-- 字号：6 档 -->
       <div class="seg">
@@ -1072,15 +978,6 @@ function regenerateAll() {
             {{ FONT_LABELS[i] }}
           </button>
         </div>
-      </div>
-
-      <!-- 恢复默认样式：仅在用户改过自定义配色后出现 -->
-      <div v-if="settings.appearance.styleTouched" class="seg">
-        <span class="t-sm seg-label">自定义样式</span>
-        <HdButton size="sm" variant="ghost" @click="settings.resetDefaultStyle()">
-          恢复默认样式
-        </HdButton>
-        <span class="t-xs t-muted">已自定义九中心 / 关键字配色；恢复后由当前皮肤接管配色。</span>
       </div>
 
     </section>

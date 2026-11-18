@@ -85,29 +85,53 @@ const DEFAULT_HEIGHTS: Record<LayoutModuleKey, number> = {
 
 export type LayoutBoxes = Record<LayoutModuleKey, LayoutBox>
 
-/** 按列数生成瀑布式排布：每个模块放到当前最矮的一列 */
+/**
+ * 双列 / 三列预设：显式槽位，不用「当前最矮列」贪心。
+ *
+ * 贪心会把人体图按高度甩到任意一列，三列下更是压到 1/3 宽度看不清闸门。
+ * 现在人体图固定在主位并跨列：双列占 58%，三列占 66%；
+ * AI 入口固定在侧栏首屏；同列模块按 8px 网格纵向排布，互不重叠。
+ */
+type Slot = readonly [x: number, y: number, w: number, h: number]
+const PRESET_SLOTS: Record<'double' | 'triple', Record<LayoutModuleKey, Slot>> = {
+  double: {
+    chart: [0, 0, 58, 660],
+    meta: [0, 676, 58, 200],
+    cross: [0, 892, 58, 220],
+    angles: [60, 0, 40, 72],
+    activation: [60, 88, 40, 420],
+    destiny: [60, 524, 40, 320],
+    detail: [60, 860, 40, 240],
+  },
+  triple: {
+    chart: [0, 0, 66, 660],
+    cross: [0, 676, 32, 220],
+    destiny: [34, 676, 32, 320],
+    angles: [68, 0, 32, 72],
+    meta: [68, 88, 32, 200],
+    activation: [68, 304, 32, 420],
+    detail: [68, 740, 32, 240],
+  },
+}
+
+/** 按预设生成排布：单列是流式纵向，双列 / 三列用固定语义槽位 */
 export function makePresetBoxes(
   preset: Exclude<LayoutPreset, 'custom'>,
 ): LayoutBoxes {
-  const cols = preset === 'triple' ? 3 : preset === 'double' ? 2 : 1
-  const gapPct = 2
-  const colW = (100 - gapPct * (cols - 1)) / cols
-  const colY = new Array<number>(cols).fill(0)
   const boxes = {} as LayoutBoxes
-  for (const key of LAYOUT_MODULE_KEYS) {
-    let col = 0
-    for (let i = 1; i < cols; i += 1) if (colY[i] < colY[col] - 1) col = i
-    const h = DEFAULT_HEIGHTS[key]
-    boxes[key] = {
-      x: col * (colW + gapPct),
-      y: colY[col],
-      w: colW,
-      h,
-      scale: 1,
-      locked: false,
-      visible: true,
+  if (preset !== 'single') {
+    const slots = PRESET_SLOTS[preset]
+    for (const key of LAYOUT_MODULE_KEYS) {
+      const [x, y, w, h] = slots[key]
+      boxes[key] = { x, y, w, h, scale: 1, locked: false, visible: true }
     }
-    colY[col] = snapPx(colY[col] + h + 16)
+    return boxes
+  }
+  let y = 0
+  for (const key of LAYOUT_MODULE_KEYS) {
+    const h = DEFAULT_HEIGHTS[key]
+    boxes[key] = { x: 0, y, w: 100, h, scale: 1, locked: false, visible: true }
+    y = snapPx(y + h + 16)
   }
   return boxes
 }

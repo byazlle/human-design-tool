@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useSettingsStore } from './stores/settings'
 import { useArchiveStore } from './stores/archive'
 import { useReadingsStore } from './stores/readings'
@@ -17,22 +17,6 @@ const archive = useArchiveStore()
 const readings = useReadingsStore()
 const ui = useUiStore()
 const route = useRoute()
-const router = useRouter()
-
-/**
- * AI 解读发起后自动落到一级工作区。
- * 只改变"在哪显示"：不碰 open（碰了会触发 useAiReading 的 watch 而误中止请求），
- * 请求继续在后台执行；用户最小化时由 ui.aiReturnPath 原路返回。
- */
-watch(
-  () => ui.aiReading.open,
-  (open) => {
-    if (open && route.path !== '/ai') {
-      ui.enterAiWorkspace(route.fullPath)
-      void router.push('/ai')
-    }
-  },
-)
 
 const isDesktopShell = Boolean((window as unknown as { hdDesktop?: unknown }).hdDesktop)
 const dataErrorDismissed = ref(false)
