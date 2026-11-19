@@ -253,7 +253,6 @@ async function requestFullAi() {
     angle: dim.label,
     // 用户确认：合盘在「完整」档同样允许多轮编排，走关系场专用合规任务清单
     full: isFull,
-    stepMode: settings.aiStepMode,
     fullPlan: isFull
       ? relationshipFullPlan(r, {
           pairNames: pairNames.value,
@@ -312,7 +311,7 @@ function saveAi() {
     scope: aiState.value.scope || 'composite',
     ref: `${aId.value}:${bId.value}`,
     mode: aiState.value.resultMode,
-    audience: aiState.value.resultAudience,
+    style: aiState.value.resultStyle,
     truncated: aiState.value.resultTruncated,
   })
 }

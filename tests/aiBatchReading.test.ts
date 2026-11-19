@@ -16,7 +16,7 @@ vi.mock('../src/services/aiClient', async (importOriginal) => {
 import { AiError, cacheKey, chartSummaryOf } from '../src/services/aiClient'
 import { buildBatchTasks, runBatchReading } from '../src/services/aiBatchReading'
 import { ALL_READING_DIMS, buildUnifiedOffline, unifiedScopeRef } from '../src/services/chartFacts'
-import { resolveSchedule } from '../src/services/aiConcurrency'
+import { AI_MAX_CONCURRENCY_MAX } from '../src/services/aiConcurrency'
 import type { AiConfig, BodyGraph, CenterId } from '../src/types/hd'
 import type { AiExplainArgs } from '../src/services/aiClient'
 
@@ -193,6 +193,7 @@ describe('buildBatchTasks：任务展开口径与手动解读一致', () => {
     })
     const batchKey = cacheKey(CFG, {
       cfg: CFG,
+      entry: 'composite',
       scope: tasks[0].scope,
       ref: tasks[0].ref,
       offline: tasks[0].offline,
@@ -202,6 +203,7 @@ describe('buildBatchTasks：任务展开口径与手动解读一致', () => {
     // 手动路径（views/SingleChartView.vue 的 requestUnifiedAi）用同一批函数拼装
     const manualKey = cacheKey(CFG, {
       cfg: CFG,
+      entry: 'composite',
       scope: 'unified',
       ref: unifiedScopeRef(dims, 'comprehensive', ''),
       offline: buildUnifiedOffline(chart, dims, '综合解读', '从整体上看这张盘', ''),
@@ -212,65 +214,74 @@ describe('buildBatchTasks：任务展开口径与手动解读一致', () => {
   })
 })
 
-describe('runBatchReading：调度沿用 N ≤ Y 唯一闸门', () => {
-  it('未超限时一次性并发全部 N 份，degraded=false', async () => {
+describe('runBatchReading：滑动窗口调度（单旋钮）', () => {
+  it('scheduleInfo 为新结构；每份档案各 1 次 explain，不再有「分批」概念', async () => {
     const { tasks } = buildBatchTasks(inputs(['a', 'b', 'c']), BASE_OPTIONS)
-    const report = await runBatchReading({
-      cfg: CFG,
-      tasks,
-      stepMode: 'parallel',
-      concurrencyLimit: 64,
-    })
+    const report = await runBatchReading({ cfg: CFG, tasks, maxConcurrency: 1 })
     expect(report.ok).toBe(3)
-    expect(report.scheduleInfo).toMatchObject({ required: 3, limit: 64, batchWidth: 3, batchCount: 1, degraded: false })
+    expect(report.scheduleInfo).toEqual({
+      total: 3,
+      maxConcurrency: 1,
+      startedAt: expect.any(String),
+    })
+    // 旧的 { required, limit, batchWidth, batchCount, degraded } 已删除
+    expect(report.scheduleInfo).not.toHaveProperty('batchCount')
+    expect(report.scheduleInfo).not.toHaveProperty('degraded')
     expect(explainMock).toHaveBeenCalledTimes(3)
   })
 
-  it('超过上限时按 Y 分批，degraded=true 且不漏项', async () => {
-    const ids = Array.from({ length: 5 }, (_, i) => `a${i}`)
-    const { tasks } = buildBatchTasks(inputs(ids), BASE_OPTIONS)
-    const report = await runBatchReading({
-      cfg: CFG,
-      tasks,
-      stepMode: 'parallel',
-      concurrencyLimit: 2,
-    })
-    expect(report.ok).toBe(5)
-    expect(report.scheduleInfo).toMatchObject({ required: 5, limit: 2, batchWidth: 2, batchCount: 3, degraded: true })
-    expect(explainMock).toHaveBeenCalledTimes(5)
-    // 每一项都恰好被调用一次（不重复、不遗漏）
-    const called = explainMock.mock.calls.map((c) => (c[0] as AiExplainArgs).ref)
-    expect(new Set(called).size).toBe(1)
-  })
-
-  it('串行模式逐项执行，batchWidth=1', async () => {
+  it('每份档案的 entry / scope / ref 与手动解读一致（缓存可复用）', async () => {
     const { tasks } = buildBatchTasks(inputs(['a', 'b']), BASE_OPTIONS)
-    const report = await runBatchReading({
-      cfg: CFG,
-      tasks,
-      stepMode: 'serial',
-      concurrencyLimit: 64,
-    })
-    expect(report.ok).toBe(2)
-    expect(report.scheduleInfo).toMatchObject({ batchWidth: 1, batchCount: 2, degraded: false })
+    await runBatchReading({ cfg: CFG, tasks, maxConcurrency: 1 })
+    const calls = explainMock.mock.calls.map((c) => c[0] as AiExplainArgs)
+    for (const args of calls) {
+      expect(args.entry).toBe('composite')
+      expect(args.scope).toBe('unified')
+      expect(args.ref).toBe(unifiedScopeRef(ALL_READING_DIMS, 'comprehensive', ''))
+      expect(args.detailMode).toBe('concise')
+    }
   })
 
   it('空任务清单不调用接口，直接返回空报告', async () => {
-    const report = await runBatchReading({
-      cfg: CFG,
-      tasks: [],
-      stepMode: 'parallel',
-      concurrencyLimit: 64,
-    })
+    const report = await runBatchReading({ cfg: CFG, tasks: [], maxConcurrency: 5 })
     expect(explainMock).not.toHaveBeenCalled()
     expect(report.ok).toBe(0)
     expect(report.outcomes).toHaveLength(0)
+    expect(report.scheduleInfo).toMatchObject({ total: 0, maxConcurrency: 5 })
   })
+})
 
-  it('调度与 resolveSchedule 同源：批量不会引入第二套并发概念', () => {
-    // 直接对照：批量模块报告的 scheduleInfo 必须等于 resolveSchedule 的输出
-    expect(resolveSchedule(5, 2, 'parallel')).toMatchObject({ batchWidth: 2, batchCount: 3, degraded: true })
-    expect(resolveSchedule(3, 64, 'parallel')).toMatchObject({ batchWidth: 3, batchCount: 1, degraded: false })
+describe('runBatchReading：并发峰值不超过 maxConcurrency', () => {
+  it('N=2 时同时在跑 ≤ 2（且真的并发了），落定乱序但结果按任务顺序', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], now: 0 })
+    try {
+      let inFlight = 0
+      let peak = 0
+      let calls = 0
+      explainMock.mockImplementation(async (args: AiExplainArgs) => {
+        calls += 1
+        inFlight += 1
+        peak = Math.max(peak, inFlight)
+        // 让 a 最慢：验证输出顺序与落定顺序无关
+        const delay = isTask(args, 'a') ? 900 : 300
+        await new Promise<void>((resolve) => setTimeout(resolve, delay))
+        inFlight -= 1
+        return '正文'
+      })
+      const ids = ['a', 'b', 'c', 'd', 'e']
+      const { tasks } = buildBatchTasks(inputs(ids), BASE_OPTIONS)
+      const running = runBatchReading({ cfg: CFG, tasks, maxConcurrency: 2 })
+      for (let i = 0; i < 40; i += 1) await vi.advanceTimersByTimeAsync(1000)
+      const report = await running
+
+      expect(report.ok).toBe(5)
+      expect(calls).toBe(5)
+      expect(peak).toBeLessThanOrEqual(2)
+      expect(peak).toBe(2)
+      expect(report.outcomes.map((o) => o.archiveId)).toEqual(ids)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -281,12 +292,7 @@ describe('runBatchReading：失败与取消语义', () => {
       return '解读正文'
     })
     const { tasks } = buildBatchTasks(inputs(['a', 'b', 'c']), BASE_OPTIONS)
-    const report = await runBatchReading({
-      cfg: CFG,
-      tasks,
-      stepMode: 'parallel',
-      concurrencyLimit: 64,
-    })
+    const report = await runBatchReading({ cfg: CFG, tasks, maxConcurrency: 1 })
     expect(report.ok).toBe(2)
     expect(report.failed).toHaveLength(1)
     expect(report.failed[0]).toContain('档案b')
@@ -300,22 +306,24 @@ describe('runBatchReading：失败与取消语义', () => {
 
   it('预检跳过的档案原样带进报告，不混进 failed', async () => {
     const { tasks, skipped } = buildBatchTasks(
-      [{ archiveId: 'a', name: '正常', chart: makeChart() }, { archiveId: 'b', name: '无快照', chart: null }],
+      [
+        { archiveId: 'a', name: '正常', chart: makeChart() },
+        { archiveId: 'b', name: '无快照', chart: null },
+      ],
       BASE_OPTIONS,
     )
     const report = await runBatchReading({
       cfg: CFG,
       tasks,
       skipped: skipped.map((s) => `${s.name}（${s.reason}）`),
-      stepMode: 'parallel',
-      concurrencyLimit: 64,
+      maxConcurrency: 1,
     })
     expect(report.ok).toBe(1)
     expect(report.failed).toHaveLength(0)
     expect(report.skipped).toEqual(['无快照（尚无盘面快照）'])
   })
 
-  it('取消时上抛 cancelled，且取消前已完成的项已通过 onUpdate 发布（不丢结果）', async () => {
+  it('取消时上抛 cancelled，取消前已完成的项已发布（不丢结果），后续项不再发起', async () => {
     const controller = new AbortController()
     explainMock.mockImplementation(async (args: AiExplainArgs) => {
       if (isTask(args, 'b')) {
@@ -330,22 +338,19 @@ describe('runBatchReading：失败与取消语义', () => {
       runBatchReading({
         cfg: CFG,
         tasks,
-        stepMode: 'serial',
-        concurrencyLimit: 64,
+        maxConcurrency: 1,
         signal: controller.signal,
         onUpdate: ({ outcomes }) => {
           published = outcomes.filter((o) => o.content).map((o) => o.archiveId)
         },
       }),
     ).rejects.toMatchObject({ kind: 'cancelled' })
-    // 档案a 在取消前已完成，必须已发布给调用方（下游据此增量落库，中断不丢结果）
     expect(published).toEqual(['a'])
-    // 取消项之后不再发起：c 从未被调用
     const called = explainMock.mock.calls.map((c) => c[0] as AiExplainArgs)
     expect(called.some((a) => isTask(a, 'c'))).toBe(false)
   })
 
-  it('取消后不再发起后续项（串行）', async () => {
+  it('取消后不再发起后续项（串行 = maxConcurrency 1）', async () => {
     const controller = new AbortController()
     let calls = 0
     explainMock.mockImplementation(async () => {
@@ -355,60 +360,41 @@ describe('runBatchReading：失败与取消语义', () => {
     })
     const { tasks } = buildBatchTasks(inputs(['a', 'b', 'c']), BASE_OPTIONS)
     await expect(
-      runBatchReading({
-        cfg: CFG,
-        tasks,
-        stepMode: 'serial',
-        concurrencyLimit: 64,
-        signal: controller.signal,
-      }),
+      runBatchReading({ cfg: CFG, tasks, maxConcurrency: 1, signal: controller.signal }),
     ).rejects.toMatchObject({ kind: 'cancelled' })
     expect(calls).toBe(1)
   })
 
-  it('并发模式下批与批之间检查取消：已中止时不启动下一批', async () => {
-    const controller = new AbortController()
-    let calls = 0
-    explainMock.mockImplementation(async () => {
-      calls += 1
-      // 首批（上限 2）的第二项执行期间用户点取消：首批跑完，第二批不得发起
-      if (calls === 2) controller.abort()
-      return '解读正文'
-    })
-    const ids = Array.from({ length: 6 }, (_, i) => `a${i}`)
-    const { tasks } = buildBatchTasks(inputs(ids), BASE_OPTIONS)
-    await expect(
-      runBatchReading({
+  it('N=2 时取消：已启动的两项跑完就停，不再补发', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], now: 0 })
+    try {
+      const controller = new AbortController()
+      let calls = 0
+      explainMock.mockImplementation(async () => {
+        calls += 1
+        // 第 2 个（起速到满载那一刻）启动即取消：此后不得再补发
+        if (calls === 2) controller.abort()
+        await new Promise<void>((resolve) => setTimeout(resolve, 100))
+        return '正文'
+      })
+      const ids = ['a', 'b', 'c', 'd', 'e', 'f']
+      const { tasks } = buildBatchTasks(inputs(ids), BASE_OPTIONS)
+      const running = runBatchReading({
         cfg: CFG,
         tasks,
-        stepMode: 'parallel',
-        concurrencyLimit: 2,
+        maxConcurrency: 2,
         signal: controller.signal,
-      }),
-    ).rejects.toMatchObject({ kind: 'cancelled' })
-    expect(explainMock).toHaveBeenCalledTimes(2)
-  })
-
-  it('取消时同一批内也不会继续发起新请求（attempt 前置检查）', async () => {
-    const controller = new AbortController()
-    let calls = 0
-    explainMock.mockImplementation(async () => {
-      calls += 1
-      controller.abort()
-      return '解读正文'
-    })
-    const { tasks } = buildBatchTasks(inputs(['a', 'b', 'c']), BASE_OPTIONS)
-    await expect(
-      runBatchReading({
-        cfg: CFG,
-        tasks,
-        stepMode: 'parallel',
-        concurrencyLimit: 64,
-        signal: controller.signal,
-      }),
-    ).rejects.toMatchObject({ kind: 'cancelled' })
-    // 第一项同步中止后，同批的后续项在进入 explain 前就被拦下
-    expect(calls).toBe(1)
+      })
+      // ★ 先挂断言再推进定时器：否则 promise 在推进期间就 reject，
+      //   Node 记一次「异步才被处理的拒绝」，vitest 报 Unhandled Rejection（exit 1）
+      const rejected = expect(running).rejects.toMatchObject({ kind: 'cancelled' })
+      for (let i = 0; i < 40; i += 1) await vi.advanceTimersByTimeAsync(1000)
+      await rejected
+      // 起速只会启动 a、b（第 2 个在 t=1000），取消后不再有第 3 个
+      expect(calls).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -419,13 +405,12 @@ describe('runBatchReading：进度发布', () => {
     await runBatchReading({
       cfg: CFG,
       tasks,
-      stepMode: 'serial',
-      concurrencyLimit: 64,
+      maxConcurrency: 1,
       onUpdate: ({ progress }) => frames.push({ done: progress.done, phase: progress.phase, ok: progress.ok }),
     })
     expect(frames[0].done).toBe(0)
+    expect(frames[0].phase).toContain('最高并发数 1')
     expect(frames[frames.length - 1]).toMatchObject({ done: 3, ok: 3, phase: '已完成' })
-    // 单调不减
     for (let i = 1; i < frames.length; i += 1) {
       expect(frames[i].done).toBeGreaterThanOrEqual(frames[i - 1].done)
     }
@@ -434,51 +419,29 @@ describe('runBatchReading：进度发布', () => {
   it('报告汇总字符数与各产出之和一致', async () => {
     explainMock.mockResolvedValue('一二三四五')
     const { tasks } = buildBatchTasks(inputs(['a', 'b']), BASE_OPTIONS)
-    const report = await runBatchReading({
-      cfg: CFG,
-      tasks,
-      stepMode: 'parallel',
-      concurrencyLimit: 64,
-    })
+    const report = await runBatchReading({ cfg: CFG, tasks, maxConcurrency: 1 })
     expect(report.totalChars).toBe(10)
-  })
-
-  it('outcomes 按任务顺序排列（与调度分批无关）', async () => {
-    // 让后面的任务先返回，验证输出仍按输入顺序
-    explainMock.mockImplementation(async (args: AiExplainArgs) => {
-      const delay = isTask(args, 'a') ? 5 : 0
-      await new Promise((r) => setTimeout(r, delay))
-      return 'x'
-    })
-    const { tasks } = buildBatchTasks(inputs(['a', 'b', 'c']), BASE_OPTIONS)
-    const report = await runBatchReading({
-      cfg: CFG,
-      tasks,
-      stepMode: 'parallel',
-      concurrencyLimit: 64,
-    })
-    expect(report.outcomes.map((o) => o.archiveId)).toEqual(['a', 'b', 'c'])
   })
 })
 
-describe('v2.5.0：受众 / 单份 token 预算 / 触顶标记', () => {
-  it('audience 与 tokenBudget 原样传给每一次 explain', async () => {
+describe('v2.5.0 / v4.0.0：风格与触顶标记', () => {
+  it('style 原样传给每一次 explain；tokenBudget 已不再传递', async () => {
     explainMock.mockResolvedValue('正文')
     const { tasks } = buildBatchTasks(inputs(['a', 'b']), BASE_OPTIONS)
-    await runBatchReading({
-      cfg: CFG,
-      tasks,
-      stepMode: 'parallel',
-      concurrencyLimit: 64,
-      audience: 'plain',
-      tokenBudget: 1200,
-    })
+    await runBatchReading({ cfg: CFG, tasks, maxConcurrency: 1, style: 'plain' })
     expect(explainMock).toHaveBeenCalledTimes(2)
     for (const call of explainMock.mock.calls) {
       const args = call[0] as AiExplainArgs
-      expect(args.audience).toBe('plain')
-      expect(args.tokenBudget).toBe(1200)
+      expect(args.style).toBe('plain')
+      expect('tokenBudget' in args).toBe(false)
     }
+  })
+
+  it('audience 作为过渡别名仍生效（映射到 style）', async () => {
+    explainMock.mockResolvedValue('正文')
+    const { tasks } = buildBatchTasks(inputs(['a']), BASE_OPTIONS)
+    await runBatchReading({ cfg: CFG, tasks, maxConcurrency: 1, audience: 'plain' })
+    expect((explainMock.mock.calls[0][0] as AiExplainArgs).style).toBe('plain')
   })
 
   it('触顶标记按本次调用收集，并发下不串台；报告点名且内容照常保留', async () => {
@@ -494,13 +457,7 @@ describe('v2.5.0：受众 / 单份 token 预算 / 触顶标记', () => {
       return '半截正文'
     })
     const { tasks } = buildBatchTasks(inputs(['a', 'b']), BASE_OPTIONS)
-    const report = await runBatchReading({
-      cfg: CFG,
-      tasks,
-      stepMode: 'parallel',
-      concurrencyLimit: 64,
-      tokenBudget: 900,
-    })
+    const report = await runBatchReading({ cfg: CFG, tasks, maxConcurrency: 1 })
     const a = report.outcomes.find((o) => o.archiveId === 'a')!
     const b = report.outcomes.find((o) => o.archiveId === 'b')!
     expect(a.truncated).toBe(false)
@@ -508,5 +465,9 @@ describe('v2.5.0：受众 / 单份 token 预算 / 触顶标记', () => {
     expect(b.content).toBe('半截正文')
     expect(report.truncatedNames).toEqual(['档案b'])
     expect(report.ok).toBe(2)
+  })
+
+  it('并发数上限常量收敛到 99（旧 128 已删除）', () => {
+    expect(AI_MAX_CONCURRENCY_MAX).toBe(99)
   })
 })

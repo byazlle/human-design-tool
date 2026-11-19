@@ -1,0 +1,271 @@
+%% ARCH v4.0.0 — AI 解读重构 类图（新增模块 + 既有模块的依赖关系）
+%% 约定：★ = 本版新增；~ = 本版修改；无标记 = 不改
+classDiagram
+    direction TB
+
+    class AiEntry {
+        <<type>>
+        'full' | 'composite' | 'selection'
+    }
+    class AiStyle {
+        <<type>>
+        'plain' | 'pro'
+    }
+    class AiDetailMode {
+        <<type, existing>>
+        'concise' | 'detailed' | 'full'
+    }
+    class AiScope {
+        <<type>>
+        unified | selection-one
+        full-module | full-all-channels | full-all-gates | full-trajectory
+        full-dimension | full-gate | full-channel | full-fusion
+    }
+    class SelectionPick {
+        +string[] channels
+        +number[] gates
+        +boolean definition
+        +boolean circuit
+        +boolean cross
+    }
+    class ReadingDirection {
+        +string key
+        +string label
+        +string prompt
+        +string custom
+    }
+    class ReadingRequest {
+        +AiEntry entry
+        +AiDetailMode detail
+        +AiStyle style
+        +BodyGraph chart
+        +string chartSummary
+        +ReadingDimKey[] dims
+        +SelectionPick selection
+        +ReadingDirection direction
+        +string archiveName
+    }
+    class ReadingTask {
+        +string key
+        +string title
+        +AiScope scope
+        +string ref
+        +string offline
+        +kind
+    }
+    class ReadingPlan {
+        +AiEntry entry
+        +AiDetailMode detail
+        +boolean singleShot
+        +ReadingTask[] tasks
+        +ReadingTask fusion
+        +string title
+    }
+    class ReadingProgress {
+        +number done
+        +number total
+        +string current
+        +string phase
+        +number elapsedMs
+        +number etaMs
+        +string[] skipped
+        +string[] failed
+        +number inFlight
+        +number maxConcurrency
+    }
+    class FullReport {
+        <<existing, +entry>>
+        +string title
+        +AiEntry entry
+        +FullReportSection[] sections
+        +string fusion
+        +string summary
+        +number totalChars
+        +string[] skipped
+        +string generatedAt
+    }
+
+    class AiReadingPlan {
+        <<new · service>>
+        +planReading(req: ReadingRequest) ReadingPlan
+        -buildEntryATasks(req) ReadingTask[]
+        -buildEntryBTasks(req) ReadingTask[]
+        -buildEntryCTasks(req) ReadingTask[]
+        -fusionExcerptChars(entry) number
+    }
+    class AiScheduler {
+        <<new · service>>
+        +runSlidingWindow(tasks, options) SlideResult[]
+        -pump()
+        -attempt(task, index)
+        -scheduleRampTick()
+    }
+    class SlideTask~T~ {
+        +string key
+        +string label
+        +run(signal) Promise~T~
+    }
+    class SlideOptions~T~ {
+        +number maxConcurrency
+        +number startIntervalMs
+        +number retry
+        +AbortSignal signal
+        +onStart()
+        +onSettled()
+        +onProgress()
+    }
+    class SlideResult~T~ {
+        +string key
+        +boolean ok
+        +T value
+        +string error
+        +number attempts
+        +number startedAt
+        +number endedAt
+    }
+
+    class AiReadingRunner {
+        <<new · service>>
+        +runReading(req, plan, cfg, hooks) FullReport
+        -runSingleShot(plan) string
+        -runMulti(plan) FullReport
+        -publish(progress)
+    }
+    class AiPrompt {
+        <<new · service>>
+        +PROMPT_CORE
+        +PROMPT_ENTRY_FULL
+        +PROMPT_ENTRY_COMPOSITE
+        +PROMPT_ENTRY_SELECTION
+        +PROMPT_DETAIL_CONCISE
+        +PROMPT_DETAIL_DETAILED
+        +PROMPT_DETAIL_FULL
+        +PROMPT_STYLE_PLAIN
+        +PROMPT_STYLE_PRO
+        +PROMPT_SCOPE_FUSION
+        +PROMPT_SCOPE_ITEM
+        +PROMPT_SCOPE_OVERVIEW
+        +systemPromptOf(ctx) string
+        +buildUserPrompt(args) string
+        +resolveStyle(style) AiStyle
+    }
+    class AiEvidence {
+        <<new · service>>
+        +checkEvidenceCoverage(reply, facts) EvidenceCoverage
+        +checkDimensionWhitelist(reply, dims) DimLeak[]
+        +checkItemCoverage(reply, expected) ItemCoverage
+    }
+    class AiTokenFallback {
+        <<new · service>>
+        +MAX_TOKENS_CEILING = 128000
+        +MAX_TOKENS_LADDER
+        +isMaxTokensRejection(status, body) boolean
+        +nextMaxTokensStep(current) MaxTokensStep
+    }
+    class AiClient {
+        <<existing · modified>>
+        +PROMPT_VERSION = '4.0'
+        +explain(args) Promise~string~
+        +cacheKey(cfg, args) string
+        +resolveRequestParams(scope, mode) RequestParams
+        +chartSummaryOf(chart) string
+        +validateAiReplyFacts(reply, facts) string[]
+        +clearAiCache()
+        +migrateAiCacheV1()
+    }
+    class AiConcurrency {
+        <<existing · modified>>
+        +AI_MAX_CONCURRENCY_MIN = 1
+        +AI_MAX_CONCURRENCY_MAX = 99
+        +clampMaxConcurrency(raw, fallback) number
+        +validateMaxConcurrency(raw) string
+        +normalizeMaxConcurrency(saved) MaxConcurrencyMigration
+    }
+    class ChartFacts {
+        <<existing · modified>>
+        +READING_DIMENSIONS
+        +buildUnifiedFacts(chart, dims) string
+        +buildChannelsOverviewFacts(chart) string
+        +buildGatesOverviewFacts(chart) string
+        +buildCentersCircuitFacts(chart) string
+        +buildTrajectoryFacts(chart) string
+        +unifiedScopeRef(dims, angleKey, custom) string
+        +selectionScopeRef(pick, direction) string
+    }
+    class ReadingAngles {
+        <<existing · modified>>
+        +READING_ANGLES
+        +MODULE_A5_DIRECTIONS
+        +angleOf(key) ReadingAngle
+    }
+    class SettingsStore {
+        <<existing · modified>>
+        +AiDetailMode aiDetailMode
+        +AiStyle aiStyle
+        +number aiMaxConcurrency
+        +setAiMaxConcurrency(v) boolean
+        +setAiStyle(style) boolean
+        -normalizeMaxConcurrency(saved) MaxConcurrencyMigration
+    }
+    class AiFullReading {
+        <<existing · modified>>
+        +baseFacts(chart) string
+        +gateFacts(chart, g, facts) string
+        +channelFacts(chart, c, facts) string
+        +buildFusionInput(sections, skipped) string
+        +splitFusion(raw) object
+        +isRelationshipChart(chart) boolean
+    }
+    class AiBatchReading {
+        <<existing · modified>>
+        +buildBatchTasks(inputs, options) object
+        +runBatchReading(options) BatchReport
+    }
+    class AiTransport {
+        <<existing · unchanged>>
+        +aiHttpRequest(init) result
+        +aiHttpStream(init, events) result
+        +aiTransportKind() string
+    }
+    class AiReadingPanel {
+        <<existing · DO NOT TOUCH>>
+        +data-zone A..E
+        +emit('cancel') x3
+    }
+
+    ReadingRequest "1" --> "1" AiEntry
+    ReadingRequest "1" --> "1" AiDetailMode
+    ReadingRequest "1" --> "1" AiStyle
+    ReadingRequest "1" --> "0..1" SelectionPick
+    ReadingRequest "1" --> "0..1" ReadingDirection
+    ReadingPlan "1" *-- "1..6" ReadingTask
+    ReadingPlan "1" --> "0..1" ReadingTask : fusion
+    ReadingPlan "1" --> "1" AiDetailMode
+
+    AiReadingPlan ..> ReadingPlan : 产出
+    AiReadingPlan ..> ChartFacts : 取事实块
+    AiReadingPlan ..> ReadingAngles : 取方向
+    AiReadingPlan ..> AiFullReading : 复用 gateFacts/channelFacts
+
+    AiReadingRunner ..> AiReadingPlan
+    AiReadingRunner ..> AiScheduler
+    AiReadingRunner ..> AiClient
+    AiReadingRunner ..> AiEvidence : 回复后检测
+    AiReadingRunner ..> ReadingProgress
+    AiReadingRunner ..> FullReport : 产出
+
+    AiScheduler "1" o-- "many" SlideTask
+    AiScheduler ..> SlideOptions
+    AiScheduler ..> SlideResult
+
+    AiClient ..> AiPrompt : systemPromptOf / buildUserPrompt
+    AiClient ..> AiTokenFallback : 阶梯降级
+    AiClient ..> AiTransport
+    AiClient ..> AiConcurrency : clamp 并发（仅展示）
+
+    SettingsStore ..> AiConcurrency
+    AiBatchReading ..> AiScheduler
+    AiBatchReading ..> ChartFacts
+    AiFullReading ..> ChartFacts
+
+    AiReadingPanel ..> FullReport : 只读渲染

@@ -13,8 +13,7 @@
 import { computed, ref, watch } from 'vue'
 import { useArchiveStore } from '../../stores/archive'
 import { useReadingsStore } from '../../stores/readings'
-import { useSettingsStore, MAX_TOKEN_BUDGET } from '../../stores/settings'
-import { MIN_TOKEN_BUDGET } from '../../services/aiClient'
+import { useSettingsStore } from '../../stores/settings'
 import { useAiBatch } from '../../composables/useAiBatch'
 import {
   canPickDirectory,
@@ -55,25 +54,8 @@ const autoExport = ref(isAutoExport())
 const canPickDir = canPickDirectory()
 const exportResult = ref<BatchExportResult | null>(null)
 const exporting = ref(false)
-/** 本次批量每份解读的 token 总预算；0 = 不限制。打开时继承设置页的全局值 */
-const tokenBudgetInput = ref(String(settings.aiTokenBudget))
-const BUDGET_PRESETS = [0, 1000, 2000, 4000, 8000] as const
-
-const tokenBudgetError = computed(() => {
-  const raw = tokenBudgetInput.value.trim()
-  if (!/^\d+$/.test(raw)) return '请填 0（不限制）或正整数'
-  const n = Number(raw)
-  return n !== 0 && (n < MIN_TOKEN_BUDGET || n > MAX_TOKEN_BUDGET)
-    ? `限制值需在 ${MIN_TOKEN_BUDGET}–${MAX_TOKEN_BUDGET} 之间，或填 0 不限制`
-    : ''
-})
-
-const effectiveBudget = computed(() =>
-  tokenBudgetError.value ? null : Number(tokenBudgetInput.value.trim()),
-)
-
 const AUDIENCE_LABEL = computed(() =>
-  settings.aiAudience === 'plain' ? '简明版（零基础，大白话）' : '专业版（有基础，允许术语）',
+  settings.aiStyle === 'plain' ? '零基础（大白话 + 例子）' : '专业（使用并阐释术语）',
 )
 
 const list = computed(() => archiveStore.filtered)
@@ -86,7 +68,6 @@ watch(
     if (!open) return
     scope.value = selectedIds.value.length ? 'selected' : 'all'
     detailMode.value = settings.aiDetailMode
-    tokenBudgetInput.value = String(settings.aiTokenBudget)
     exportResult.value = null
     // 首次打开时向主进程要一个默认目录（<文档>/HumanDesign解读），不覆盖用户已选目录
     void ensureDefaultOutputDir().then((d) => {
@@ -133,8 +114,7 @@ const canRun = computed(
     configured.value &&
     !running.value &&
     Boolean(plan.value?.runnable) &&
-    dimList.value.length > 0 &&
-    effectiveBudget.value !== null,
+    dimList.value.length > 0,
 )
 
 /** 已生成解读的档案数（用于解释为什么会跳过） */
@@ -170,7 +150,8 @@ async function autoExportOutcomes() {
   try {
     exportResult.value = await exportBatchReadings(items, {
       dirPath: outputDir.value,
-      audience: settings.aiAudience,
+      // batchExport 的选项仍叫 audience（services 层本轮不动），值就是表达风格
+      audience: settings.aiStyle,
     })
   } finally {
     exporting.value = false
@@ -188,7 +169,6 @@ async function start() {
       angleKey: angleKey.value,
       customDirection: customDirection.value.trim(),
       detailMode: detailMode.value,
-      tokenBudget: effectiveBudget.value ?? undefined,
       onExisting: onExisting.value,
     })
     await autoExportOutcomes()
@@ -207,7 +187,6 @@ async function retry() {
       angleKey: angleKey.value,
       customDirection: customDirection.value.trim(),
       detailMode: detailMode.value,
-      tokenBudget: effectiveBudget.value ?? undefined,
     })
     await autoExportOutcomes()
   } catch {
@@ -359,40 +338,13 @@ const MODE_LABELS: Record<AiDetailMode, string> = {
             </p>
           </section>
 
-          <!-- ⑤ 单份 token 上限（v2.5.0）：逐份独立，不再无限 token -->
+          <!-- ⑤ v4.0.0：token 上限已取消 -->
           <section class="block">
-            <h3 class="t-sm block-title">单次请求 token 上限</h3>
+            <h3 class="t-sm block-title">输出长度</h3>
             <p class="t-xs note">
-              每次 AI 请求（含自动续写）独立计算，N 份档案最多消耗约 N × 本值。填 0 表示不限制。
-              触顶的解读会标注「可能不完整」且不写入缓存，调高后重跑即可。
-              设置页的全局值：{{ settings.aiTokenBudget === 0 ? '不限制' : `${settings.aiTokenBudget} tokens` }}。
+              token 上限已取消，不再限制输出长度：每次请求都用模型允许的最大输出，超长会自动续写。
+              因此批量消耗只与「档案数 × 档位请求数」有关。
             </p>
-            <p class="t-xs note warn">
-              注意：选「完整」档时不适用上面的估法：一份档案会拆成几十个分项 + 一次融合，
-              每个分项与融合各自套用本上限，总消耗约为「请求数 × 本值」，可能高出一到两个数量级。
-            </p>
-            <div class="chips">
-              <button
-                v-for="b in BUDGET_PRESETS"
-                :key="b"
-                type="button"
-                class="chip"
-                :class="{ on: Number(tokenBudgetInput) === b }"
-                @click="tokenBudgetInput = String(b)"
-              >
-                {{ b === 0 ? '不限制' : `${b} tokens` }}
-              </button>
-            </div>
-            <input
-              v-model="tokenBudgetInput"
-              class="input"
-              type="number"
-              min="0"
-              :max="MAX_TOKEN_BUDGET"
-              inputmode="numeric"
-              placeholder="0 = 不限制"
-            />
-            <p v-if="tokenBudgetError" class="t-xs note error">{{ tokenBudgetError }}</p>
           </section>
 
           <!-- ⑥ v3.0.0：保存位置 + 完成后自动导出，一人一份 -->

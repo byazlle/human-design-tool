@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
-import type { AiAudience, AiDetailMode, CenterId } from '../types/hd'
+import type { AiDetailMode, AiStyle, CenterId } from '../types/hd'
+import type { AiEntry, ReadingDirection, SelectionPick } from '../types/aiReading'
+import type { ReadingDimKey } from '../services/chartFacts'
 import type { AiProgress, FullReport } from '../types/report'
 import type { BatchProgress } from '../services/aiBatchReading'
 
@@ -28,12 +30,31 @@ export interface AiReadingState {
    * v3.0.0：本次解读的生成元数据（生成时锁定，不随设置页改动而漂移）。
    * 保存进档案时必须用这三个值——此前 saveAiResult 把档位缺省成 detailed、
    * 受众丢成 undefined，导致「简明版记录挡住专业版批量」的静默跳过。
+   *
+   * v4.0.0：`resultAudience` → `resultStyle`（值不变、语义反转）；
+   * `resultEntry` 记录这次解读出自哪个入口，存档时一并落库。
    */
-  resultAudience?: AiAudience
+  resultStyle?: AiStyle
   resultTruncated?: boolean
   resultMode?: AiDetailMode
+  /** 本次解读的入口（A 全盘 / B 综合 / C 勾选）；单点解读也按 composite 记 */
+  resultEntry?: AiEntry
+  /**
+   * @deprecated v4.0.0 起叫 `resultStyle`。保留为只读镜像（`setAiResultMeta` 同步写入），
+   * 让 `views/*` 与 `useAiResultActions` 在 T04 改名之前继续工作；T04 后删除。
+   */
+  resultAudience?: AiStyle
   /** v3.0.0：流式期间已收到的增量正文（纯文本预览，不进持久化） */
   streamText: string
+  /* ── 入口回显快照（v4.0.0）：工作区三入口的控件回显与「重新生成」参数来源 ── */
+  /** 本次请求的入口 */
+  entry?: AiEntry
+  /** 入口 B 勾选的维度（按 READING_DIMENSIONS 顺序） */
+  dims?: ReadingDimKey[]
+  /** 入口 C 的勾选对象 */
+  selection?: SelectionPick | null
+  /** 入口 A/B 的解读方向 */
+  direction?: ReadingDirection
 }
 
 export interface ToastAction {
@@ -123,10 +144,16 @@ export const useUiStore = defineStore('ui', {
       error: null,
       progress: null,
       report: null,
-      resultAudience: undefined,
+      resultStyle: undefined,
       resultTruncated: false,
       resultMode: undefined,
+      resultEntry: undefined,
+      resultAudience: undefined,
       streamText: '',
+      entry: undefined,
+      dims: undefined,
+      selection: null,
+      direction: undefined,
     },
     batch: { ...BATCH_IDLE, failed: [], skipped: [] },
     aiPanelSuspended: false,
@@ -163,10 +190,16 @@ export const useUiStore = defineStore('ui', {
         error: null,
         progress: null,
         report: null,
-        resultAudience: undefined,
+        resultStyle: undefined,
         resultTruncated: false,
         resultMode: undefined,
+        resultEntry: undefined,
+        resultAudience: undefined,
         streamText: '',
+        entry: undefined,
+        dims: undefined,
+        selection: null,
+        direction: undefined,
       }
       this.aiPanelSuspended = false
     },
@@ -187,11 +220,42 @@ export const useUiStore = defineStore('ui', {
       this.aiReturnPath = null
       return path
     },
-    /** 锁定本次解读的生成元数据（由 useAiReading 在请求发起时调用） */
-    setAiResultMeta(meta: { audience?: AiAudience; mode?: AiDetailMode; truncated?: boolean }) {
-      this.aiReading.resultAudience = meta.audience
+    /**
+     * 锁定本次解读的生成元数据（由 useAiReading 在请求发起时调用）。
+     *
+     * v4.0.0：入参 `style` 取代 `audience`（后者保留为同一版本的过渡别名，
+     * 两个都传时 `style` 优先）；`entry` 用于存档与「最近解读」筛选。
+     */
+    setAiResultMeta(meta: {
+      style?: AiStyle
+      /** @deprecated 用 `style` */
+      audience?: AiStyle
+      mode?: AiDetailMode
+      truncated?: boolean
+      entry?: AiEntry
+    }) {
+      const style = meta.style ?? meta.audience
+      if (style !== undefined) {
+        this.aiReading.resultStyle = style
+        // 旧字段同步镜像：T04 把视图与保存逻辑改成 style 后即可删除
+        this.aiReading.resultAudience = style
+      }
       this.aiReading.resultMode = meta.mode
       if (meta.truncated !== undefined) this.aiReading.resultTruncated = meta.truncated
+      if (meta.entry !== undefined) this.aiReading.resultEntry = meta.entry
+    },
+    /** 入口回显快照：工作区三入口的控件状态（不持久化） */
+    setAiEntryContext(ctx: {
+      entry?: AiEntry
+      dims?: ReadingDimKey[]
+      selection?: SelectionPick | null
+      direction?: ReadingDirection
+    }) {
+      this.aiReading.entry = ctx.entry
+      this.aiReading.dims = ctx.dims
+      this.aiReading.selection = ctx.selection ?? null
+      this.aiReading.direction = ctx.direction
+      if (ctx.entry !== undefined) this.aiReading.resultEntry = ctx.entry
     },
     /** 流式增量：只追加纯文本预览，不动 content / loading / error 的既有语义 */
     appendAiStreamText(text: string) {
@@ -218,6 +282,8 @@ export const useUiStore = defineStore('ui', {
     },
     setAiReport(report: FullReport | null) {
       this.aiReading.report = report
+      // v4.0.0：报告自带入口，同步进生成元数据，存档时不必再问调用方
+      if (report?.entry) this.aiReading.resultEntry = report.entry
     },
     setAiContent(content: string) {
       this.aiReading.content = content

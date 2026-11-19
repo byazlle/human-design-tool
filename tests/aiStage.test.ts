@@ -27,6 +27,8 @@ const CFG: AiConfig = {
 function args(overrides: Partial<AiExplainArgs> = {}): AiExplainArgs {
   return {
     cfg: { ...CFG },
+    // v4.0.0：入口是必填字段（只影响缓存键隔离与提示词入口段，不影响本层分支）
+    entry: 'composite',
     scope: 'gate',
     ref: '1',
     offline: '离线事实',
@@ -77,7 +79,7 @@ describe('explain() 可选 onStage · 向后兼容', () => {
     fetchMock.mockResolvedValue(okResponse())
     const result = await explain(args())
     expect(result).toBe('解读正文')
-    expect(PROMPT_VERSION).toBe('3.4')
+    expect(PROMPT_VERSION).toBe('4.0')
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 

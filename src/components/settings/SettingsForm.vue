@@ -1,24 +1,17 @@
 <script setup lang="ts">
 /** 设置面板：AI 配置（多套）/ 外观 / 数据 / 计算精度（DESIGN.md §4.12） */
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import {
-  useSettingsStore,
-  takeConcurrencyMigrationNotice,
-  MAX_TOKEN_BUDGET,
-} from '../../stores/settings'
+import { useSettingsStore, takeConcurrencyMigrationNotice } from '../../stores/settings'
 import { useArchiveStore } from '../../stores/archive'
 import { useUiStore } from '../../stores/ui'
-import { fetchAiModels, MIN_TOKEN_BUDGET, probeAiConfig, validateAiConfig } from '../../services/aiClient'
-import {
-  CONCURRENCY_MAX,
-  CONCURRENCY_MIN,
-  validateConcurrencyPair,
-} from '../../services/aiConcurrency'
-import type { AiAudience, AiDetailMode, AiProfile, AiStepMode } from '../../types/hd'
+import { fetchAiModels, probeAiConfig, validateAiConfig } from '../../services/aiClient'
+import { validateMaxConcurrency } from '../../services/aiConcurrency'
+import type { AiDetailMode, AiProfile, AiStyle } from '../../types/hd'
 import ConfirmDialog from '../base/ConfirmDialog.vue'
 import HdField from '../base/HdField.vue'
 import HdToggle from '../base/HdToggle.vue'
 import HdButton from '../base/HdButton.vue'
+import AiConcurrencyField from '../ai/AiConcurrencyField.vue'
 import CustomLayoutEditor from './CustomLayoutEditor.vue'
 
 const FONT_STEPS = [0.85, 0.92, 1, 1.1, 1.2, 1.35] as const
@@ -37,77 +30,37 @@ const settings = useSettingsStore()
 const archiveStore = useArchiveStore()
 const ui = useUiStore()
 
-/* ── 并发设置（v2.3.0 · T-C3）──────────────────────────
- * 两个全局设置项：aiConcurrency（AI 并发数）/ aiConcurrencyLimit（并发上限）。
- * 条件 ① 在此做 UI 反馈，唯一写入闸门仍是 stores/settings.ts 的两个 setter。
+/* ── 最高并发数（v4.0.0 单旋钮）────────────────────────
+ * v3.5.0 的「AI 并发数 + 并发上限」两个旋钮已合并为一个 aiMaxConcurrency（1–99）。
+ * 唯一写入闸门是 stores/settings.ts 的 setAiMaxConcurrency；这里只做输入 + 行内反馈。
  */
 
-const RANGE_HINT = `${CONCURRENCY_MIN}–${CONCURRENCY_MAX} 的整数`
-
-/** 仅「非精简 + 并发」档可编辑；其余显示但禁用，不隐藏（AC-C16） */
-const canEditConcurrency = computed(
-  () => settings.aiDetailMode !== 'concise' && settings.aiStepMode === 'parallel',
-)
-
-const concurrencyInput = ref(String(settings.aiConcurrency))
-const concurrencyLimitInput = ref(String(settings.aiConcurrencyLimit))
+const concurrencyInput = ref(settings.aiMaxConcurrency)
 /** 与 detailModeError 分开管理，避免串台；错误条常驻直到用户处理（FB-3） */
 const concurrencyError = ref('')
 const concurrencyNotSaved = ref(false)
 
-function parseConcurrencyInput(raw: string): number {
-  const trimmed = raw.trim()
-  return /^\d+$/.test(trimmed) ? Number(trimmed) : Number.NaN
-}
-
-function currentConcurrencyPair(): { c: number; l: number } {
-  return {
-    c: parseConcurrencyInput(concurrencyInput.value),
-    l: parseConcurrencyInput(concurrencyLimitInput.value),
-  }
-}
-
 /** 失焦只做行内预校验：不写 store、不写 localStorage、不发 toast */
-function validateConcurrencyFields() {
-  if (!canEditConcurrency.value) return
-  const { c, l } = currentConcurrencyPair()
-  concurrencyError.value = validateConcurrencyPair(c, l) ?? ''
+function validateConcurrencyField() {
+  concurrencyError.value = validateMaxConcurrency(concurrencyInput.value) ?? ''
 }
 
-/** 条件 ①：拒绝保存并提示；原生效值不变，仍可用上一次合法配置发起解读 */
-/** BT-5 / AC-12：300ms 内连点只生效 1 次，不改变业务触发次数语义 */
+/** BT-5：300ms 内连点只生效 1 次 */
 let lastConcurrencySaveAt = 0
 
 function saveConcurrency() {
   const now = Date.now()
   if (now - lastConcurrencySaveAt < 300) return
   lastConcurrencySaveAt = now
-  if (!canEditConcurrency.value) return
-  const { c, l } = currentConcurrencyPair()
-  const error = validateConcurrencyPair(c, l)
+  const error = validateMaxConcurrency(concurrencyInput.value)
   if (error) {
     concurrencyError.value = error
     concurrencyNotSaved.value = true
-    ui.notify(
-      error.includes('不能超过')
-        ? '保存失败：AI 并发数不能超过并发上限'
-        : `保存失败：${error}`,
-      'error',
-    )
+    ui.notify(`保存失败：${error}`, 'error')
     return
   }
-  // 整体校验通过后，先写不会破坏当前约束的一侧，保证两个 setter 的「待写入对」都合法。
-  // 任一步失败（校验 / 持久化）都回滚到原生效值，杜绝「上限已改、并发数未改」的部分写入。
-  const previousConcurrency = settings.aiConcurrency
-  const previousLimit = settings.aiConcurrencyLimit
-  const ok =
-    c > previousLimit
-      ? settings.setAiConcurrencyLimit(l) && settings.setAiConcurrency(c)
-      : settings.setAiConcurrency(c) && settings.setAiConcurrencyLimit(l)
+  const ok = settings.setAiMaxConcurrency(concurrencyInput.value)
   if (!ok) {
-    settings.aiConcurrency = previousConcurrency
-    settings.aiConcurrencyLimit = previousLimit
-    settings.persist()
     concurrencyError.value = settings.persistError || '保存失败，设置未生效'
     concurrencyNotSaved.value = true
     ui.notify(`保存失败：${concurrencyError.value}`, 'error')
@@ -115,24 +68,23 @@ function saveConcurrency() {
   }
   concurrencyError.value = ''
   concurrencyNotSaved.value = false
-  ui.notify('并发设置已保存', 'success')
+  ui.notify('最高并发数已保存', 'success')
 }
 
 // 用户输入变化时清掉上一次的错误 / 未保存标记，直到再次提交
-watch([concurrencyInput, concurrencyLimitInput], () => {
+watch(concurrencyInput, () => {
   concurrencyError.value = ''
   concurrencyNotSaved.value = false
 })
 // setter 生效后把输入同步为规范值
 watch(
-  () => [settings.aiConcurrency, settings.aiConcurrencyLimit] as const,
-  ([c, l]) => {
-    concurrencyInput.value = String(c)
-    concurrencyLimitInput.value = String(l)
+  () => settings.aiMaxConcurrency,
+  (v) => {
+    concurrencyInput.value = v
   },
 )
 
-// AC-C3：存量非法配置被归一后，给一次可见提示（消费即清）
+// AC-C3 / ARCH §5.3：存量配置被归一后，给一次可见提示（消费即清）
 onMounted(() => {
   const notice = takeConcurrencyMigrationNotice()
   if (notice) ui.notify(notice, 'info')
@@ -155,30 +107,24 @@ const fieldErrors = reactive<Record<string, string>>({})
 const showKey = ref(false)
 const testingId = ref<string | null>(null)
 
-/* ── 解读详细度（AI 提示词三档：规范 AI-PROMPT-v2.0 §2 / §3 / §5）── */
+/* ── 解读详细度（v4.0.0 口径：精简只讲倾向 / 详细依据前置 / 完整分模块）── */
 
 const DETAIL_MODES: Array<{ value: AiDetailMode; label: string; hint: string }> = [
   {
     value: 'concise',
     label: '精简',
-    hint: '600–900 字 · 5 个视角，一屏读完，适合日常查看（默认）',
+    hint: '600–900 字，只描述日常倾向、不做事实性断言；一次覆盖多个模块时按条目数放大篇幅（默认）',
   },
   {
     value: 'detailed',
     label: '详细',
-    hint: '1800–3000 字 · 8 节 + 一页速记，适合收藏回看',
+    hint: '5000–10000 字（硬上限 20000）：每条结论都必须前置依据，并写出对应的通道 / 闸门 / 中心',
   },
   {
     value: 'full',
     label: '完整',
-    hint: '15000–25000 字 · 多轮分步生成；整盘走八大维度 + 逐闸门 + 逐通道，合盘走关系场专用维度',
+    hint: '分模块多次请求、无字数上限：每个分项一篇，最后单独做一次融合；请求数见工作区的「预计请求数」',
   },
-]
-
-/** 多步编排方式（用户 Q3.4：串行 / 并发可切，并发失败自动转串行） */
-const STEP_MODES: Array<{ value: AiStepMode; label: string; hint: string }> = [
-  { value: 'serial', label: '串行', hint: '逐项依次请求，稳定、便于观察进度' },
-  { value: 'parallel', label: '并发', hint: '多项同时请求，更快；失败自动转回串行' },
 ]
 
 /** 写入失败（localStorage 不可用）时在这里提示，成功则清空 */
@@ -190,63 +136,28 @@ function setDetailMode(mode: AiDetailMode) {
   detailModeError.value = ok ? '' : settings.persistError || '保存失败，设置未生效'
 }
 
-function setStepMode(mode: AiStepMode) {
-  if (settings.aiStepMode === mode) return
-  const ok = settings.setAiStepMode(mode)
-  detailModeError.value = ok ? '' : settings.persistError || '保存失败，设置未生效'
-}
+/* ── 表达风格（v4.0.0：替代旧「面向人群」，值不变、语义反转）────────── */
 
-/* ── 面向人群（v2.5.0）：只改提示词的用词与解释深度 ────────── */
-
-const AUDIENCES: Array<{ value: AiAudience; label: string; hint: string }> = [
-  {
-    value: 'pro',
-    label: '专业版（有基础）',
-    hint: '直接使用类型、权威、闸门、通道等专业词，不逐个解释术语，篇幅留给这张盘的具体判断',
-  },
+const STYLES: Array<{ value: AiStyle; label: string; hint: string }> = [
   {
     value: 'plain',
-    label: '简明版（零基础）',
-    hint: '用大白话和生活例子讲；术语第一次出现必须先解释对应什么现象，不删减结论',
+    label: '零基础（大白话）',
+    hint: '全程口语，每 200 字给一个具体例子或生活场景；结论不加不减，只是换成能听懂的话',
+  },
+  {
+    value: 'pro',
+    label: '专业（使用并阐释术语）',
+    hint: '使用类型 / 权威 / 闸门 / 通道等术语，但每个术语第一次出现必须先定义并给出本盘取值',
   },
 ]
 
-const audienceError = ref('')
+const styleError = ref('')
 
-function setAudience(audience: AiAudience) {
-  if (settings.aiAudience === audience) return
-  const ok = settings.setAiAudience(audience)
-  audienceError.value = ok ? '' : settings.persistError || '保存失败，设置未生效'
+function setStyle(style: AiStyle) {
+  if (settings.aiStyle === style) return
+  const ok = settings.setAiStyle(style)
+  styleError.value = ok ? '' : settings.persistError || '保存失败，设置未生效'
 }
-
-/* ── 单份解读 token 上限（v2.5.0）──────────────────────── */
-
-const tokenBudgetInput = ref(String(settings.aiTokenBudget))
-const tokenBudgetError = ref('')
-
-/** 0 = 不限制；正数按 [MIN_TOKEN_BUDGET, MAX_TOKEN_BUDGET] 校验，不把「填 10」静默放大 */
-function saveTokenBudget() {
-  const raw = tokenBudgetInput.value.trim()
-  if (!/^\d+$/.test(raw)) {
-    tokenBudgetError.value = '请填 0（不限制）或正整数'
-    return
-  }
-  const n = Number(raw)
-  if (n !== 0 && (n < MIN_TOKEN_BUDGET || n > MAX_TOKEN_BUDGET)) {
-    tokenBudgetError.value = `限制值需在 ${MIN_TOKEN_BUDGET}–${MAX_TOKEN_BUDGET} 之间，或填 0 表示不限制`
-    return
-  }
-  const ok = settings.setAiTokenBudget(n)
-  tokenBudgetError.value = ok ? '' : settings.persistError || '保存失败，设置未生效'
-  if (ok) tokenBudgetInput.value = String(settings.aiTokenBudget)
-}
-
-watch(
-  () => settings.aiTokenBudget,
-  (v) => {
-    tokenBudgetInput.value = String(v)
-  },
-)
 
 /* ── 自动获取模型列表（v2.5.0）────────────────────────── */
 
@@ -773,14 +684,13 @@ function regenerateAll() {
         </div>
       </form>
 
-      <!-- 解读详细度：精简 / 详细 / 完整三档 + 完整版编排方式 -->
+      <!-- 解读详细度：三档 + 表达风格 + 最高并发数（v4.0.0 单旋钮） -->
       <div class="detail-mode">
         <div class="dm-head">
           <strong class="t-sm">解读详细度</strong>
           <span class="t-xs t-muted">
-            精简 600–900 字 · 5 个视角；详细 1800–3000 字 · 8 节；完整 15000–25000 字 · 多轮分步。
-            「完整」档覆盖单人整盘、合盘与双盘对比；合盘按关系场口径编排（不输出类型 / 权威 / 轮回交叉）。
-            凯龙回归盘与闸门 / 通道 / 中心单点解读三档均生效，但只发单次请求，不启动整套多轮报告。
+            精简：只描述日常倾向、不做事实性断言；详细：5000–10000 字，每条结论前置依据与对应的通道 / 闸门 / 中心；
+            完整：分模块多次请求、无字数上限，最后一个请求单独做融合（请求数见 AI 工作区的「预计请求数」）。
           </span>
         </div>
         <div class="dm-options">
@@ -797,115 +707,43 @@ function regenerateAll() {
             <span class="t-xs">{{ opt.hint }}</span>
           </button>
         </div>
-        <!-- 面向人群（v2.5.0）：专业版 / 简明版，只改提示词的用词与解释深度 -->
-        <div class="audience-settings">
-          <span class="t-sm">面向人群</span>
+
+        <!-- 表达风格（v4.0.0：替代旧「面向人群」两块；值不变、语义反转） -->
+        <div class="style-settings">
+          <span class="t-sm">表达风格</span>
           <span class="t-xs t-muted">
             只影响 AI 解读的用词与解释深度，结论判断与字数契约不变；切换后会另存一份缓存与解读记录，
             不会覆盖另一版的解读。
           </span>
           <div class="dm-options">
             <button
-              v-for="a in AUDIENCES"
-              :key="a.value"
+              v-for="s in STYLES"
+              :key="s.value"
               type="button"
               class="dm-option"
-              :class="{ on: settings.aiAudience === a.value }"
-              :aria-pressed="settings.aiAudience === a.value"
-              @click="setAudience(a.value)"
+              :class="{ on: settings.aiStyle === s.value }"
+              :aria-pressed="settings.aiStyle === s.value"
+              @click="setStyle(s.value)"
             >
-              <strong>{{ a.label }}</strong>
-              <span class="t-xs">{{ a.hint }}</span>
+              <strong>{{ s.label }}</strong>
+              <span class="t-xs">{{ s.hint }}</span>
             </button>
           </div>
-          <p v-if="audienceError" class="t-xs msg-warning">{{ audienceError }}</p>
+          <p v-if="styleError" class="t-xs msg-warning">{{ styleError }}</p>
         </div>
 
-        <!-- 单份 token 上限（v2.5.0）：批量生成时逐份独立适用 -->
-        <div class="budget-settings">
-          <span class="t-sm">单次解读 token 上限</span>
-          <span class="t-xs t-muted">
-            这是「一次 AI 请求」（含自动续写）的总预算，不是「一份档案」的总预算；
-            批量生成时每份档案各算一次。填 0 表示不限制，按所选档位的默认额度执行。
-          </span>
-          <span class="t-xs t-muted">
-            注意：「完整」档会把一份档案拆成几十个分项 + 一次融合，每个分项与融合各算一次预算，
-            实际消耗约为「请求数 × 本值」；选「完整」时请按这个量级估，别按一份估。
-            「上限」是近似值：下限 {{ MIN_TOKEN_BUDGET }} tokens，填值低于 600 时三轮合计会超过所填数。
-            触顶时结果会标注「可能不完整」且不写入缓存，调高上限后重新生成即可。
-          </span>
-          <div class="budget-field">
-            <HdField
-              v-model="tokenBudgetInput"
-              label="上限（tokens）"
-              type="number"
-              inputmode="numeric"
-              :hint="`0 不限制；限制值 ${MIN_TOKEN_BUDGET}–${MAX_TOKEN_BUDGET}`"
-              :error="tokenBudgetError"
-              @blur="saveTokenBudget"
-            />
-          </div>
-          <div class="actions">
-            <HdButton size="sm" @click="saveTokenBudget">保存上限</HdButton>
-          </div>
-        </div>
-
-        <div v-if="settings.aiDetailMode !== 'concise'" class="step-mode">
-          <span class="t-sm">多步编排方式</span>
-          <span class="t-xs t-muted">仅影响「完整」版的多轮请求；并发失败会自动转回串行。</span>
-          <div class="dm-options">
-            <button
-              v-for="opt in STEP_MODES"
-              :key="opt.value"
-              type="button"
-              class="dm-option"
-              :class="{ on: settings.aiStepMode === opt.value }"
-              :aria-pressed="settings.aiStepMode === opt.value"
-              @click="setStepMode(opt.value)"
-            >
-              <strong>{{ opt.label }}</strong>
-              <span class="t-xs">{{ opt.hint }}</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- 并发设置（v2.3.0 · T-C3）：位于「多步编排方式」之后，不新增分节 / 页面 / 路由 -->
+        <!-- 最高并发数（v4.0.0 单旋钮：同时是「同时跑几个」与「上限」）-->
         <div class="concurrency-settings">
-          <span class="t-sm">并发设置</span>
+          <span class="t-sm">最高并发数</span>
           <span class="t-xs t-muted">
-            AI 并发数只是设定值，不切片分批；唯一闸门是「任务所需并发数 ≤ 并发上限」。
-            通过时除最终大总结外所有分项一次性并发执行，最终大总结最后单独执行。
+            仅「完整」档的多模块请求与批量生成生效：每秒发起 1 个请求，达到上限后完成一个补一个；
+            设为 1 就是串行。解读的 token 上限已取消，不再限制输出长度。
           </span>
-          <div class="concurrency-fields">
-            <HdField
-              v-model="concurrencyInput"
-              label="AI 并发数"
-              type="number"
-              inputmode="numeric"
-              :disabled="!canEditConcurrency"
-              :hint="RANGE_HINT"
-              :error="concurrencyError"
-              @blur="validateConcurrencyFields"
-            />
-            <HdField
-              v-model="concurrencyLimitInput"
-              label="并发上限"
-              type="number"
-              inputmode="numeric"
-              :disabled="!canEditConcurrency"
-              :hint="RANGE_HINT"
-              :error="concurrencyError"
-              @blur="validateConcurrencyFields"
-            />
+          <div class="concurrency-field">
+            <AiConcurrencyField v-model="concurrencyInput" :error="concurrencyError" />
           </div>
-          <span class="t-xs t-muted">
-            范围：{{ RANGE_HINT }}；关系说明：AI 并发数不得超过并发上限（1 ≤ AI 并发数 ≤ 并发上限 ≤ 128）。
-          </span>
-          <p v-if="!canEditConcurrency" class="t-xs t-muted">仅并发档生效（当前设置不参与编排）。</p>
           <div class="actions">
-            <HdButton size="sm" :disabled="!canEditConcurrency" @click="saveConcurrency">
-              保存并发设置
-            </HdButton>
+            <HdButton size="sm" @click="saveConcurrency">保存最高并发数</HdButton>
           </div>
           <p v-if="concurrencyNotSaved" class="t-xs msg-warning">配置未保存</p>
         </div>

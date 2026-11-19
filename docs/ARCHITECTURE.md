@@ -33,11 +33,15 @@ BirthInput ──computeChart()──► BodyGraph
   （SVG 渲染）              （清单 + 多选）             （盘面信息 / 星体两翼）
                                   │
                                   ▼
-                          useAiReading → services/aiClient
+              ReadingRequest{entry, detail, style, chart, dims, selection, direction}
+                                  │
+                        planReading() ──► ReadingPlan{tasks, fusion, singleShot}
+                                  │
+                      runReadingPlan() ──► aiScheduler（滑动窗口）+ aiClient.explain()
                                   │
                   ┌───────────────┴────────────────┐
                   ▼                                ▼
-        AiWorkspaceView（/ai 完整页）      AiReadingPanel（侧栏兼容层）
+        AiWorkspaceView（/ai 三入口页）     AiReadingPanel（侧栏兼容层）
         + AiMiniDock（最小化胶囊）          ui.aiPanelSuspended 控制显示位置
 ```
 
@@ -46,8 +50,8 @@ BirthInput ──computeChart()──► BodyGraph
 - 意识的判定不需要额外字段：`chart.personality` 与 `chart.design` 的 `gate` 集合
   直接决定每条通道是「红 / 黑 / 条纹」。
 - **两条 AI 显示路径共用一份状态**：`ui.aiReading` 是单一槽位，`activeController` 是模块级单例。
-  请求生命周期不绑在任何 View 上；只有显式取消或关闭可见面板才中断。详见
-  [docs/AI-WORKSPACE.md](AI-WORKSPACE.md)。
+  请求生命周期不绑在任何 View 上；只有显式取消或关闭可见面板才中断。
+  三入口、档位、风格与并发的完整契约见 [docs/AI-WORKSPACE.md](AI-WORKSPACE.md)。
 
 ## 3. 关键模块
 
@@ -61,8 +65,10 @@ BirthInput ──computeChart()──► BodyGraph
 | 版式注册表 | 单一版式 `LayoutPreset`（v2.2 起移除版式二） | `layouts.ts` |
 | 渲染 | 底板 + 数据两层 SVG | `HumanDesignBodyGraph.vue` |
 | 解读内容 | 闸门/通道/中心/类型/星体/闸门洞察/人生轨迹/角度 | `src/services/*` |
-| AI | 请求、缓存（选择集/角度入 key）、错误护栏 | `services/aiClient.ts` `composables/useAiReading.ts` |
-| AI 工作区 | 一级页面 / 最小化胶囊 / 跨页状态与来源记录 | `views/AiWorkspaceView.vue` `components/panel/AiMiniDock.vue` `stores/ui.ts` |
+| AI 请求层 | 提示词拼装、HTTP、续写、缓存键、错误分类、`max_tokens` 降级 | `services/aiClient.ts` `aiPrompt.ts` `aiTokenFallback.ts` |
+| AI 编排层 | 请求 → 计划（纯函数）、执行计划（单次 / 滑动窗口 + 末位融合） | `services/aiReadingPlan.ts` `aiReadingRunner.ts` `aiScheduler.ts` |
+| AI 事实与检测 | 盘面事实块唯一实现、回复后检测（只告警） | `services/chartFacts.ts` `services/aiEvidence.ts` |
+| AI 工作区 | 三入口页面 / 最小化胶囊 / 跨页状态与来源记录 | `views/AiWorkspaceView.vue` `components/ai/*` `components/panel/AiMiniDock.vue` `stores/ui.ts` |
 | 样式收敛层 | 冷中性 token 覆盖与 ws-* 组件样式，只追加 | `styles/workspace.css` |
 
 ## 4. 状态与持久化
@@ -70,9 +76,11 @@ BirthInput ──computeChart()──► BodyGraph
 | 键 | 内容 | 说明 |
 | --- | --- | --- |
 | `hdt.archives.v1` | 档案数组（含已算好的 `chart`） | 导出/导入同构 |
-| `hdt.settings.v1` | AI 配置、外观（主题/字号/配色/**绘图程序**） | 版本号不在此处 |
+| `hdt.settings.v1` | AI 配置、`aiDetailMode` / `aiStyle` / `aiMaxConcurrency`、外观（主题/字号/配色/绘图程序） | 键名不变，字段级兼容；已删字段不再写入 |
+| `hdt.ai.readings.v1` | 已保存的解读记录（含 `style` / `entry` / 版本戳） | 单档案最多 12 条，超出按时间淘汰 |
+| `hdt.ai.cache.v2` | 解读缓存（键含提示词版本、入口、档位、风格、ref、内容哈希） | v1 代键在启动时清理 |
 | `hdt.module.order.v1` | 历史遗留的模块排序（已不参与布局） | 可清理 |
-| `hdt.ai.history.v1` | 本地保存的解读记录（最多 50 条） | 仅本机 |
+| `hdt.ai.history.v1` | 全局保存流水（最多 50 条，无档案归属） | 仅本机 |
 
 版本号**单一来源**为根 `package.json`，由构建与发布脚本读取。
 
@@ -107,7 +115,7 @@ MainActivity 通过 shouldInterceptRequest 从 assets/www 读取
 
 | 层级 | 命令 | 覆盖 |
 | --- | --- | --- |
-| 单元 | `npm test` | 25 个文件 / 323 项：盘序边界、通道路由、合盘归属、星历对照、几何、Markdown、提示词契约、AI 并发调度与验收、跨档案批量生成编排、事实块与解读记录、画布排布、页面布局、报告导出、完整版编排、关系场编排 |
+| 单元 | `npm test` | 盘序边界、通道路由、合盘归属、星历对照、几何、Markdown、提示词分层与逐字文档校验、入口计划、滑动窗口调度、回复后检测、token 降级、跨档案批量生成、事实块与解读记录、画布排布、页面布局、报告导出、完整版编排、关系场编排 |
 | 端到端 | `HD_SMOKE=1 <exe>` | 29 项：加载、渲染、清单、详情、批量、AI 护栏、深色、合盘、设置、新建 |
 | 安装验证 | NSIS `/S` 静默安装 → 运行安装后程序 | 同一套 29 项 |
 | APK | 静态服务模拟 `appassets` 加载 | ES module + localStorage 正常 |
@@ -146,27 +154,79 @@ MainActivity 通过 shouldInterceptRequest 从 assets/www 读取
 - `renderMarkdown` 本身不支持表格；导出侧 `markdownToHtml()` 把表格块单独转成 `<table>`，
   Word 则降级为以 `｜` 分隔的纯文本行。
 
-## 9. 关系场完整版编排（v2.2.0）
+## 9. 关系场完整版编排
 
-合盘（`CompositeView`）与双盘对比（`CompareView`）在「完整」档同样走多轮编排，但**不能**套用单人整盘的八大维度：
+合盘（`CompositeView`）与双盘对比（`CompareView`）在「完整」档同样走多轮编排，但**不能**套用单人整盘的维度：
 
 | 环节 | 单人整盘 | 关系场（合盘 / 双盘对比） |
 | --- | --- | --- |
-| 事实块 | `baseFacts(chart)`：类型 / 权威 / 人生角色 / 九中心 / 闸门 / 通道 | `relationshipFactBlock()`：双方人生角色、中心四象限、四类关系通道、共享与独有通道闸门、合并盘离线释义 |
-| 维度 | `READING_ANGLES` 八项 | `COMPOSITE_DIMENSIONS` 五项（自定义议题可追加）+ 四类连接动力学 |
-| 逐项 | `chart.gates` / `chart.channels` | `sharedGates` / `merged.channels`（带归属） |
+| 任务来源 | `planReading({ entry:'composite', detail:'full', dims: ALL_READING_DIMS })`：八个维度各 1 篇 + 1 融合 | `relationshipFullPlan()` 注入 `tasks`，`runFullReading()` 原样采用（不重排、不增删） |
+| 事实块 | `chartFacts.buildWholeChartFacts(chart)`：类型 / 权威 / 角色 / 中心 / 闸门 / 通道 / 交叉 | `relationshipFactBlock()`：双方人生角色、中心四象限、四类关系通道、共享与独有通道闸门、合并盘离线释义 |
+| 维度 | `READING_DIMENSIONS` 八项 | `COMPOSITE_DIMENSIONS` 五项（自定义议题可追加）+ 四类连接动力学 |
+| 逐项 | 由计划器决定（模块 ①–⑤ 或逐维度） | `sharedGates` / `merged.channels`（带归属） |
 | 融合 | 全盘整合分析与最终总结论 | 关系场整合分析与最终总结论 |
 
-- `src/services/aiFullReading.ts` 的 `FullReadingPlan` 支持注入 `tasks / factBlock / summary / fusionAngle`；不注入时行为与 v2.2.0 单人整盘完全一致。
-- `src/services/aiRelationshipReading.ts` 只消费 `CompositeResult` 已有字段与 `compositeDimensions` / `interpretations` / `gateData` 的既有离线释义，不新增任何人类图判定。
-- 规范 §3.8 合规：`mergedAsChart()` 的 `type / authority / definition` 只是渲染占位，`baseFacts()` 对 `personality` 与 `design` 均为空的合图自动切为关系场事实块，绝不写入 `【类型】` / `【内在权威】` / `定义型：`；`tests/aiRelationshipReading.test.ts` 对此有回归。
-- 覆盖边界：整盘类（单人整盘 / 合盘 / 双盘对比）在「完整」档走多轮；凯龙回归盘（§3.9 扩展层）与闸门 / 通道 / 中心单点解读仍只发单次请求。
+- `runFullReading()` 是薄适配层：把选项翻译成 `ReadingPlan` 后交给 `runReadingPlan()`，
+  与本仓其他入口共用同一个滑动窗口调度器与同一套末位融合机制，**不再自带分批/重跑逻辑**。
+- 关系场事实块顶部只保留一句「本盘为关系场」声明；「合盘不输出类型 / 权威 / 定义型 / 轮回交叉」
+  的完整条款由 system 的 `PROMPT_CORE` 第 5 条统一承担，不在每个分项里重复。
+- `src/services/aiRelationshipReading.ts` 只消费 `CompositeResult` 已有字段与
+  `compositeDimensions` / `interpretations` / `gateData` 的既有离线释义，不新增任何人类图判定。
+- `mergedAsChart()` 的 `type / authority / definition` 只是渲染占位，绝不进入事实块；
+  `tests/aiRelationshipReading.test.ts` 对此有回归。
+- 覆盖边界：整盘类（单人整盘 / 合盘 / 双盘对比）在「完整」档走多轮；凯龙回归盘与
+  闸门 / 通道 / 中心单点解读仍只发单次请求。
 
-## 10. AI 工作区与后台运行（v3.5.0）
+## 10. AI 工作区与后台运行（v3.5.0，v3.6.0 起为三入口）
 
-- 路由新增 `/ai`（name `ai-workspace`），不加入 `DERIVED_ROUTE_NAMES`，不改变既有返回按钮语义。
+- 路由 `/ai`（name `ai-workspace`），不加入 `DERIVED_ROUTE_NAMES`，不改变既有返回按钮语义。
 - `App.vue` 监听 `ui.aiReading.open`：从任意盘面页发起解读时自动跳到工作区，只记来源路径并挂起侧栏，**不修改 `open`**。
 - `useAiReading` 删除 `onScopeDispose(abort)`：`AbortController` 仍是模块级单例，但生命周期改由显式动作控制——点「取消解读」或关闭可见面板才中断。
 - `ui.aiPanelSuspended` 只控制侧栏是否让位；`ui.aiReturnPath` 供最小化原路返回。两者都是纯 UI 状态，不持久化、不进备份。
 - 侧栏 `AiReadingPanel.vue` 与冒烟脚本依赖的选择器完全未动；`styles/workspace.css` 是加载顺序在后的追加层，`classic` 皮肤不受冷中性收敛影响。
 - 完整契约、三维决策与测试防线见 [docs/AI-WORKSPACE.md](AI-WORKSPACE.md)。
+
+## 11. v3.6.0 AI 解读分层
+
+AI 解读按「提示词 / 事实 / 计划 / 执行 / 调度 / 检测 / 请求」分成七层，
+每层只认识下一层的接口，不允许反向依赖：
+
+```
+views/AiWorkspaceView.vue · components/ai/*
+        │ ReadingRequest
+        ▼
+services/aiReadingPlan.ts ────► chartFacts.ts（事实块的唯一实现）
+        │ ReadingPlan
+        ▼
+services/aiReadingRunner.ts ──► aiEvidence.ts（回复后检测，只告警）
+        │                 └────► aiScheduler.ts（滑动窗口，不懂业务）
+        ▼                              │
+services/aiClient.ts ◄─────────────────┘
+        │ 提示词 + 请求体
+        ├──► aiPrompt.ts（12 段常量 + 五段拼装）
+        └──► aiTokenFallback.ts（max_tokens 阶梯与越界识别）
+```
+
+| 模块 | 职责 | 允许依赖 |
+| --- | --- | --- |
+| `services/aiPrompt.ts` | 12 个段落常量、`systemPromptOf(ctx)`、`buildUserPrompt`、档位/风格归一 | `types/*`、`chartFacts`（维度标签） |
+| `services/chartFacts.ts` | 盘面事实块的**唯一**实现：整盘 / 逐闸门 / 逐通道 / 模块 ①–⑤ / 勾选签名 | `interpretations`、`gateInsight`、`crossData`、`engine/*` |
+| `services/aiReadingPlan.ts` | 纯函数：请求 → 计划（任务 key / scope / ref / offline / 融合 / 标题 / 请求数） | `chartFacts`、`readingAngles`、`types/aiReading` |
+| `services/aiReadingRunner.ts` | 执行计划：单次档 1 请求、多请求档调度 + 末位融合、进度与 `FullReport` | `aiScheduler`、`aiClient`、`aiEvidence` |
+| `services/aiScheduler.ts` | 滑动窗口：起速、稳态补发、同槽重试、取消、进度；不含任何业务概念 | `aiConcurrency`、`aiAttempt` |
+| `services/aiEvidence.ts` | 依据覆盖 / 维度白名单 / 条目覆盖三项检测，可测、只告警、不改写正文 | `chartFacts`、`types/hd` |
+| `services/aiTokenFallback.ts` | `max_tokens` 阶梯（128000 → 64000 → 32000 → 16000 → 8192 → 不带该字段）与越界措辞识别 | 无 |
+
+三条不变式：
+
+1. **提示词正文只有一个来源**：代码常量在 `aiPrompt.ts`，权威文本在
+   `docs/spec/AI-PROMPT-v4.0.md`，两者必须逐字一致（`scripts/sync-prompt-spec.mjs --check`
+   与 `tests/ai-prompt.test.ts` 双重守护）。`aiClient.ts` 只重导出，不留第二份正文。
+2. **事实块只有一个来源**：所有入口、所有档位、所有单点解读的事实文本都出自
+   `chartFacts.ts`；任何地方再写一份必然会与它漂移（`aiFullReading.ts` 曾是第二份，已删除）。
+3. **调度状态只在函数栈内**：并发数与 `max_tokens` 降级的进度都是单次调用的局部变量，
+   不写模块级变量、不跨请求共享，避免一条请求失败把并发中的其他请求一起降质。
+
+并发模型（详见 [docs/AI-WORKSPACE.md](AI-WORKSPACE.md) §5）：设置项 `aiMaxConcurrency`
+是唯一旋钮（1–99，默认 3），语义是「每秒起 1 个，直到在跑 N 个；之后落定即补」。
+`resolveSchedule` / 双参数 / `aiStepMode` 已随 v3.6.0 移除。

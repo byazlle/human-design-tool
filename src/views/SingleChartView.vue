@@ -142,7 +142,6 @@ async function requestUnifiedAi(payload: {
     chart: chart.value,
     detailMode: settings.aiDetailMode,
     full: settings.aiDetailMode === 'full',
-    stepMode: settings.aiStepMode,
     angle: payload.customDirection || angleInfo.label,
   })
 }
@@ -264,7 +263,7 @@ function saveAi() {
     scope: aiState.value.scope || 'single',
     ref: aiState.value.ref ?? (sel ? String(sel.ref) : '-'),
     mode: aiState.value.resultMode ?? settings.aiDetailMode,
-    audience: aiState.value.resultAudience ?? settings.aiAudience,
+    style: aiState.value.resultStyle ?? settings.aiStyle,
     truncated: aiState.value.resultTruncated ?? false,
   })
 }

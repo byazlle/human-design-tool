@@ -1,108 +1,112 @@
+%% v4.0.0 并发模型类图：单旋钮（aiMaxConcurrency 1–99）+ 滑动窗口调度。
+%% 旧的双参数（aiConcurrency / aiConcurrencyLimit）与 resolveSchedule 已移除。
 classDiagram
     direction TB
-    class AiConcurrencyUtil {
-        <<service · 新增 · 纯函数>>
-        +CONCURRENCY_MIN = 1
-        +CONCURRENCY_MAX = 128
-        +DEFAULT_AI_CONCURRENCY = 3
-        +DEFAULT_AI_CONCURRENCY_LIMIT = 64
-        +clampConcurrency(raw, fallback) number
-        +normalizeConcurrencyPair(rawC, rawL) ConcurrencyPair
-        +validateConcurrencyPair(c, l) string|null
-        +resolveSchedule(required, limit, stepMode) ConcurrencySchedule
-    }
-    class ConcurrencyPair {
-        <<type · 加载时>>
-        +concurrency: number
-        +limit: number
-        +adjusted: boolean
-    }
-    class ConcurrencySchedule {
-        <<type · 运行时 · 不持久化>>
-        +required: number
-        +limit: number
-        +batchWidth: number
-        +batchCount: number
-        +K: number
-        +degraded: boolean
-    }
-    class SettingsStore {
-        <<Pinia · 修改>>
-        +aiConcurrency: number
-        +aiConcurrencyLimit: number
-        +aiDetailMode: AiDetailMode FROZEN
-        +aiStepMode: AiStepMode FROZEN
-        +setAiConcurrency(v) boolean
-        +setAiConcurrencyLimit(v) boolean
-        +persist() boolean
-        +takeConcurrencyMigrationNotice() string|null
-    }
-    class SettingsForm {
-        <<component · 修改>>
-        +canEditConcurrency: Computed~boolean~
-        +concurrencyError: Ref~string~
-        +saveConcurrency() void
-    }
-    class FullReadingOptions {
-        <<existing + 2 optional>>
-        +cfg: AiConfig FROZEN
-        +chart: BodyGraph FROZEN
-        +stepMode: AiStepMode FROZEN
-        +onUpdate: Fn FROZEN
-        +aiConcurrency: number?
-        +aiConcurrencyLimit: number?
-    }
-    class RunFullReading {
-        <<service · parallel 分支重写>>
-        +PARALLEL_CONCURRENCY = 3 FROZEN_VALUE
-        +requiredConcurrency: number
-        +total: number
-        +runFullReading(options) Promise~FullReport~
-        -publish(current, phase) void
-        -attempt(index) Promise~TaskOutcome~
-        -finalizeOk() / finalizeFail() void
-    }
-    class UseAiReading {
-        <<composable · 修改>>
-        +runFull(options, own) Promise~void~
-        -degradedNotified: boolean
-        +publish(update) void
-    }
-    class AiProgress {
-        <<types/report.ts · 8 字段 FROZEN>>
-        +done: number
-        +total: number
-        +current: string
-        +phase: string
-        +elapsedMs: number
-        +etaMs: number|null
-        +skipped: string[]
-        +failed: string[]
-    }
-    class AiReadingPanel {
-        <<component · B 区文案>>
-        +props.progress: AiProgress|null
-        -lastPhase: Ref~string~
-    }
-    class FrozenTypes {
-        <<FROZEN>>
-        AiConfig
-        BodyGraph
-        AiStepMode
-        FullReport
-        AiDetailMode
+
+    class AiConcurrency {
+        <<service · 纯函数 · 唯一权威>>
+        +AI_MAX_CONCURRENCY_MIN = 1
+        +AI_MAX_CONCURRENCY_MAX = 99
+        +DEFAULT_AI_MAX_CONCURRENCY = 3
+        +clampMaxConcurrency(raw, fallback) number
+        +validateMaxConcurrency(raw) string|null
+        +normalizeMaxConcurrency(saved) MaxConcurrencyMigration
     }
 
-    SettingsForm --> SettingsStore : 校验后写入
-    SettingsStore ..> AiConcurrencyUtil : normalize / validate
-    AiConcurrencyUtil --> ConcurrencyPair
-    AiConcurrencyUtil --> ConcurrencySchedule
-    SettingsStore --> UseAiReading : 读 2 个配置值
-    UseAiReading --> FullReadingOptions : 透传
-    FullReadingOptions --> RunFullReading
-    RunFullReading ..> AiConcurrencyUtil : resolveSchedule
-    RunFullReading ..> AiProgress : publish（只读字段取值）
-    UseAiReading ..> AiProgress : onUpdate 转发
-    AiReadingPanel ..> AiProgress : 渲染 phase/current
-    RunFullReading ..> FrozenTypes : 只读引用
-    SettingsStore ..> FrozenTypes : 只读引用
+    class MaxConcurrencyMigration {
+        <<interface>>
+        +value number
+        +adjusted boolean
+        +legacy concurrency?/limit?
+    }
+
+    class AiScheduler {
+        <<service · 滑动窗口>>
+        +runSlidingWindow(tasks, options) SlideResult[]
+        +slidePhaseText(progress, n) string
+        +startGapOf(n, intervalMs) number
+        +clampMaxConcurrency(raw, fallback) number
+    }
+
+    class SlideOptions {
+        <<interface>>
+        +maxConcurrency number
+        +startIntervalMs? number
+        +retry? number
+        +signal? AbortSignal
+        +onStart?/onSettled?/onProgress?
+    }
+
+    class SlideTask {
+        <<interface>>
+        +key string
+        +label string
+        +run(signal) Promise
+    }
+
+    class SlideResult {
+        <<interface>>
+        +key/label string
+        +ok boolean
+        +value? T
+        +error? string
+        +attempts number
+        +startedAt/endedAt number
+    }
+
+    class SlideProgress {
+        <<interface>>
+        +done/total number
+        +inFlight/queued number
+        +current string
+    }
+
+    class AiReadingRunner {
+        <<service · 执行计划>>
+        +runReadingPlan(options) FullReport
+        +fusionExcerptChars(entry) number
+        +buildFusionExcerpts(entry, sections, skipped) string
+        +splitFusionSummary(raw) FusionSplit
+    }
+
+    class AiReadingPlan {
+        <<service · 纯函数>>
+        +planReading(req) ReadingPlan
+        +requestCountOf(plan) number
+        +normalizeDims(dims) ReadingDimKey[]
+        +normalizeSelection(pick) SelectionPick|null
+    }
+
+    class ReadingPlan {
+        <<interface>>
+        +entry/detail
+        +singleShot boolean
+        +tasks ReadingTask[]
+        +fusion ReadingTask|null
+        +title string
+    }
+
+    class ReadingProgress {
+        <<interface>>
+        +done/total number
+        +current/phase string
+        +elapsedMs number
+        +etaMs number|null
+        +skipped/failed string[]
+        +inFlight number
+        +maxConcurrency number
+    }
+
+    AiConcurrency ..> MaxConcurrencyMigration : 产出
+    AiScheduler ..> AiConcurrency : 复用归一（不重复实现）
+    AiScheduler --> SlideOptions : 入参
+    AiScheduler --> SlideTask : 调度对象
+    AiScheduler --> SlideResult : 产出（按任务原始顺序）
+    AiScheduler --> SlideProgress : 回调载荷
+    AiReadingRunner --> AiScheduler : 多请求档
+    AiReadingRunner --> ReadingProgress : 进度
+    AiReadingRunner ..> AiReadingPlan : 消费计划
+    AiReadingPlan ..> ReadingPlan : 产出
+
+    note for AiScheduler "起速按「已启动数 ≥ N」判定；落定即补；N=1 时 gap=0；重试复用同一并发槽；取消后不再启动新任务；定时器零残留"
+    note for AiConcurrency "旧 aiConcurrency / aiConcurrencyLimit 只作为迁移输入；新字段优先，limit 永不作为来源"

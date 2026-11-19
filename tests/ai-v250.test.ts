@@ -1,35 +1,39 @@
 /**
- * v2.5.0 三项功能回归：
- * ① 单份解读 token 总预算（含续写）与触顶标记；
- * ② 面向人群（专业版 / 简明版）提示词与缓存键隔离；
- * ③ 通用中转站兼容：统一传输层 + 自动获取模型列表。
+ * v2.5.0 功能回归（v4.0.0 口径重写）：
+ * ① ~~单份解读 token 总预算~~ → **token 上限已整体移除**：请求恒 `max_tokens: 128000`，
+ *    越界由 `explain()` 内部阶梯降级（`aiTokenFallback`），触顶标记与续写保留；
+ * ② 面向人群 → 表达风格（`audience` 改名 `style`，值不变、语义反转）；
+ * ③ 通用中转站兼容：统一传输层 + 自动获取模型列表（逐字保留）。
+ *
+ * ★ 「必须保留」的 v2.5.0 契约（ARCH §11.2）：续写轮数、触顶 `truncated=true`、
+ *   触顶不写缓存、未触顶写缓存 —— 一条不少，只是额度断言从「按档位分配」改为「恒 128000」。
  *
  * 不发真实请求：fetch / localStorage 全部 stub。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 
+import * as aiClientModule from '../src/services/aiClient'
 import {
   MAX_CONTINUATIONS,
-  MIN_TOKEN_BUDGET,
-  PROMPT_SYSTEM_CONCISE,
-  PROMPT_SYSTEM_FUSION,
-  applyTokenBudget,
-  audiencePromptOf,
+  PROMPT_VERSION,
   cacheKey,
   explain,
   fetchAiModels,
   parseAiModels,
   probeAiConfig,
-  resolveAudience,
   resolveModelsEndpoint,
   resolveRequestParams,
+  resolveStyle,
   systemPromptOf,
   type AiExplainArgs,
   type AiStageEvent,
 } from '../src/services/aiClient'
-import { MAX_TOKEN_BUDGET, normalizeTokenBudget } from '../src/stores/settings'
+import * as settingsModule from '../src/stores/settings'
 import { makeReading, readingKey } from '../src/stores/readings'
-import type { AiConfig } from '../src/types/hd'
+import { MAX_TOKENS_CEILING } from '../src/services/aiTokenFallback'
+import { PROMPT_DETAIL_CONCISE, PROMPT_DETAIL_FULL } from '../src/services/aiPrompt'
+import type { AiConfig, AiDetailMode } from '../src/types/hd'
 
 const CFG: AiConfig = {
   baseUrl: 'https://relay.example.test/v1',
@@ -38,6 +42,8 @@ const CFG: AiConfig = {
   timeoutMs: 60000,
   cacheEnabled: false,
 }
+
+const LEGACY_BUDGETS = [1500, 6000, 8000, 4000, 4500]
 
 const fetchMock = vi.hoisted(() => vi.fn())
 let storage: Map<string, string>
@@ -52,6 +58,7 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 beforeEach(() => {
+  setActivePinia(createPinia())
   fetchMock.mockReset()
   vi.stubGlobal('fetch', fetchMock)
   storage = new Map<string, string>()
@@ -71,39 +78,83 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('① 单份 token 总预算', () => {
-  it('0 / 不传 / 非法 = 不限制，仍按档位默认额度', () => {
-    expect(applyTokenBudget(1500)).toBe(1500)
-    expect(applyTokenBudget(1500, 0)).toBe(1500)
-    expect(applyTokenBudget(1500, -10)).toBe(1500)
-    expect(applyTokenBudget(1500, Number.NaN)).toBe(1500)
-    expect(resolveRequestParams('unified', 'concise').maxTokens).toBe(1500)
+describe('① token 上限已整体移除（替代旧的「单份 token 总预算」）', () => {
+  it('任何 scope × 档位都恒为 128000，不再按档位分配额度', () => {
+    const scopes = [
+      'unified',
+      'selection-one',
+      'full-module',
+      'full-all-channels',
+      'full-all-gates',
+      'full-trajectory',
+      'full-dimension',
+      'full-gate',
+      'full-channel',
+      'full-fusion',
+      'selection-fusion',
+      'panorama-one',
+      'single',
+      'gate',
+      'channel',
+      'center',
+      'chiron',
+      'composite-merge',
+    ]
+    const modes: AiDetailMode[] = ['concise', 'detailed', 'full']
+    for (const scope of scopes) {
+      for (const mode of modes) {
+        const params = resolveRequestParams(scope, mode)
+        expect(params.maxTokens).toBe(MAX_TOKENS_CEILING)
+        expect(params.maxTokens).toBe(128000)
+      }
+    }
   })
 
-  it('预算按「一轮 + 最多两次续写」折成单轮额度，总消耗不超预算', () => {
-    const rounds = MAX_CONTINUATIONS + 1
-    expect(applyTokenBudget(6000, 3000)).toBe(1000)
-    expect(resolveRequestParams('unified', 'concise', 900).maxTokens).toBe(300)
-    const perRound = resolveRequestParams('full-fusion', 'full', 6000).maxTokens
-    expect(perRound).toBe(Math.floor(6000 / rounds))
-    expect(perRound * rounds).toBeLessThanOrEqual(6000)
+  it('不传档位时同样恒 128000（旧的 1500 / 6000 / 8000 / 4000 / 4500 分配已删除）', () => {
+    expect(resolveRequestParams('unified').maxTokens).toBe(128000)
+    expect(resolveRequestParams('full-fusion').maxTokens).toBe(128000)
+    // 旧口径的 5 个额度数字一个都不许再出现
+    for (const scope of ['unified', 'full-module', 'full-fusion', 'chiron', 'single']) {
+      for (const mode of ['concise', 'detailed', 'full'] as AiDetailMode[]) {
+        expect(LEGACY_BUDGETS).not.toContain(resolveRequestParams(scope, mode).maxTokens)
+      }
+    }
   })
 
-  it('过小预算夹到下限、过大预算不放大档位额度', () => {
-    expect(applyTokenBudget(6000, 10)).toBe(MIN_TOKEN_BUDGET)
-    expect(applyTokenBudget(1500, 999999)).toBe(1500)
-    expect(normalizeTokenBudget(10)).toBe(MIN_TOKEN_BUDGET)
-    expect(normalizeTokenBudget(0)).toBe(0)
-    expect(normalizeTokenBudget(99999999)).toBe(MAX_TOKEN_BUDGET)
-    expect(normalizeTokenBudget('abc')).toBe(0)
+  it('temperature 保持 v3.5.0 口径：融合 0.60 / full-* 0.65 / 凯龙 0.55', () => {
+    expect(resolveRequestParams('full-fusion', 'full').temperature).toBe(0.6)
+    expect(resolveRequestParams('full-module', 'full').temperature).toBe(0.65)
+    expect(resolveRequestParams('chiron', 'concise').temperature).toBe(0.55)
+    expect(resolveRequestParams('unified', 'concise').temperature).toBe(0.6)
+    expect(resolveRequestParams('unified', 'detailed').temperature).toBe(0.65)
   })
 
-  it('预算不进缓存键：调小预算试一次不会导致重复计费', () => {
-    const base: AiExplainArgs = { cfg: CFG, scope: 'unified', offline: '事实', detailMode: 'concise' }
-    expect(cacheKey(CFG, { ...base, tokenBudget: 900 })).toBe(cacheKey(CFG, base))
+  it('预算相关 API 已删除：applyTokenBudget / MIN_TOKEN_BUDGET / normalizeTokenBudget / MAX_TOKEN_BUDGET 不再导出', () => {
+    expect(aiClientModule).not.toHaveProperty('applyTokenBudget')
+    expect(aiClientModule).not.toHaveProperty('MIN_TOKEN_BUDGET')
+    expect(aiClientModule).not.toHaveProperty('MAX_TOKEN_BUDGET')
+    expect(settingsModule).not.toHaveProperty('normalizeTokenBudget')
+    expect(settingsModule).not.toHaveProperty('MAX_TOKEN_BUDGET')
+    // 设置项里的 token 预算字段也一并从 state 删除
+    expect(settingsModule.useSettingsStore().$state).not.toHaveProperty('aiTokenBudget')
   })
 
-  it('预算与受众进入实际请求；触顶时 completed.truncated=true 且不写缓存', async () => {
+  it('token 额度不进缓存键：键里不再出现额度数字，旧「调小预算试一次」不再是变量', () => {
+    const base: AiExplainArgs = {
+      cfg: CFG,
+      entry: 'composite',
+      scope: 'unified',
+      offline: '事实',
+      detailMode: 'concise',
+    }
+    const key = cacheKey(CFG, base)
+    expect(key).not.toContain('128000')
+    expect(key).not.toContain('token')
+    // 同一 args 反复求键恒等（没有任何隐式额度参与）
+    expect(cacheKey(CFG, { ...base })).toBe(key)
+  })
+
+  it('128000 与风格进入实际请求；触顶时 completed.truncated=true 且不写缓存', async () => {
     for (let i = 0; i <= MAX_CONTINUATIONS; i += 1) {
       fetchMock.mockResolvedValueOnce(
         jsonResponse({ choices: [{ message: { content: `段${i + 1}` }, finish_reason: 'length' }] }),
@@ -112,11 +163,11 @@ describe('① 单份 token 总预算', () => {
     const stages: AiStageEvent[] = []
     const out = await explain({
       cfg: { ...CFG, cacheEnabled: true },
+      entry: 'composite',
       scope: 'unified',
       offline: '事实',
       detailMode: 'concise',
-      audience: 'plain',
-      tokenBudget: 900,
+      style: 'plain',
       onStage: (e) => stages.push(e),
     })
     const bodies = fetchMock.mock.calls.map((c) =>
@@ -125,8 +176,9 @@ describe('① 单份 token 总预算', () => {
         messages: Array<{ role: string; content: string }>
       },
     )
+    // 续写轮数不变：一轮 + MAX_CONTINUATIONS 次续写，每轮额度都是 128000
     expect(bodies).toHaveLength(MAX_CONTINUATIONS + 1)
-    expect(bodies.every((b) => b.max_tokens === 300)).toBe(true)
+    expect(bodies.every((b) => b.max_tokens === 128000)).toBe(true)
     expect(bodies[0].messages[0].content).toContain('零基础')
     expect(out).toContain('段3')
     expect(stages.find((e) => e.stage === 'completed')?.truncated).toBe(true)
@@ -140,9 +192,10 @@ describe('① 单份 token 总预算', () => {
     const stages: AiStageEvent[] = []
     await explain({
       cfg: { ...CFG, cacheEnabled: true },
+      entry: 'composite',
       scope: 'unified',
       offline: '事实',
-      audience: 'pro',
+      style: 'pro',
       onStage: (e) => stages.push(e),
     })
     expect(stages.find((e) => e.stage === 'completed')?.truncated).toBe(false)
@@ -150,41 +203,90 @@ describe('① 单份 token 总预算', () => {
   })
 })
 
-describe('② 面向人群（专业版 / 简明版）', () => {
-  it('缺省按专业版；不传第三参时四套正文逐字不变', () => {
-    expect(resolveAudience()).toBe('pro')
-    expect(resolveAudience('plain')).toBe('plain')
-    expect(audiencePromptOf()).toBe('')
-    expect(systemPromptOf('concise')).toBe(PROMPT_SYSTEM_CONCISE)
-    expect(systemPromptOf('full', 'full-fusion')).toBe(PROMPT_SYSTEM_FUSION)
+describe('② 表达风格（专业版 / 零基础版；audience → style）', () => {
+  it('缺省按专业版；systemPromptOf 改为对象入参、按五段拼装（不再返回单一整篇常量）', () => {
+    expect(resolveStyle()).toBe('pro')
+    expect(resolveStyle('plain')).toBe('plain')
+
+    // 原断言 `systemPromptOf('concise') === PROMPT_SYSTEM_CONCISE`（四套整篇已删除）
+    // → 新断言：档位段与风格段逐字出现在拼装结果里，且以基础契约段开头
+    const concisePro = systemPromptOf({ entry: 'composite', detail: 'concise', style: 'pro' })
+    expect(concisePro).toContain(PROMPT_DETAIL_CONCISE)
+    expect(concisePro).toContain('【表达风格：专业术语体系】')
+    expect(concisePro.startsWith('【基础契约')).toBe(true)
+
+    // 原断言 `systemPromptOf('full', 'full-fusion') === PROMPT_SYSTEM_FUSION`
+    // → 新断言：完整档位段 + 融合范围段同时出现，且与精简篇不同
+    const fullFusion = systemPromptOf({
+      entry: 'full',
+      detail: 'full',
+      style: 'pro',
+      scope: 'full-fusion',
+    })
+    expect(fullFusion).toContain(PROMPT_DETAIL_FULL)
+    expect(fullFusion).toContain('【融合范围契约】')
+    expect(fullFusion).not.toBe(concisePro)
   })
 
-  it('两版段落要求明确且互不相同：一个允许术语、一个必须大白话', () => {
-    const pro = audiencePromptOf('pro')
-    const plain = audiencePromptOf('plain')
-    expect(pro).toContain('可以直接使用专业词')
+  it('两版风格段要求明确且互不相同：专业版必须阐释术语、零基础版必须大白话', () => {
+    // ★ v4.0.0 与 v3.5.0 相反：旧 pro「读者已熟悉术语，不必解释」→ 新 pro「必须阐释」
+    const pro = systemPromptOf({ entry: 'composite', detail: 'concise', style: 'pro' })
+    const plain = systemPromptOf({ entry: 'composite', detail: 'concise', style: 'plain' })
+    expect(pro).toContain('第一次出现时必须阐释')
+    expect(pro).not.toContain('读者已熟悉人类图术语')
+    expect(plain).toContain('零基础大白话')
     expect(plain).toContain('大白话')
-    expect(plain).toContain('不许用另一个术语当垫背')
+    expect(plain).not.toContain('读者已熟悉人类图术语')
     expect(pro).not.toBe(plain)
-    expect(systemPromptOf('concise', undefined, 'plain')).toBe(PROMPT_SYSTEM_CONCISE + plain)
-    expect(systemPromptOf('full', 'full-fusion', 'pro')).toContain('读者背景：有基础')
+
+    // 旧四套正文 / 受众附加段常量不再导出
+    for (const gone of [
+      'PROMPT_SYSTEM_CONCISE',
+      'PROMPT_SYSTEM_DETAILED',
+      'PROMPT_SYSTEM_FULL',
+      'PROMPT_SYSTEM_FUSION',
+      'PROMPT_SYSTEM_AUDIENCE_PRO',
+      'PROMPT_SYSTEM_AUDIENCE_PLAIN',
+      'audiencePromptOf',
+      'resolveAudience',
+    ]) {
+      expect(aiClientModule).not.toHaveProperty(gone)
+    }
   })
 
-  it('pro / plain 缓存键隔离，缺省与 pro 同键', () => {
-    const base: AiExplainArgs = { cfg: CFG, scope: 'unified', offline: '事实', detailMode: 'concise' }
+  it('pro / plain 缓存键隔离、缺省与 pro 同键；entry 也入键（A/B/C 互不串档）', () => {
+    const base: AiExplainArgs = {
+      cfg: CFG,
+      entry: 'composite',
+      scope: 'unified',
+      offline: '事实',
+      detailMode: 'concise',
+    }
     const def = cacheKey(CFG, base)
-    expect(cacheKey(CFG, { ...base, audience: 'pro' })).toBe(def)
-    expect(cacheKey(CFG, { ...base, audience: 'plain' })).not.toBe(def)
+    expect(cacheKey(CFG, { ...base, style: 'pro' })).toBe(def)
+    expect(cacheKey(CFG, { ...base, style: 'plain' })).not.toBe(def)
+    // 新增契约（ARCH §6.1）：入口必须入键，否则 B/C 同 scope 同 ref 会串档
+    expect(cacheKey(CFG, { ...base, entry: 'full' })).not.toBe(def)
+    expect(cacheKey(CFG, { ...base, entry: 'selection' })).not.toBe(def)
+    expect(cacheKey(CFG, { ...base, entry: 'full' })).not.toBe(
+      cacheKey(CFG, { ...base, entry: 'selection' }),
+    )
+    expect(def.startsWith('hdt.ai.cache.v2:p')).toBe(true)
+    expect(def).toContain(`p${PROMPT_VERSION}`)
   })
 
-  it('专业版与简明版解读记录并存、互不覆盖', () => {
+  it('专业版与零基础版解读记录并存、互不覆盖', () => {
     const base = { archiveId: 'a1', scope: 'unified', ref: 'r', mode: 'detailed' as const }
     expect(readingKey(base.archiveId, base.scope, base.ref, base.mode)).toBe('a1|unified|r|detailed')
     const pro = makeReading({ ...base, title: '专业版', content: 'A' })
-    const plain = makeReading({ ...base, title: '简明版', content: 'B', audience: 'plain' })
-    expect(readingKey(base.archiveId, base.scope, base.ref, base.mode, plain.audience)).not.toBe(
-      readingKey(base.archiveId, base.scope, base.ref, base.mode, pro.audience),
+    const plain = makeReading({ ...base, title: '零基础版', content: 'B', style: 'plain' })
+    expect(readingKey(base.archiveId, base.scope, base.ref, base.mode, plain.style)).not.toBe(
+      readingKey(base.archiveId, base.scope, base.ref, base.mode, pro.style),
     )
+    // 记录 meta 新字段：style 生效，entry 缺省归综合解读
+    expect(pro.style).toBe('pro')
+    expect(plain.style).toBe('plain')
+    expect(pro.entry).toBe('composite')
   })
 })
 

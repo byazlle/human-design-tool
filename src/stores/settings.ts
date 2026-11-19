@@ -1,11 +1,10 @@
 import { defineStore } from 'pinia'
-import type { AiAudience, AiConfig, AiDetailMode, AiProfile, AiStepMode, ThemeMode } from '../types/hd'
-import { clearAiCache, MIN_TOKEN_BUDGET, validateAiConfig } from '../services/aiClient'
+import type { AiConfig, AiDetailMode, AiProfile, AiStyle, ThemeMode } from '../types/hd'
+import { clearAiCache, migrateAiCacheV1, validateAiConfig } from '../services/aiClient'
 import {
-  DEFAULT_AI_CONCURRENCY,
-  DEFAULT_AI_CONCURRENCY_LIMIT,
-  normalizeConcurrencyPair,
-  validateConcurrencyPair,
+  DEFAULT_AI_MAX_CONCURRENCY,
+  normalizeMaxConcurrency,
+  validateMaxConcurrency,
 } from '../services/aiConcurrency'
 import { createId, loadJson, saveJson, SAVE_FAILURE_HINT } from '../utils/storage'
 
@@ -57,27 +56,16 @@ interface SettingsState {
   /** AI 解读详细度：精简（5 视角）/ 详细（8 节）/ 完整（多轮分步） */
   aiDetailMode: AiDetailMode
   /**
-   * v2.5.0 面向人群：专业版（允许术语）/ 简明版（大白话）。
-   * 只影响 system 提示词的【读者背景】段落，进缓存键。
+   * 表达风格（v4.0.0，替代旧 `aiAudience`：值不变、语义反转）。
+   * `pro` = 用术语但每个术语第一次出现必须阐释；`plain` = 全程口语。
+   * 进缓存键，切换后不会命中另一档的旧缓存。
    */
-  aiAudience: AiAudience
+  aiStyle: AiStyle
   /**
-   * v2.5.0 单份解读的 token 总预算（含自动续写，跨轮累计）。
-   * 0 = 不限制（沿用各档位默认额度）；批量生成时每项独立适用。
+   * 最高并发数（v4.0.0 单旋钮，1–99，默认 3）：同时是「同时跑几个」与「上限」。
+   * 1 等价于旧「串行」；滑动窗口调度器按它起速与补发（ARCH §4）。
    */
-  aiTokenBudget: number
-  /** 完整版多轮编排方式：串行 / 并发 */
-  aiStepMode: AiStepMode
-  /**
-   * v2.3.0「AI 并发数」：整数 1–128，默认 3。
-   * 只是用户设定值 / 合法性校验对象 / 展示值，**不切片分批**（Q-C1）。
-   */
-  aiConcurrency: number
-  /**
-   * v2.3.0「并发上限」：整数 1–128，默认 64。
-   * 判定「是否一次性并发」的唯一闸门，满足 1 ≤ aiConcurrency ≤ aiConcurrencyLimit ≤ 128。
-   */
-  aiConcurrencyLimit: number
+  aiMaxConcurrency: number
   appearance: Appearance
   precision: { decimals: 2 }
   /** 最近一次 persist 失败的原因；null 表示最近一次写入成功 */
@@ -97,11 +85,8 @@ const DEFAULTS: SettingsState = {
   aiProfiles: [],
   activeAiId: '',
   aiDetailMode: 'concise',
-  aiAudience: 'pro',
-  aiTokenBudget: 0,
-  aiStepMode: 'serial',
-  aiConcurrency: DEFAULT_AI_CONCURRENCY,
-  aiConcurrencyLimit: DEFAULT_AI_CONCURRENCY_LIMIT,
+  aiStyle: 'pro',
+  aiMaxConcurrency: DEFAULT_AI_MAX_CONCURRENCY,
   appearance: {
     theme: 'light',
     skin: 'nova',
@@ -177,32 +162,17 @@ function normalizeDetailMode(raw: unknown): AiDetailMode {
   return 'concise'
 }
 
-/** 旧数据没有该字段时回落到「串行」 */
-function normalizeStepMode(raw: unknown): AiStepMode {
-  return raw === 'parallel' ? 'parallel' : 'serial'
-}
-
 /** 旧数据没有该字段时回落到专业版（与 v2.4.0 及之前风格一致） */
-function normalizeAudience(raw: unknown): AiAudience {
+function normalizeStyle(raw: unknown): AiStyle {
   return raw === 'plain' ? 'plain' : 'pro'
 }
 
-/** 单份预算上限：防止误填一个天文数字把额度一次烧光 */
-export const MAX_TOKEN_BUDGET = 100000
-
 /**
- * 旧数据 / 手填值归一：0 或非法 = 不限制；正数夹在
- * [MIN_TOKEN_BUDGET, MAX_TOKEN_BUDGET]，避免出现「填 10 得到半句话」。
- */
-export function normalizeTokenBudget(raw: unknown): number {
-  const n = Number(raw)
-  if (!Number.isFinite(n) || n <= 0) return 0
-  return Math.min(MAX_TOKEN_BUDGET, Math.max(MIN_TOKEN_BUDGET, Math.round(n)))
-}
-
-/**
- * 「存量并发配置被归一」的一次性可见提示（AC-C3）。
+ * 「存量配置被归一 / 被合并」的一次性可见提示（v4.0.0：四条规则合并成一条多行文案）。
+ *
  * 模块级标记：不进 `SettingsState`、不持久化、不随切换 profile 变化；消费即清。
+ * 为什么合并：v4.0.0 一次迁移同时删掉 3 个字段（token 预算 / 串并行 / 并发上限），
+ * 四条 toast 会连弹四次把启动画面糊住，用户只会点掉不看。
  */
 let concurrencyMigrationNotice: string | null = null
 
@@ -211,6 +181,36 @@ export function takeConcurrencyMigrationNotice(): string | null {
   const notice = concurrencyMigrationNotice
   concurrencyMigrationNotice = null
   return notice
+}
+
+/** state() 需要读到的「旧存档字段」：这些键已从 state 里删除，但迁移时必须能读到 */
+interface SavedSettings extends Partial<SettingsState> {
+  aiAudience?: unknown
+  aiConcurrency?: unknown
+  aiConcurrencyLimit?: unknown
+  aiTokenBudget?: unknown
+  aiStepMode?: unknown
+}
+
+/** 按 §5.3 的四条规则拼出（可能多行的）一次性提示；无命中返回 null */
+function buildMigrationNotice(
+  saved: SavedSettings,
+  mig: { value: number; adjusted: boolean; legacy: { concurrency?: number; limit?: number } },
+): string | null {
+  const lines: string[] = []
+  if (mig.adjusted) {
+    lines.push(`检测到旧的并发配置，已调整为合法值：最高并发数 ${mig.value}，请确认后保存`)
+  }
+  if (typeof mig.legacy.limit === 'number' && mig.legacy.limit !== 64) {
+    lines.push(`并发参数已合并为「最高并发数」；原「并发上限 ${mig.legacy.limit}」不再单独生效`)
+  }
+  if (typeof saved.aiTokenBudget === 'number' && saved.aiTokenBudget > 0) {
+    lines.push(`解读 token 上限已取消，不再限制输出长度；旧设置 ${saved.aiTokenBudget} 不再生效`)
+  }
+  if (saved.aiStepMode === 'serial' && mig.value > 1) {
+    lines.push('多步编排方式已合并为「最高并发数」；如需串行请把最高并发数设为 1')
+  }
+  return lines.length ? lines.join('\n') : null
 }
 
 export interface AiProfileInput {
@@ -235,12 +235,12 @@ function validateProfileInput(input: AiProfileInput): string | null {
 
 export const useSettingsStore = defineStore('settings', {
   state: (): SettingsState => {
-    const saved = loadJson<Partial<SettingsState> | null>(KEY, {}) ?? {}
-    // 加载 / 迁移用宽松归一（AC-C3）：缺失回落默认值，存量非法才收敛 + 一次可见提示
-    const pair = normalizeConcurrencyPair(saved.aiConcurrency, saved.aiConcurrencyLimit)
-    if (pair.adjusted) {
-      concurrencyMigrationNotice = '检测到旧的并发配置不满足约束，已调整为合法值，请确认后保存'
-    }
+    const saved = loadJson<SavedSettings | null>(KEY, {}) ?? {}
+    // 加载 / 迁移用宽松归一（ARCH §5.2）：缺失回落默认值，存量非法 / 旧字段才收敛 + 一次可见提示
+    const mig = normalizeMaxConcurrency(saved)
+    concurrencyMigrationNotice = buildMigrationNotice(saved, mig)
+    const aiMaxConcurrency = mig.value
+    const aiStyle = normalizeStyle(saved.aiStyle ?? saved.aiAudience)
     const profiles: AiProfile[] = Array.isArray(saved.aiProfiles)
       ? (saved.aiProfiles.map(normalizeProfile).filter(Boolean) as AiProfile[])
       : []
@@ -255,11 +255,8 @@ export const useSettingsStore = defineStore('settings', {
         aiProfiles: profiles,
         activeAiId,
         aiDetailMode: normalizeDetailMode(saved.aiDetailMode),
-        aiAudience: normalizeAudience(saved.aiAudience),
-        aiTokenBudget: normalizeTokenBudget(saved.aiTokenBudget),
-        aiStepMode: normalizeStepMode(saved.aiStepMode),
-        aiConcurrency: pair.concurrency,
-        aiConcurrencyLimit: pair.limit,
+        aiStyle,
+        aiMaxConcurrency,
         appearance: normalizeAppearance(saved.appearance),
         precision: { ...DEFAULTS.precision, ...(saved.precision ?? {}) },
         persistError: null,
@@ -280,11 +277,8 @@ export const useSettingsStore = defineStore('settings', {
         aiProfiles: [migrated],
         activeAiId: migrated.id,
         aiDetailMode: normalizeDetailMode(saved.aiDetailMode),
-        aiAudience: normalizeAudience(saved.aiAudience),
-        aiTokenBudget: normalizeTokenBudget(saved.aiTokenBudget),
-        aiStepMode: normalizeStepMode(saved.aiStepMode),
-        aiConcurrency: pair.concurrency,
-        aiConcurrencyLimit: pair.limit,
+        aiStyle,
+        aiMaxConcurrency,
         appearance: normalizeAppearance(saved.appearance),
         precision: { ...DEFAULTS.precision, ...(saved.precision ?? {}) },
         persistError: null,
@@ -296,11 +290,8 @@ export const useSettingsStore = defineStore('settings', {
       aiProfiles: [],
       activeAiId: '',
       aiDetailMode: normalizeDetailMode(saved.aiDetailMode),
-      aiAudience: normalizeAudience(saved.aiAudience),
-      aiTokenBudget: normalizeTokenBudget(saved.aiTokenBudget),
-      aiStepMode: normalizeStepMode(saved.aiStepMode),
-      aiConcurrency: pair.concurrency,
-      aiConcurrencyLimit: pair.limit,
+      aiStyle,
+      aiMaxConcurrency,
       appearance: normalizeAppearance(saved.appearance),
       precision: { ...DEFAULTS.precision, ...(saved.precision ?? {}) },
       persistError: null,
@@ -312,6 +303,11 @@ export const useSettingsStore = defineStore('settings', {
     isDark: (s) => s.appearance.theme === 'dark',
     activeAiProfile: (s): AiProfile | null =>
       s.aiProfiles.find((p) => p.id === s.activeAiId) ?? null,
+    /**
+     * @deprecated v4.0.0 起叫 `aiStyle`（值不变、语义反转）。
+     * 保留这个只读别名，是为了让 `views/*` 与批量对话框在 T04 改名前继续工作。
+     */
+    aiAudience: (s): AiStyle => s.aiStyle,
   },
 
   actions: {
@@ -322,11 +318,8 @@ export const useSettingsStore = defineStore('settings', {
         aiProfiles: this.aiProfiles,
         activeAiId: this.activeAiId,
         aiDetailMode: this.aiDetailMode,
-        aiAudience: this.aiAudience,
-        aiTokenBudget: this.aiTokenBudget,
-        aiStepMode: this.aiStepMode,
-        aiConcurrency: this.aiConcurrency,
-        aiConcurrencyLimit: this.aiConcurrencyLimit,
+        aiStyle: this.aiStyle,
+        aiMaxConcurrency: this.aiMaxConcurrency,
         appearance: this.appearance,
         precision: this.precision,
       })
@@ -365,6 +358,10 @@ export const useSettingsStore = defineStore('settings', {
 
     init() {
       this.applyToDom()
+      // v1 代解读缓存已永不命中（前缀升到 v2），启动清一次即可，幂等。
+      // 不弹 toast：启动阶段刷屏比「少几 KB 垃圾数据」更烦人，只留一条 console.info 供排查。
+      const removed = migrateAiCacheV1()
+      if (removed > 0) console.info(`[AI] 已清理 v1 缓存 ${removed} 条`)
       const prefersDark =
         typeof window !== 'undefined' &&
         window.matchMedia?.('(prefers-color-scheme: dark)').matches
@@ -469,41 +466,30 @@ export const useSettingsStore = defineStore('settings', {
       return this.persist()
     },
 
-    /** v2.5.0 面向人群：专业版 / 简明版（进缓存键，切换后不会命中另一档的旧缓存） */
-    setAiAudience(audience: AiAudience): boolean {
-      this.aiAudience = normalizeAudience(audience)
+    /**
+     * 表达风格（v4.0.0）：专业版 / 零基础版。
+     * 与旧 `setAiAudience` 同一个开关，值相同、语义反转（新 pro 必须阐释术语）。
+     */
+    setAiStyle(style: AiStyle): boolean {
+      this.aiStyle = normalizeStyle(style)
       return this.persist()
     },
 
-    /** v2.5.0 单份解读 token 总预算；0 = 不限制 */
-    setAiTokenBudget(value: number): boolean {
-      this.aiTokenBudget = normalizeTokenBudget(value)
-      return this.persist()
+    /** @deprecated v4.0.0 起叫 `setAiStyle`。T04 改名后删除。 */
+    setAiAudience(style: AiStyle): boolean {
+      return this.setAiStyle(style)
     },
 
-    /** 完整版多轮编排方式（串行 / 并发） */
-    setAiStepMode(mode: AiStepMode): boolean {
-      this.aiStepMode = normalizeStepMode(mode)
-      return this.persist()
-    },
-
-    /* ── AI 并发设置（v2.3.0 · T-C2）────────────────────
-     * 条件 ① 的唯一实现点：写入前严格校验「待写入对」，违反则 return false，
+    /* ── 最高并发数（v4.0.0 单旋钮）────────────────────
+     * 保存期严格校验的唯一实现点：非法直接 return false，
      * 不写 store、不 persist、原生效值不变；合法才赋值 + persist。
-     * 与加载期的 normalizeConcurrencyPair（宽松归一）语义不同，不得混用。
+     * 与加载期的 normalizeMaxConcurrency（宽松归一）语义不同，不得混用（ARCH §5.4）。
      */
 
-    /** @returns 是否写入成功；false = 被条件 ① 拒绝或持久化失败 */
-    setAiConcurrency(value: number): boolean {
-      if (validateConcurrencyPair(value, this.aiConcurrencyLimit) !== null) return false
-      this.aiConcurrency = value
-      return this.persist()
-    },
-
-    /** @returns 是否写入成功；false = 被条件 ① 拒绝或持久化失败 */
-    setAiConcurrencyLimit(value: number): boolean {
-      if (validateConcurrencyPair(this.aiConcurrency, value) !== null) return false
-      this.aiConcurrencyLimit = value
+    /** @returns 是否写入成功；false = 被校验拒绝或持久化失败 */
+    setAiMaxConcurrency(value: number): boolean {
+      if (validateMaxConcurrency(value) !== null) return false
+      this.aiMaxConcurrency = value
       return this.persist()
     },
 

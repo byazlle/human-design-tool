@@ -19,7 +19,15 @@ const CFG: AiConfig = {
 const fetchMock = vi.hoisted(() => vi.fn())
 
 function args(over: Partial<AiExplainArgs> = {}): AiExplainArgs {
-  return { cfg: { ...CFG }, scope: 'gate', ref: '1', offline: '离线事实', ...over }
+  return {
+    cfg: { ...CFG },
+    // v4.0.0：入口必填；本文件只测流式链路，入口取值不影响断言
+    entry: 'composite',
+    scope: 'gate',
+    ref: '1',
+    offline: '离线事实',
+    ...over,
+  }
 }
 
 function jsonResponse(content = '解读正文') {

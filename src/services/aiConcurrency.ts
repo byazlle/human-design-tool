@@ -1,160 +1,114 @@
 /**
- * AI 并发配置的中立工具模块（v2.3.0 · T-C1）。
+ * 最高并发数的唯一权威模块（v4.0.0 · ARCH §5.1–§5.4）。
  *
- * 只提供常量与纯函数，禁止 import 任何 store / 组件，避免循环依赖。
+ * v3.5.0 的两个设置项（`aiConcurrency` 1–128 设定值 + `aiConcurrencyLimit` 1–128 技术闸门）
+ * 在 v4.0.0 合并成**一个**旋钮 `aiMaxConcurrency`（1–99）：
+ * 它同时是「同时跑几个」与「上限是多少」——因为滑动窗口调度器本身就是
+ * 「最多 N 个在跑」（ARCH §4），不需要第二个人再说一次「最多几个」。
  *
- * 口径（PRD-v2.3.0-AI并发增量 §2 / ARCH §11.2.1、§11.0 Q-C1）：
- * - 两个全局设置项：`aiConcurrency`（AI 并发数，默认 3）、`aiConcurrencyLimit`（并发上限，默认 64）。
- * - 唯一闸门是「任务所需并发数 N ≤ 并发上限 Y」；`aiConcurrency` 只作设定值 / 校验对象 / 展示值，
- *   **不切片分批**（Q-C1 已确认，不得再推断）。
- * - 加载 / 迁移用宽松归一（`normalizeConcurrencyPair`），保存用严格拒绝（`validateConcurrencyPair`），
- *   两套语义不得混用（ARCH §11.2.2）。
+ * 为什么上限从 128 降到 99：N=99 的起速本身就要 98 秒（每秒 1 个），
+ * 再大只是把误设的爆炸半径做大。99 是「够用且可解释」的天花板。
+ *
+ * 两种归一语义**不得混用**（沿用既有 ARCH §11.2.2 口径）：
+ * - 加载期宽松（`normalizeMaxConcurrency` / `clampMaxConcurrency`）：把存量值收敛到合法区间；
+ * - 保存期严格（`validateMaxConcurrency`）：非法就拒绝写入，原值不变。
  */
-import type { AiStepMode } from '../types/hd'
-
-/** 两个配置项的取值范围（含端点） */
-export const CONCURRENCY_MIN = 1
-export const CONCURRENCY_MAX = 128
-
-/** 任务清单里 `MIN` / `MAX` 的简写别名，语义与上面完全一致 */
-export const MIN = CONCURRENCY_MIN
-export const MAX = CONCURRENCY_MAX
-
-/** `aiConcurrency` 默认值：沿用历史 `PARALLEL_CONCURRENCY = 3`，仅作设定值来源 */
-export const DEFAULT_AI_CONCURRENCY = 3
-
-/** `aiConcurrencyLimit` 默认值：覆盖典型单人整盘任务规模，关系场超限时按条件 ② 降级 */
-export const DEFAULT_AI_CONCURRENCY_LIMIT = 64
+export const AI_MAX_CONCURRENCY_MIN = 1
+export const AI_MAX_CONCURRENCY_MAX = 99
+export const DEFAULT_AI_MAX_CONCURRENCY = 3
 
 /**
- * 加载时宽松归一（AC-C3）：非数字 / 非整数 / 小数 / 越界一律回落 `fallback`。
- * `fallback` 本身也用同一套规则收敛，保证返回值恒为 [MIN, MAX] 内的整数。
+ * 加载期宽松归一：非整数 / 越界 / 类型不符一律回落 `fallback`。
+ *
+ * `fallback` 自身也收敛到 [1, 99]，保证返回值恒为合法整数——
+ * 否则一个坏的 fallback 会把非法值一路带进调度器。
  */
-export function clampConcurrency(raw: unknown, fallback: number): number {
+export function clampMaxConcurrency(
+  raw: unknown,
+  fallback: number = DEFAULT_AI_MAX_CONCURRENCY,
+): number {
   const safeFallback =
-    Number.isInteger(fallback) && fallback >= CONCURRENCY_MIN && fallback <= CONCURRENCY_MAX
+    Number.isInteger(fallback) &&
+    fallback >= AI_MAX_CONCURRENCY_MIN &&
+    fallback <= AI_MAX_CONCURRENCY_MAX
       ? fallback
-      : DEFAULT_AI_CONCURRENCY
-  if (
-    typeof raw !== 'number' ||
-    !Number.isInteger(raw) ||
-    raw < CONCURRENCY_MIN ||
-    raw > CONCURRENCY_MAX
-  ) {
-    return safeFallback
-  }
+      : DEFAULT_AI_MAX_CONCURRENCY
+  if (typeof raw !== 'number' || !Number.isInteger(raw)) return safeFallback
+  if (raw < AI_MAX_CONCURRENCY_MIN || raw > AI_MAX_CONCURRENCY_MAX) return safeFallback
   return raw
 }
 
-/** 任务清单中 `normalizeConcurrency` 的别名，语义与 `clampConcurrency` 一致 */
-export const normalizeConcurrency = clampConcurrency
-
-/** 加载时成对归一的结果（AC-C3） */
-export interface ConcurrencyPair {
-  concurrency: number
-  limit: number
-  /** 存量值被回落或收敛过：供「一次可见提示」消费，不静默改值 */
-  adjusted: boolean
-}
-
 /**
- * 加载时成对归一（AC-C3）。
+ * 保存期严格校验：合法返回 `null`，否则返回行内文案。
  *
- * - 字段缺失（undefined / null / 空串）→ 回落默认值，不算异常、不提示；
- * - 存量值非法（非整数 / 越界 / 类型不符）→ 回落并置 `adjusted = true`；
- * - 违反 `1 ≤ c ≤ l ≤ 128` → 把 c 收敛为 `min(c, l)` 并置 `adjusted = true`。
- *
- * 不写回 localStorage（下次加载仍按同一规则归一）；`adjusted` 由调用方转成
- * 模块级「一次性可见提示」，不进 `SettingsState`、不持久化。
+ * 调用方（`stores/settings.setAiMaxConcurrency`）拿到文案后**拒绝写入**：
+ * 不写 store、不 persist、原值不变（与既有条件 ① 的写入闸门语义一致）。
  */
-export function normalizeConcurrencyPair(rawC: unknown, rawL: unknown): ConcurrencyPair {
-  const hasC = rawC !== undefined && rawC !== null && rawC !== ''
-  const hasL = rawL !== undefined && rawL !== null && rawL !== ''
-  const clampedC = clampConcurrency(
-    hasC ? rawC : DEFAULT_AI_CONCURRENCY,
-    DEFAULT_AI_CONCURRENCY,
-  )
-  const clampedL = clampConcurrency(
-    hasL ? rawL : DEFAULT_AI_CONCURRENCY_LIMIT,
-    DEFAULT_AI_CONCURRENCY_LIMIT,
-  )
-  const invalidC = hasC && clampedC !== rawC
-  const invalidL = hasL && clampedL !== rawL
-  let concurrency = clampedC
-  if (concurrency > clampedL) concurrency = clampedL
-  return {
-    concurrency,
-    limit: clampedL,
-    adjusted: invalidC || invalidL || concurrency !== clampedC,
-  }
-}
-
-/**
- * 保存时严格校验（AC-C4 条件 ①）。
- *
- * @returns `null` 表示合法；否则返回行内错误文案，调用方据此**拒绝写入**，
- *          store 与 `hdt.settings.v1` 保持原生效值不变、不静默收敛。
- */
-export function validateConcurrencyPair(concurrency: number, limit: number): string | null {
-  const valid = (v: number): boolean =>
-    Number.isInteger(v) && v >= CONCURRENCY_MIN && v <= CONCURRENCY_MAX
-  if (!valid(concurrency) || !valid(limit)) {
-    return `AI 并发数与并发上限需为 ${CONCURRENCY_MIN}–${CONCURRENCY_MAX} 的整数`
-  }
-  if (concurrency > limit) {
-    return `AI 并发数不能超过并发上限（当前上限 ${limit}），请调小并发数或调大上限`
+export function validateMaxConcurrency(raw: number): string | null {
+  if (!Number.isInteger(raw) || raw < AI_MAX_CONCURRENCY_MIN || raw > AI_MAX_CONCURRENCY_MAX) {
+    return `最高并发数需为 ${AI_MAX_CONCURRENCY_MIN}–${AI_MAX_CONCURRENCY_MAX} 的整数`
   }
   return null
 }
 
-/** 运行时调度结果：由 `runFullReading()` 入口计算一次，不持久化 */
-export interface ConcurrencySchedule {
-  /** 任务所需并发数 N = tasks.length，不含融合 */
-  required: number
-  /** 唯一闸门 Y = aiConcurrencyLimit */
-  limit: number
-  /** parallel 未超限 = N；降级 = Y；serial = 1 */
-  batchWidth: number
-  /** parallel 未超限 = 1；降级 = K；serial = N */
-  batchCount: number
-  /** = ceil(N / Y)，仅降级有意义 */
-  K: number
-  degraded: boolean
+/** 加载期迁移结果 */
+export interface MaxConcurrencyMigration {
+  value: number
+  /** 存量值被收敛过：供一次性可见提示消费（不静默丢意图） */
+  adjusted: boolean
+  /** 被忽略的旧字段快照，仅用于生成提示文案 */
+  legacy: { concurrency?: number; limit?: number }
+}
+
+function present(raw: unknown): boolean {
+  return raw !== undefined && raw !== null && raw !== ''
 }
 
 /**
- * 调度解析（★ Q-C1：完全不读取 `aiConcurrency`，唯一闸门是 `N ≤ Y`）。
+ * 把存档里的并发相关字段迁移成 `aiMaxConcurrency`（ARCH §5.2 的 4 条优先级）：
  *
- * - `serial`             → `batchWidth = 1`, `batchCount = N`, `degraded = false`
- * - `parallel` 且 `N ≤ Y` → `batchWidth = N`, `batchCount = 1`, `degraded = false`（一次性并发）
- * - `parallel` 且 `N > Y` → `batchWidth = Y`, `K = ceil(N/Y)`, `degraded = true`（条件 ②）
+ * 1. `aiMaxConcurrency` 存在且为数字 → 取整并夹到 [1, 99]（越界夹紧而非丢弃：那是用户意图）；
+ * 2. 存在但类型不符（字符串 / 布尔 / 对象）→ 回落默认 3，`adjusted = true`；
+ * 3. 缺失 → 取旧 `aiConcurrency`：整数则 `min(99, max(1, c))`，`c > 99` 时 `adjusted = true`；
+ * 4. 旧字段也缺失 / 非法 → 默认 3，`adjusted = false`（缺失不是异常，不打扰用户）。
  *
- * 边界：`N === 0` 时 `batchWidth = Math.max(1, N)` 兜底避免除零；`Y` 由
- * `clampConcurrency` 保证 ≥ 1。`stepMode` 只做两分支，不新增枚举值。
+ * ★ `aiConcurrencyLimit` **绝不**作为迁移来源：旧语义里它是「技术闸门」（默认 64，几乎
+ * 没人改），不是用户意图；把 64 迁成新语义会变成真实的 64 并发打向中转站。
+ * 它只被记进 `legacy.limit`，用于生成「原并发上限不再单独生效」的提示。
  */
-export function resolveSchedule(
-  required: number,
-  limit: number,
-  stepMode: AiStepMode,
-): ConcurrencySchedule {
-  const n = Number.isFinite(required) ? Math.max(0, Math.floor(required)) : 0
-  const y = clampConcurrency(limit, DEFAULT_AI_CONCURRENCY_LIMIT)
-
-  if (stepMode === 'serial') {
-    return { required: n, limit: y, batchWidth: 1, batchCount: n, K: n, degraded: false }
+export function normalizeMaxConcurrency(saved: {
+  aiMaxConcurrency?: unknown
+  aiConcurrency?: unknown
+  aiConcurrencyLimit?: unknown
+}): MaxConcurrencyMigration {
+  const legacy: { concurrency?: number; limit?: number } = {}
+  if (typeof saved.aiConcurrency === 'number' && Number.isFinite(saved.aiConcurrency)) {
+    legacy.concurrency = saved.aiConcurrency
+  }
+  if (typeof saved.aiConcurrencyLimit === 'number' && Number.isFinite(saved.aiConcurrencyLimit)) {
+    legacy.limit = saved.aiConcurrencyLimit
   }
 
-  if (n <= y) {
-    return {
-      required: n,
-      limit: y,
-      batchWidth: Math.max(1, n),
-      batchCount: 1,
-      K: 1,
-      degraded: false,
+  if (present(saved.aiMaxConcurrency)) {
+    const raw = saved.aiMaxConcurrency
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      const value = Math.min(
+        AI_MAX_CONCURRENCY_MAX,
+        Math.max(AI_MAX_CONCURRENCY_MIN, Math.round(raw)),
+      )
+      return { value, adjusted: value !== raw, legacy }
     }
+    return { value: DEFAULT_AI_MAX_CONCURRENCY, adjusted: true, legacy }
   }
 
-  const k = Math.ceil(n / y)
-  return { required: n, limit: y, batchWidth: y, batchCount: k, K: k, degraded: true }
+  if (present(saved.aiConcurrency)) {
+    const raw = saved.aiConcurrency
+    if (typeof raw === 'number' && Number.isInteger(raw)) {
+      const value = Math.min(AI_MAX_CONCURRENCY_MAX, Math.max(AI_MAX_CONCURRENCY_MIN, raw))
+      return { value, adjusted: value !== raw, legacy }
+    }
+    return { value: DEFAULT_AI_MAX_CONCURRENCY, adjusted: true, legacy }
+  }
+
+  return { value: DEFAULT_AI_MAX_CONCURRENCY, adjusted: false, legacy }
 }

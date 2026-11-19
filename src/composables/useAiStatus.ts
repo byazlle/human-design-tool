@@ -196,11 +196,16 @@ function applyProgress(p: AiProgress): void {
   const s = state.value
   if (s.mode !== 'full' || s.terminal) return
   const now = Date.now()
-  // 记住分项阶段的 N/Y/K 长文案；融合 / 完成态 current 被覆盖后仍可常驻显示
-  const hint =
-    p.current.includes('超过并发上限') || p.current.includes('一次性并发')
-      ? p.current
-      : s.terminalHint
+  // 记住分项阶段的并发长文案；融合 / 完成态 current 被覆盖后仍可常驻显示。
+  // v4.0.0：旧的 N/Y/K 降级文案已消失，改为命中滑动窗口的两套文案之一
+  //（「最高并发数 N · 在跑 X / 总 T」与「起速中（每秒 1 个）· 已启动 M / N」）。
+  // ★ 两套文案由调度器写在 `phase` 里、`current` 是任务名，所以两个字段都要看：
+  //   只看 current 会永远不命中，`terminalHint` 变空，QA-B3b 的常驻提示就失效了。
+  const bannerText = `${p.current} ${p.phase}`
+  const matched = bannerText.includes('最高并发数') || bannerText.includes('起速中')
+  const banner =
+    p.phase.includes('最高并发数') || p.phase.includes('起速中') ? p.phase : p.current
+  const hint = matched ? banner : s.terminalHint
   const next: AiStatusSnapshot = {
     ...s,
     progress: p,

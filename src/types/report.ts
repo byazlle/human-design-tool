@@ -6,12 +6,19 @@
  * 都引用同一份结构，避免四处各自定义导致字段漂移。
  */
 import type { AiDetailMode } from './hd'
+import type { AiEntry } from './aiReading'
 
 /** 报告导出的四种格式（Q4.2：三档解读都支持） */
 export type ReportFormat = 'md' | 'docx' | 'html' | 'pdf'
 
-/** 完整版分项的三种来源 */
-export type FullSectionKind = 'dimension' | 'gate' | 'channel'
+/**
+ * 完整版分项的来源。
+ *
+ * v4.0.0 新增 `'module'`：入口 A 的六个模块（① 类型策略权威 / ② 通道通解 /
+ * ③ 闸门通解 / ④ 中心与交叉 / ⑤ 五方向 / ⑥ 融合）不是「维度」，而是按固定顺序
+ * 编排的模块，沿用 `dimension` 会让导出页的分组顺序与语义都错位。
+ */
+export type FullSectionKind = 'module' | 'dimension' | 'gate' | 'channel'
 
 /** 完整版单个分项：一次独立的 explain() 结果 */
 export interface FullReportSection {
@@ -30,6 +37,11 @@ export interface FullReportSection {
  */
 export interface FullReport {
   title: string
+  /**
+   * 本报告来自哪个入口（v4.0.0 新增）：供导出页眉与「最近解读」筛选。
+   * 用 `import type` 引入，避免 report ↔ aiReading 之间产生运行期循环依赖。
+   */
+  entry: AiEntry
   sections: FullReportSection[]
   /** 全盘整合分析（full-fusion 产出） */
   fusion: string

@@ -71,15 +71,30 @@ export type CenterId =
 export type AiDetailMode = 'concise' | 'detailed' | 'full'
 
 /**
- * AI 解读的面向人群（v2.5.0）：
- * - `pro`（专业版）：读者已懂人类图术语，可以直接使用「荐骨权威 / 二分人 / 悬挂闸门」等专业词；
- * - `plain`（简明版）：面向零基础，必须用大白话解释，术语先给生活化说法再带出原名。
+ * AI 解读的表达风格（v4.0.0）：
+ * - `pro`（专业版）：使用通行术语，但**每个术语第一次出现必须阐释**（先定义、再给本盘取值）；
+ * - `plain`（零基础版）：全程口语，术语先给生活化说法再带出原名。
  *
- * 只影响 system 提示词的收尾段落，不改事实块与离线释义，也不改字数契约。
+ * ★ 取值与旧 `AiAudience` 完全相同，但**语义反转**：旧 `pro` 是「读者已熟悉术语、
+ *   不必逐个展开解释」，新 `pro` 是「必须阐释」。任何从旧文案复制的段落都会反向违约
+ *   （ARCH v4.0.0 §2.5 / R6）。
  */
-export type AiAudience = 'pro' | 'plain'
+export type AiStyle = 'pro' | 'plain'
 
-/** 完整版多轮编排的执行方式：串行 / 并发（并发失败时自动转串行，用户 Q3.4） */
+/**
+ * @deprecated v4.0.0 起改名为 `AiStyle`（值相同、语义反转，见该类型的注释）。
+ *
+ * 仍保留导出，是为了让 `aiBatchReading.ts` / `stores/*` 等调用点在迁移期不立即爆红；
+ * 新代码一律使用 `AiStyle`，v4.0.0 收尾时删除本别名。
+ */
+export type AiAudience = AiStyle
+
+/**
+ * 完整版多轮编排的执行方式：串行 / 并发。
+ *
+ * @deprecated v4.0.0 起**不再持久化**：「串行」精确等价于 `aiMaxConcurrency === 1`，
+ * 保留该类型只用于展示文案与兼容既有编排器签名（ARCH v4.0.0 §1.3）。
+ */
 export type AiStepMode = 'serial' | 'parallel'
 
 export const CENTER_IDS: CenterId[] = [

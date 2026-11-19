@@ -15,7 +15,8 @@
  * 因此「同一档案 + 同一范围 + 同一档位」只有一条记录，重跑是覆盖而非堆积。
  */
 import { defineStore } from 'pinia'
-import type { AiAudience, AiDetailMode } from '../types/hd'
+import type { AiDetailMode, AiStyle } from '../types/hd'
+import type { AiEntry } from '../types/aiReading'
 import { ENGINE_VERSION } from '../engine/version'
 import { PROMPT_VERSION } from '../services/aiClient'
 import { loadJsonChecked, saveJson } from '../utils/storage'
@@ -41,8 +42,15 @@ export interface ReadingRecord {
   promptVersion: string
   /** 生成时的计算内核版本；与当前不一致表示盘面已重算，内容可能过期 */
   engineVersion: string
-  /** v2.5.0 面向人群；旧记录缺省按专业版 */
-  audience?: AiAudience
+  /** v4.0.0 表达风格（替代 audience：值不变、语义反转）；旧记录缺省按专业版 */
+  style?: AiStyle
+  /**
+   * @deprecated v4.0.0 起叫 `style`。仍然是**写盘时的镜像值**（makeReading / normalize 同步写入），
+   * 让 components/archive 的旧读法与历史记录在 T04 改名前继续可用；T04 后删除。
+   */
+  audience?: AiStyle
+  /** 这份解读出自哪个入口（A 全盘 / B 综合 / C 勾选）；旧记录归 composite */
+  entry?: AiEntry
   /** v2.5.0 输出因 token 上限触顶，内容可能不完整 */
   truncated?: boolean
 }
@@ -50,23 +58,29 @@ export interface ReadingRecord {
 /**
  * 解读记录的稳定标识（store 索引键与去重键）。
  *
- * v2.5.0：面向人群参与键，但**只在简明版时追加一段**——
+ * v2.5.0 起表达风格参与键，但**只在零基础版时追加一段**——
  * 专业版与所有旧记录仍用原来的 4 段键，存量数据、导出格式与既有测试全部不动；
- * 简明版另起一段，让同一张盘的专业版 / 简明版可以并存、互不覆盖。
+ * 零基础版另起一段，让同一张盘的两档并存、互不覆盖。
+ * v4.0.0 只是把第 5 参从 `audience` 改名 `style`，**键格式一个字节都没变**。
  */
 export function readingKey(
   archiveId: string,
   scope: string,
   ref: string,
   mode: AiDetailMode,
-  audience: AiAudience = 'pro',
+  style: AiStyle = 'pro',
 ): string {
   const base = `${archiveId}|${scope}|${ref}|${mode}`
-  return audience === 'plain' ? `${base}|plain` : base
+  return style === 'plain' ? `${base}|plain` : base
+}
+
+/** 记录的生效风格：新字段优先，旧记录回落 deprecated 镜像，再回落专业版 */
+export function styleOfReading(r: ReadingRecord): AiStyle {
+  return r.style === 'plain' || r.audience === 'plain' ? 'plain' : 'pro'
 }
 
 export function keyOfReading(r: ReadingRecord): string {
-  return readingKey(r.archiveId, r.scope, r.ref, r.mode, r.audience ?? 'pro')
+  return readingKey(r.archiveId, r.scope, r.ref, r.mode, styleOfReading(r))
 }
 
 /**
@@ -85,13 +99,28 @@ export function makeReading(input: {
   mode: AiDetailMode
   title: string
   content: string
-  /** 面向人群；不传按专业版 */
-  audience?: AiAudience
+  /** 表达风格；不传按专业版 */
+  style?: AiStyle
+  /** @deprecated 用 `style`（两者都传时 `style` 优先） */
+  audience?: AiStyle
+  /** 解读入口 */
+  entry?: AiEntry
   /** 输出是否因 token 上限触顶 */
   truncated?: boolean
 }): ReadingRecord {
+  const style = input.style ?? input.audience ?? 'pro'
   return {
-    ...input,
+    archiveId: input.archiveId,
+    scope: input.scope,
+    ref: input.ref,
+    mode: input.mode,
+    title: input.title,
+    content: input.content,
+    style,
+    // 镜像写盘：让尚未改名的旧读法（components/archive）在 T04 之前仍然正确
+    audience: style,
+    entry: input.entry ?? 'composite',
+    truncated: input.truncated === true,
     at: new Date().toISOString(),
     promptVersion: PROMPT_VERSION,
     engineVersion: ENGINE_VERSION,
@@ -116,8 +145,9 @@ function isRecord(raw: unknown): raw is ReadingRecord {
   )
 }
 
-/** 补全缺失字段：旧记录可能没有 mode / promptVersion，按保守值回填而不丢弃 */
+/** 补全缺失字段：旧记录可能没有 mode / promptVersion / style / entry，按保守值回填而不丢弃 */
 function normalize(raw: ReadingRecord): ReadingRecord {
+  const style = styleOfReading(raw)
   return {
     archiveId: raw.archiveId,
     scope: raw.scope,
@@ -128,7 +158,11 @@ function normalize(raw: ReadingRecord): ReadingRecord {
     at: raw.at,
     promptVersion: typeof raw.promptVersion === 'string' ? raw.promptVersion : '',
     engineVersion: typeof raw.engineVersion === 'string' ? raw.engineVersion : '',
-    audience: raw.audience === 'plain' ? 'plain' : 'pro',
+    style,
+    // 镜像旧字段：历史记录可能只带 audience，升级后两种读法都能拿到同一值
+    audience: style,
+    // 旧记录都来自「单次综合解读 / 整盘解读」，归 composite 最接近事实
+    entry: raw.entry === 'full' || raw.entry === 'selection' ? raw.entry : 'composite',
     truncated: raw.truncated === true,
   }
 }
@@ -156,16 +190,16 @@ export const useReadingsStore = defineStore('readings', {
     coveredIds(state): Set<string> {
       return new Set(state.list.map((r) => r.archiveId))
     },
-    /** 查询单条（不存在返回 null）；v2.5.0 起按面向人群区分 */
+    /** 查询单条（不存在返回 null）；v2.5.0 起按表达风格区分 */
     find(state) {
       return (
         archiveId: string,
         scope: string,
         ref: string,
         mode: AiDetailMode,
-        audience: AiAudience = 'pro',
+        style: AiStyle = 'pro',
       ) => {
-        const key = readingKey(archiveId, scope, ref, mode, audience)
+        const key = readingKey(archiveId, scope, ref, mode, style)
         return state.list.find((r) => keyOfReading(r) === key) ?? null
       }
     },
@@ -210,8 +244,8 @@ export const useReadingsStore = defineStore('readings', {
       return this.persist()
     },
 
-    remove(id: string, scope: string, ref: string, mode: AiDetailMode, audience: AiAudience = 'pro') {
-      const key = readingKey(id, scope, ref, mode, audience)
+    remove(id: string, scope: string, ref: string, mode: AiDetailMode, style: AiStyle = 'pro') {
+      const key = readingKey(id, scope, ref, mode, style)
       const next = this.list.filter((r) => keyOfReading(r) !== key)
       if (next.length === this.list.length) return
       this.list = next

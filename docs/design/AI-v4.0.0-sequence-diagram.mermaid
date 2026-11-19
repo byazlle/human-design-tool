@@ -1,0 +1,64 @@
+%% ARCH v4.0.0 — 入口 A（全盘 AI 解读）完整档调用序列
+%% 场景：detail = full，5 个模块任务走滑动窗口（最高并发数 N=3，起速每秒 1 个），
+%%       全部落定后融合任务单独执行。
+sequenceDiagram
+    autonumber
+    participant V as AiWorkspaceView
+    participant R as aiReadingRunner
+    participant P as aiReadingPlan
+    participant S as aiScheduler
+    participant C as aiClient (explain)
+    participant F as aiTokenFallback
+    participant T as aiTransport
+    participant E as aiEvidence
+    participant U as stores/ui · useAiStatus
+
+    V->>P: planReading({entry:'full', detail:'full', style, chart})
+    P->>P: build A1..A5 tasks + A6 fusion
+    P-->>V: ReadingPlan{tasks:5, fusion:A6, singleShot:false}
+
+    V->>R: runReading(plan, cfg, {maxConcurrency:3, signal})
+    R->>U: setAiReport(空壳) / setAiProgress(done 0 / total 6)
+    R->>S: runSlidingWindow(tasks, {maxConcurrency:3, startIntervalMs:1000, retry:1})
+
+    Note over S: t=0s 启动 A1（inFlight=1）
+    S->>C: explain(A1, maxTokens=128000)
+    C->>F: 首次尝试 step=128000
+    F->>T: POST /chat/completions (max_tokens:128000)
+    T-->>F: 200 ok
+    F-->>C: body
+    C->>E: checkEvidenceCoverage(reply, facts)
+    E-->>C: {total, withEvidence, missing}
+    C-->>S: A1 正文
+    S->>U: onSettled(A1) → 分项即时上屏
+    Note over S: t=1s 启动 A2（inFlight=2）
+    S->>C: explain(A2)
+    Note over S: t=2s 启动 A3（inFlight=3）→ rampDone=true
+    S->>C: explain(A3)
+
+    alt A1 返回 HTTP 400「max_tokens too large」
+        T-->>F: 400 + body 命中越界措辞
+        F->>F: isMaxTokensRejection → true；nextMaxTokensStep(128000)=64000
+        F->>T: 仅本条重试 POST (max_tokens:64000)
+        T-->>F: 200 ok
+        Note over F: 降级状态只存在于本条调用栈，A2/A3 仍从 128000 起
+    end
+
+    S->>C: A2 完成 → 立即补发 A4（不等待下一个 tick）
+    S->>C: A3 完成 → 立即补发 A5
+    Note over S: done=5, inFlight=0, queued=0
+
+    R->>R: 聚合 orderedSections()（按任务原始顺序 A1..A5）
+    R->>C: explain(A6 full-fusion, offline=fusionExcerptChars 各 800 字)
+    C-->>R: 融合正文
+    R->>R: splitFusion(raw) → {fusion, summary}
+    R->>U: setAiReport(FullReport) / finish('completed')
+    R-->>V: FullReport{entry:'full', sections, fusion, summary, skipped}
+
+    opt 用户点击取消
+        V->>R: abort()
+        R->>S: signal.abort()
+        Note over S: 不再启动新任务；在跑任务收到 abort；已落定结果保留
+        S-->>R: throw AiError('已取消','cancelled')
+        R->>U: setAiLoading(false)（不写伪造内容、不进融合）
+    end

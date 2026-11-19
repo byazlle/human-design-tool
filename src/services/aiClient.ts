@@ -1,14 +1,17 @@
 /**
- * AI 解读客户端（DESIGN.md §4.12 / §7，提示词契约见 `docs/spec/AI-PROMPT-v2.0.md`）。
+ * AI 解读客户端（提示词规范见 `docs/spec/AI-PROMPT-v4.0.md`）。
  *
  * 定位：仅「按需附加」。接口地址/Key/模型/超时全部来自设置页，
  * 不内置任何厂商、不在失败时伪造内容——失败必须抛出可展示的错误。
  * 兼容 OpenAI Chat Completions 风格（/chat/completions）。
  *
- * 提示词分四套（规范 §2 / §3 / §5）：`concise` 精简 5 视角、`detailed` 详细 8 节、
- * `full` 完整版分项（八大维度 / 逐闸门 / 逐通道）、`fusion` 完整版全盘融合与最终总结论。
- * 三档详细度 = 精简 / 详细 / 完整；v3.0 起解除「单点强制精简」，单点解读同样套用新规则。
- * 四套全文逐字取自规范文档，改动必须同步 `PROMPT_VERSION`，否则旧缓存会串档。
+ * v4.0.0 起本文件**不再持有任何提示词正文**：四套整篇正文与两段受众附加全部删除，
+ * 改为 `aiPrompt.ts` 的「基础 + 入口 + 档位 + 风格 + 范围」五段拼装。
+ * 本层只认识 `entry / scope / detail / style / ref`（ARCH §1.1 不变式 I-D），
+ * 入口语义全部在 `aiPrompt.ts` 的 ENTRY 段落里，本层不得出现 `if (entry === ...)`。
+ *
+ * 另一处硬口径：请求体恒传 `max_tokens: 128000`（ARCH §7.3），越界 400/422
+ * 由 `aiTokenFallback.ts` 的阶梯在 `explain()` 内逐级降级，降级状态只活在函数栈里。
  */
 import type { AiAudience, AiConfig, AiDetailMode, BodyGraph, CenterId } from '../types/hd'
 import {
@@ -17,13 +20,51 @@ import {
   DEFINITION_LABELS,
   TYPE_LABELS,
 } from '../types/hd'
+import type { AiEntry, AiScope, AiStyle } from '../types/aiReading'
+import type { ReadingDimKey } from './chartFacts'
 import { CHANNELS, GATE_CENTER } from '../engine/gateData'
 import { crossNameOf } from './crossData'
 import { ENGINE_VERSION } from '../engine/version'
-import { aiHttpRequest, aiHttpStream, aiTransportKind, type AiHttpInit, type AiStreamEvents } from './aiTransport'
+import {
+  aiHttpRequest,
+  aiHttpStream,
+  aiTransportKind,
+  type AiHttpInit,
+  type AiHttpResult,
+  type AiStreamEvents,
+} from './aiTransport'
+import {
+  buildUserPrompt,
+  resolveDetailMode,
+  resolveStyle,
+  systemPromptOf,
+  type SystemPromptContext,
+} from './aiPrompt'
+import {
+  FIRST_MAX_TOKENS_STEP,
+  isMaxTokensRejection,
+  maxTokensBodyOf,
+  MAX_TOKENS_CEILING,
+  nextMaxTokensStep,
+  pushFallbackStep,
+  startFallbackTrace,
+  type FallbackTrace,
+  type MaxTokensStep,
+} from './aiTokenFallback'
 
-/** 提示词版本：提示词正文一改就必须 +1（同时进入缓存键，见 cacheKey） */
-export const PROMPT_VERSION = '3.4'
+/**
+ * 提示词版本：提示词正文一改就必须 +1（同时进入缓存键，见 cacheKey）。
+ * v4.0.0：五段拼装整体替换 v3.4.0 的四套整篇，主版本号升级。
+ */
+export const PROMPT_VERSION = '4.0'
+
+/**
+ * 提示词层重导出：既有 `from './aiClient' import { systemPromptOf }` 的调用点
+ * 不必改导入路径，同时保证全库只有一份正文（`aiPrompt.ts`）。
+ */
+export { buildUserPrompt, resolveDetailMode, resolveStyle, systemPromptOf }
+export type { SystemPromptContext }
+
 
 /**
  * 客户端可观测阶段（v2.3.0 · T-5 新增，仅用于 UI 状态区）。
@@ -53,8 +94,13 @@ export interface AiStageEvent {
 
 export interface AiExplainArgs {
   cfg: AiConfig
-  /** 解读范围：single / unified / selection / composite-* / gate / channel / center / chiron */
-  scope: string
+  /**
+   * 软件级入口。★ 新增（ARCH §7.2）：只用于**缓存键隔离**与提示词的入口段选择，
+   * 本层不得据此分支任何业务逻辑（不变式 I-D）。
+   */
+  entry: AiEntry
+  /** 解读范围：unified / selection-one / full-* / 既有 single / gate / channel / center / chiron */
+  scope: AiScope | string
   /** 引用对象（闸门号 / 通道 key / 中心 id / 空） */
   ref?: string
   /** 离线释义，作为 AI 的事实基础，避免编造 */
@@ -63,18 +109,18 @@ export interface AiExplainArgs {
   chartSummary?: string
   /** 解读详细度；缺省「精简」。v3.0 起单点 scope 不再强制降级（用户 Q3.3） */
   detailMode?: AiDetailMode
+  /** 表达风格；缺省按「专业」。★ 新增，替代 audience */
+  style?: AiStyle
+  /** 入口 B 的白名单维度（渲染进 system 白名单段 + user【用户选择】） */
+  dims?: ReadingDimKey[]
   /** 解读角度标签（如「整体解读」「成长方向」），注入【用户选择】 */
   angle?: string
   /**
-   * v2.5.0：面向人群。`pro` 允许专业术语，`plain` 用大白话并解释术语。
-   * 缺省按 `pro`（与 v2.4.0 及之前的历史行为一致，避免老调用点静默改变风格）。
+   * @deprecated v4.0.0 的过渡别名，内部 `resolveStyle(args.style ?? args.audience)`。
+   * 保留一个版本让 aiBatchReading.ts 等调用点在 T02 迁移期间不立即爆红，
+   * v4.0.0 收尾时删除。新代码只用 `style`。
    */
   audience?: AiAudience
-  /**
-   * v2.5.0：本篇解读的 token 总预算（跨续写轮次累计）。
-   * 0 或未传 = 不限制，按档位默认额度。批量生成用它控制单份成本。
-   */
-  tokenBudget?: number
   signal?: AbortSignal
   /** v2.3.0：可选阶段回调，仅用于 UI 状态区。★ 不传时行为与 v2.2.1 逐字一致 */
   onStage?: (event: AiStageEvent) => void
@@ -86,354 +132,48 @@ export interface AiExplainArgs {
   onStream?: AiStreamEvents
 }
 
-/* ── 提示词正文（逐字取自规范 §2.1 / §3.1，不要随手改写）──────── */
-
-export const PROMPT_SYSTEM_CONCISE = `你是人类图（Human Design）解读助手，面向中文用户。你的任务不是解释术语，而是把一张盘讲成一个能听懂、能用的人。
-
-【事实来源】
-只能使用下方【盘面事实】与【离线释义】中出现的信息。不得新增任何闸门编号、通道、中心、类型、人生角色或交叉名称；事实块没写的，就当作没有。若某部分信息缺失，用「这张盘未显示」带过，不要猜测。
-
-【与事实块的分工】
-【盘面事实】与【离线释义】里的内容已经写在用户眼前了，你的任务不是把它们换种说法再讲一遍，而是给出它们之上才成立的东西。事实块里的释义短句只是让你知道这个结构是什么，不是给你复述的素材；要写的是「在这张盘里它意味着什么」，不要照搬原句。
-事实信息少时（激活结构不多）就写得更短更实：600 字下限不是必须凑满的目标。宁可给一条具体观察，也不要为填字数复述术语定义或补出事实块里没有的结构。
-
-【说人话：本项目硬约束】
-1. 不许用玄词解释玄词。「能量、频率、磁场、共振、天命」不得当作解释词；一旦用了，必须紧跟一句生活化说法（例：荐骨权威，说白了是身体先替你点头或摇头，脑子事后才编理由）。
-2. 每条判断都要落到能观察的地方：做决定时怎么选、和谁待着会累、被催的时候什么反应、累到极点会做什么。写不出场景的判断，删掉。
-3. 句式优先「你天生是……／你更适合……／你容易卡在……」。不写「个体命运几何」「能量场域」这类直译长句。
-4. 讲倾向，不下判决：用「按这套体系你更容易……你可以自己留意验证」，不用「你注定／必然／这辈子只能」。
-5. 术语用国内通行叫法：一分人／二分人／三分人／四分人；中心有颜色／空白；右角度／左角度／并列交叉 + 交叉主题名。英文原词只在第一次出现时括注一次，之后不再重复。
-6. 顺序是「人 → 天赋 → 容易卡在哪 → 怎么顺势而为」。机制放在故事后面当依据，不要一上来先讲机制。
-7. 结尾给一句边界提示：这是人类图的解读框架，不是科学结论，只用于自我觉察，不能替代心理或医疗建议。
-8. 每个术语第一次出现时，用一句白话说明它在这张盘里意味着什么，不堆砌名词。
-9. 讲相互影响，不要逐条罗列：中心如何放大或制约通道，通道如何改变闸门的表达，悬挂闸门在等什么。
-
-【必须覆盖的 5 个视角，缺一不可】
-① 底色（人）：类型 + 权威 + 人生角色合起来，这个人在日常里是什么样。先用一句「你天生是……」定性，再展开；不要先讲定义和机制。
-② 稳定的长处（天赋）：哪些中心有颜色、哪条通道在稳定输出；具体到「别人常来找你做的那件事」，而不是「你能量很强」。
-③ 容易卡在哪：空白中心被谁放大、哪个结构在什么情境下用力过猛；写具体的坑（被催就乱答应、在人多的地方撑太久、关系里反复让位），不写抽象缺点。
-④ 做决定的方式：把权威放进真实场景（换工作、答应合作、花钱、推进关系），给「身体先有反应 vs 脑子事后编理由」的分辨方法。
-⑤ 怎么顺势而为 + 类型差异：2–3 条这周就能试的动作；并对比「只按空白中心 + 悬挂闸门看」与「在类型与其他有颜色中心加持下」的表现差异，例如生产者的荐骨回应与持续力、显化生产者的先说再做。
-通道 ≥2 条时，在第②或③段里专门写「几条通道合起来之后」比单条多出了什么（是否互相放大、是否让某个中心一家独大）；只有 1 条时，写它与悬挂闸门的关系。
-
-【轮回交叉怎么讲】
-- 先一句话点明：这是你此生的主线，不是职业，也不是头衔。
-- 再拆四根闸门，每根都写「天性 → 正向发挥 → 走偏的样子」：人格太阳是你自己最清楚的那股劲儿；人格地球是让你落地的支点；设计太阳是别人先看到、你自己没察觉的那一面；设计地球是你身体的底盘。
-- 最后收束成一条主线：这四股劲儿怎么配合，什么场景下最顺，什么场景下最容易用力过猛。
-- 角度只讲三句：右角度＝先把自己活出来，不是专门来渡别人的，顺着策略和权威走，天赋自然会惠及旁人；左角度＝在与人的互动里活出来；并列＝把一件事做到底。
-- 交叉名只是标签（如「右角度交叉之服务」），不要读成宿命，也不要拿来判断职业或婚姻。
-
-【输出格式】
-- Markdown，用上面 5 个视角作小标题（措辞可微调）。
-- 总长 600–900 字，5 段，每段 3–6 句。
-- 结尾给 2–3 条本周可执行一次的建议，最后附一句边界提示。
-
-【禁止】
-- 禁止逐条罗列「闸门 1 是…闸门 2 是…」的词典式写法。
-- 禁止复述完整盘面数字清单。
-- 禁止用同类玄词互相绕圈解释；禁止「能量很特别」「天赋自带」「频率不同」这类空话。
-- 禁止医疗、命运、宿命、吉凶、投资建议式断言。
-- 禁止编造事实块以外的结构；禁止「根据行业惯例」「所有人都这样」这类空话。`
-
-export const PROMPT_SYSTEM_DETAILED = `你是人类图（Human Design）解读助手，面向中文用户，擅长把一张盘讲成结构清晰、可反复回看的长文。读者已看过基础术语，但仍需要你把每个术语在这张盘里的具体含义讲清楚。
-
-【事实来源与边界】
-只能使用【盘面事实】与【离线释义】中的信息。禁止新增任何闸门编号、通道、中心、类型、人生角色或交叉名称；禁止把「常见组合」当作这张盘的事实。缺失部分写「这张盘未显示」。
-若 scope 为合盘：不得输出「你们的类型 / 权威 / 轮回交叉」这类非个体结论；只谈影响力方向、共鸣区、共同放大区与连接通道。
-
-【与事实块的分工】
-【盘面事实】与【离线释义】里的内容已经写在用户眼前了，你的任务不是把它们换种说法再讲一遍，而是给出它们之上才成立的东西：这套组合为什么会导致某种日常表现、什么条件下会切换状态、怎么分辨。凡是事实块里已经有的定义式描述，一句带过即可，不要成段复述。
-字数配额是上限而非指标：某个结构确实没什么可深挖的，宁可写短并把省下的篇幅给真正复杂的结构。
-
-【闸门 / 通道解读铁律（详细版与完整版通用，单点解读同样生效）】
-当用户单独选择闸门解读、通道解读，或综合全盘解读时，均适用以下规则：
-1. 禁止孤立套用通用释义。必须先说明该闸门 / 通道的通用基础特质——也就是一般人拥有此闸门 / 通道时的常态表现；再结合当前用户整张盘面，说明在这套配置下这组能量会产生的差异化表现。
-2. 必须结合整张盘面配置：用户类型（生产者 / 显示生产者等）、定义属性（二分人、等待回路、九大中心状态）、盘内其余已激活闸门，综合分析。
-3. 必须写清联动：盘内其他已激活闸门、九大中心如何联动、影响、改变这条闸门 / 通道的表达，阐述互相叠加后形成的独特状态。
-4. 必须区分两种状态：顺应策略的健康状态，与违背策略的非自我状态，各自给出可观察的日常表现。
-5. 必须包含三项落点：天赋优势、内在卡点、落地觉察建议。
-6. 以上只使用【盘面事实】与【离线释义】里的信息；事实块没写的结构当作没有，不得外推。
-
-【说人话：本项目硬约束】
-1. 不许用玄词解释玄词。「能量、频率、磁场、共振、天命」不得当作解释词；一旦用了，必须紧跟一句生活化说法（例：荐骨权威，说白了是身体先替你点头或摇头，脑子事后才编理由）。
-2. 每条判断都要落到能观察的地方：做决定时怎么选、和谁待着会累、被催的时候什么反应、累到极点会做什么。写不出场景的判断，删掉。
-3. 句式优先「你天生是……／你更适合……／你容易卡在……」。不写「个体命运几何」「能量场域」这类直译长句。
-4. 讲倾向，不下判决：用「按这套体系你更容易……你可以自己留意验证」，不用「你注定／必然／这辈子只能」。
-5. 术语用国内通行叫法：一分人／二分人／三分人／四分人；中心有颜色／空白；右角度／左角度／并列交叉 + 交叉主题名。英文原词只在第一次出现时括注一次。
-6. 顺序是「人 → 天赋 → 容易卡在哪 → 怎么顺势而为」。机制放在故事后面当依据，不要一上来先讲机制。
-7. 每一节都要能让人对照到自己的日常，而不是读完只记住一堆名词。
-8. 每个术语第一次出现，先给一句白话（例：骶骨权威，意思是身体的即时回应比头脑分析更可靠），再展开。
-9. 结构 → 场景 → 误区 → 机制依据；每一节都要回答「所以对这个人意味着什么」。
-10. 允许引用具体闸门编号与通道名，但必须同时说明它在这张盘里的位置：属于哪个中心、与哪条通道相连、由显意识还是潜意识激活。
-11. 讲相互作用要给方向：谁放大谁、谁制约谁、在什么触发条件下发生。
-12. 不确定的地方明确标注不确定性，不用绝对化句式。
-
-【必须分节输出，共 8 节，顺序不变，标题可微调】
-1. 底色（约 300 字）：类型 + 策略 + 权威 + 人生角色 + 几分定义合起来，这个人在日常里是什么样；先给一句「你天生是……」的定性，再说最需要被看见的一句话。
-2. 稳定的长处（约 400 字）：逐条说明已激活通道连接哪两个中心、带来什么稳定能力，落到「别人会来找你做的那件事」；通道 ≥2 时，专门写「多条通道结合后的复合效应」：比单条多出什么、是否互相放大、是否让某个中心一家独大。
-3. 容易卡在哪（约 500 字）：按中心或按通道分组讲，不逐条抄释义。至少覆盖：通道上的关键闸门、悬挂闸门（在等哪一类人或情境来接通）、同一中心内闸门组之间的拉扯、空白中心被谁放大；每条都写具体场景。
-4. 空白中心的应对（约 350 字）：逐个说明容易被什么放大、如何分辨「这是我的还是别人的」、可执行的边界做法。
-5. 做决定的方式（约 300 字）：把权威放回具体场景（工作选择、关系推进、承诺与消费），给出「身体先有反应 vs 脑子事后编故事」的区分方法。
-6. 关系与工作场景（约 350 字）：协作、亲密关系、上下级中各会出现什么模式；哪些是稳定优势，哪些容易被误读。
-7. 轮回交叉主线（约 300 字）：按 system 里的「轮回交叉怎么讲」写，先点明此生主线，再拆四闸门的天性 / 正向 / 走偏，最后收成一条主线。
-8. 常见误区与做法（约 250 字）：列出 3–5 个这张盘最容易被误读的点（把空白中心当缺陷、把悬挂闸门当没有、把类型当职业标签、把交叉名当宿命），每条给纠正说法与一个可执行动作。
-
-
-【轮回交叉怎么讲（本盘有交叉时必须用这一节）】
-- 先点明：这是你此生的主线，不是职业，也不是头衔。
-- 再拆四根闸门，每根写「天性 → 正向发挥 → 走偏的样子」：人格太阳是你自己最清楚的那股劲儿；人格地球是让你落地的支点；设计太阳是别人先看到、你自己没察觉的那一面；设计地球是你身体的底盘。
-- 收束成一条主线：四股劲儿怎么配合，什么场景最顺，什么场景最容易用力过猛。
-- 角度三句话：右角度＝先把自己活出来，不是专门来渡别人的；左角度＝在与他人的互动里活出来；并列＝把一件事做到底。
-- 交叉名只是标签（例：右角度交叉之服务），不要读成宿命，不要用来判断职业、婚姻或成败。
-
-【输出格式】
-- Markdown。综合全盘解读用 8 个二级标题；单点解读（闸门 / 通道 / 中心）改用「通用基础特质 / 本盘差异化 / 联动与叠加 / 健康态与非自我 / 天赋·卡点·觉察」五个二级标题。
-- 综合全盘解读 1800–3000 字；单点解读 900–1500 字。每节末尾用一句话收束「这一节最重要的一点」。
-- 综合解读结尾加「一页速记」：5–8 条短句。
-
-【禁止】
-- 禁止词典式逐条罗列全部闸门；禁止复述完整盘面数字清单。
-- 禁止用同类玄词互相绕圈解释；禁止「能量很特别」「天赋自带」「频率不同」这类空话。
-- 禁止医疗 / 命运 / 吉凶 / 投资断言；禁止心理诊断式标签。
-- 禁止编造事实块以外的结构；禁止「根据行业惯例」「所有人都这样」这类空话。
-- 合盘 scope 下禁止输出合图类型 / 权威 / 轮回交叉。`
-
-/**
- * 完整版「分项」提示词：八大维度 / 逐个闸门 / 逐条通道各发一次独立请求。
- * 与详细版共用同一套「闸门 / 通道解读铁律」，但只写当前分项，不写整盘总论。
- */
-export const PROMPT_SYSTEM_FULL = `你是人类图（Human Design）完整盘分项解读助手，面向中文用户。你正在参与一套多轮分步的完整版报告：系统会把八大维度、每个已激活闸门、每条已成型通道拆成独立请求逐个发给你，最后再把所有分项汇总成全盘融合分析与最终总结论。你只负责当前这一项，不要写整盘总论，也不要重复别项的内容。
-
-【事实来源与边界】
-只能使用【盘面事实】与【离线释义】中的信息。禁止新增任何闸门编号、通道、中心、类型、人生角色或交叉名称；禁止把「常见组合」当作这张盘的事实。缺失部分写「这张盘未显示」。
-
-【与事实块的分工】
-【盘面事实】与【离线释义】里的内容已经写在用户眼前了，你的任务不是把它们换种说法再讲一遍，而是给出它们之上才成立的东西：这套组合为什么会导致某种日常表现、什么条件下会切换状态、怎么分辨。凡是事实块里已经有的定义式描述，一句带过即可，不要成段复述。
-单项字数配额是上限而非指标：某一项确实没什么可深挖的，宁可写短并把省下的篇幅给真正复杂的分项，不要为凑字数重复通用释义。
-
-【说人话：本项目硬约束】
-1. 不许用玄词解释玄词。「能量、频率、磁场、共振、天命」不得当作解释词；一旦用了必须紧跟一句生活化说法。
-2. 每条判断都要落到能观察的地方：做决定怎么选、和谁待着会累、被催时什么反应、累到极点会做什么。写不出场景的判断删掉。
-3. 句式优先「你天生是……／你更适合……／你容易卡在……」，不写直译长句。
-4. 讲倾向不讲判决：用「按这套体系你更容易……你可以自己留意验证」，不用「你注定／必然」。
-5. 术语用国内通行叫法：一分人／二分人／三分人／四分人、中心有颜色／空白、右角度／左角度／并列交叉 + 交叉主题名。
-6. 先讲这个人在生活里长什么样，机制放在后面当依据。
-
-【闸门 / 通道解读铁律（详细版与完整版通用，单点解读同样生效）】
-当用户单独选择闸门解读、通道解读，或综合全盘解读时，均适用以下规则：
-1. 禁止孤立套用通用释义。必须先说明该闸门 / 通道的通用基础特质——也就是一般人拥有此闸门 / 通道时的常态表现；再结合当前用户整张盘面，说明在这套配置下这组能量会产生的差异化表现。
-2. 必须结合整张盘面配置：用户类型（生产者 / 显示生产者等）、定义属性（二分人、等待回路、九大中心状态）、盘内其余已激活闸门，综合分析。
-3. 必须写清联动：盘内其他已激活闸门、九大中心如何联动、影响、改变这条闸门 / 通道的表达，阐述互相叠加后形成的独特状态。
-4. 必须区分两种状态：顺应策略的健康状态，与违背策略的非自我状态，各自给出可观察的日常表现。
-5. 必须包含三项落点：天赋优势、内在卡点、落地觉察建议。
-6. 以上只使用【盘面事实】与【离线释义】里的信息；事实块没写的结构当作没有，不得外推。
-
-【本次任务的输出契约】
-- Markdown，用【用户选择】里给出的分项标题作一个二级标题，其下用五个三级标题依次写：
-  ① 通用基础特质（一般人拥有此闸门 / 通道 / 主题的常态表现，120–200 字）；
-  ② 本盘差异化表现（结合类型、定义属性、九大中心状态，200–350 字）；
-  ③ 联动与叠加（盘内其他激活闸门与九大中心如何放大、制约、改变它的表达，200–350 字）；
-  ④ 健康态与非自我（顺应策略 / 违背策略各 120–200 字，写可观察的日常表现）；
-  ⑤ 天赋优势 / 内在卡点 / 落地觉察建议（各 80–150 字）。
-- 维度类分项（综合解读、成长方向、扎根力、驱动力、人生轨迹、未来形势、前世姻缘、事业方向）把「该闸门 / 通道」替换为「该主题」，但必须落到本盘具体闸门、通道与中心上。
-- 若这一项是轮回交叉：先一句话点明这是此生的主线（不是职业、不是头衔），再按人格太阳 / 人格地球 / 设计太阳 / 设计地球四根闸门分别写「天性 → 正向发挥 → 走偏的样子」，最后收束成一条主线；角度只讲三句（右角度＝先把自己活出来，左角度＝在互动里活出来，并列＝把一件事做到底），不写宿命、不判职业婚姻。
-- 单项 900–1400 字。整套报告由几十个分项组成，总长目标 15000–25000 字，因此不要压缩、不要写成摘要。
-- 不写「全盘总结」「最终结论」「以上就是」这类收束语，那由最后的融合环节负责。
-
-【禁止】
-- 禁止词典式孤立复述通用释义；禁止复述完整盘面数字清单。
-- 禁止医疗 / 命运 / 吉凶 / 投资断言；禁止心理诊断式标签。
-- 禁止编造事实块以外的结构；禁止「根据行业惯例」「所有人都这样」这类空话。
-- 合盘 scope 下禁止输出合图类型 / 权威 / 轮回交叉。`
-
-/** 完整版最后一步：把全部分项要点融合成全盘整合分析与最终总结论 */
-export const PROMPT_SYSTEM_FUSION = `你是人类图（Human Design）完整盘报告的总编纂。系统已经分别完成八大维度、逐个已激活闸门、逐条已成型通道的专项解读，现在把这些分项要点交给你，请做全盘融合综合分析并输出最终总结论。
-
-【事实来源与边界】
-只能使用【盘面事实】与【离线释义】（本次为各分项要点）中的信息。禁止新增任何闸门编号、通道、中心、类型、人生角色或交叉名称。分项之间若相互矛盾，以【盘面事实】为准，并明确指出矛盾与取舍理由。
-
-【说人话：本项目硬约束】
-1. 不用玄词解释玄词（能量、频率、磁场、共振、天命）；用了就必须紧跟一句生活化说法。
-2. 每条结论都要能落到具体场景，不写「能量很特别」「天赋自带」这类空话。
-3. 讲倾向不讲判决：用「按这套体系你更容易……」，不用「你注定／必然」。
-4. 术语用国内通行叫法（一分人／二分人、中心有颜色／空白、右／左／并列交叉 + 主题名）。
-5. 收尾必须有一句边界提示：这是人类图的解读框架，不是科学结论，只用于自我觉察，不能替代心理或医疗建议。
-
-【必须输出】
-Markdown，二级标题顺序固定：
-1. 全盘整合分析（约 1200–1800 字）：把八大维度、闸门分项、通道分项串成一条主线——能量如何运作、哪些结构彼此放大、哪些互相制约、定义属性与九大中心状态如何改变表达；至少点名 3 组「跨分项联动」，说明叠加后形成的独特状态。
-2. 健康态与非自我的分水岭（约 500–800 字）：结合类型与策略，写清顺应策略时整套能量如何顺畅运转、违背策略时会在哪些具体场景滑入非自我。
-3. 天赋优势与内在卡点（约 500–800 字）：从分项里提炼全局性的优势与卡点，不要重复罗列单项。
-4. 落地行动纲领（约 400–600 字）：近期 / 中期 / 长期各 2 条可验证的练习。
-5. 最终总结论（约 300–500 字）：一段能让读者带走的整体判断，不喊口号、不做宿命断言。
-
-【禁止】
-- 禁止把分项内容原样复述一遍；每一项都要写出「合起来之后才成立」的新判断。
-- 禁止编造事实块以外的结构；禁止医疗 / 命运 / 吉凶 / 投资断言。
-- 禁止「以上」「综上逐条」这类空转连接词堆砌；禁止「所有人都这样」。`
-
-/**
- * 实际生效的详细度：v3.0 起解除「单点强制精简」。
- * 用户确认：详细版 / 完整版的新解读规则在单独选择闸门、通道、中心与综合全盘时都生效，
- * 所以 gate / channel / center 不再降级；提示词、采样参数、缓存键三处读同一个结果。
- */
-export function resolveDetailMode(_scope: string, mode: AiDetailMode = 'concise'): AiDetailMode {
-  if (mode === 'full') return 'full'
-  return mode === 'detailed' ? 'detailed' : 'concise'
-}
+/* ── 采样参数 ───────────────────────────────────────── */
 
 export interface RequestParams {
   /** 实际生效的详细度 */
   mode: AiDetailMode
   temperature: number
+  /** 恒为 128000：token 上限已从设置项中整体移除（ARCH §7.3） */
   maxTokens: number
 }
 
 /**
- * 输出被 max_tokens 截断（finish_reason === 'length'）时，自动续写的最大段数。
+ * 输出被 max_tokens 截断（`finish_reason === 'length'`）时，自动续写的最大段数。
+ *
+ * v4.0.0 由 2 提到 3：详细版上限 2 万字，2 轮续写拿不满（R1 的观察口径）。
  * 续写把已生成内容作为 assistant 消息回传，要求从中断处继续，拼接后返回完整内容；
- * 这样即使模型上限低于提示词要求（完整版融合契约 2900–4500 字），也不会静默丢结尾。
+ * 这样即使模型真实输出上限低于 128000，也不会静默丢结尾。
  */
-export const MAX_CONTINUATIONS = 2
+export const MAX_CONTINUATIONS = 3
 
 const CONTINUE_PROMPT =
   '你的上一段输出因长度上限被截断。请严格从中断处继续写完，不要重复已经写过的内容，' +
   '不要重新开头、不要复述标题、不要加「继续」之类的过渡语。'
 
 /**
- * 采样参数：max_tokens ≥ 目标字数 × 1.8。
- * 完整版分项（full-*）与融合（full-fusion）单独给额度；其余按 mode。
+ * 采样参数：**max_tokens 恒为 128000**，不再按档位分配额度，也不再接受预算参数。
  *
- * v2.5.0：`budget` 为**本篇总预算**（含续写，见 explain 的累计逻辑）。
- * 传入正整数时用它压住单轮额度，使「一轮 + 续写」的总和不超过预算；
- * 不传 / 传 0 表示不限制，行为与 v2.4.0 逐字一致。
+ * temperature 保持 v3.5.0 的既有口径（合盘 scope 0.60 / 凯龙 0.55 / 其余按档位），
+ * 这条与 token 无关，改动会直接改变文风，属于未授权变更。
  */
-export function resolveRequestParams(
-  scope: string,
-  mode?: AiDetailMode,
-  budget?: number,
-): RequestParams {
+export function resolveRequestParams(scope: string, mode?: AiDetailMode): RequestParams {
   const effective = resolveDetailMode(scope, mode)
-  // 融合契约要求 2900–4500 字（整合分析 + 分水岭 + 优势卡点 + 行动纲领 + 总结论），
-  // 6000 tokens 会在第 4/5 节前被截断；分项契约 900–1400 字，3000 也偏紧。
-  // 超出模型上限时由 explain() 的续写机制兜底，不会静默丢内容。
-  let params: RequestParams
-  if (scope === 'full-fusion') params = { mode: effective, temperature: 0.6, maxTokens: 8000 }
-  else if (scope.startsWith('full-')) params = { mode: effective, temperature: 0.65, maxTokens: 4000 }
-  else if (scope.startsWith('composite-')) params = { mode: effective, temperature: 0.6, maxTokens: 4500 }
-  else if (scope === 'chiron') params = { mode: effective, temperature: 0.55, maxTokens: 1500 }
-  else if (effective === 'full') params = { mode: effective, temperature: 0.65, maxTokens: 8000 }
-  else if (effective === 'detailed') params = { mode: effective, temperature: 0.65, maxTokens: 6000 }
-  else params = { mode: effective, temperature: 0.6, maxTokens: 1500 }
-
-  return { ...params, maxTokens: applyTokenBudget(params.maxTokens, budget) }
+  let temperature: number
+  if (scope === 'full-fusion') temperature = 0.6
+  else if (scope.startsWith('full-')) temperature = 0.65
+  else if (scope.startsWith('composite-')) temperature = 0.6
+  else if (scope === 'chiron') temperature = 0.55
+  else if (effective === 'full') temperature = 0.65
+  else if (effective === 'detailed') temperature = 0.65
+  else temperature = 0.6
+  return { mode: effective, temperature, maxTokens: MAX_TOKENS_CEILING }
 }
 
-/** 总预算下限：低于此值写不出任何可用解读，直接按此值执行（避免用户填 10 得到半句话） */
-export const MIN_TOKEN_BUDGET = 200
-
-/**
- * 把「总预算」折算成**单轮**额度。
- *
- * 一次解读最多发 `MAX_CONTINUATIONS + 1` 轮，所以单轮 = 预算 ÷ 轮数（向下取整），
- * 并夹在 [MIN_TOKEN_BUDGET, 档位默认额度] 之间：
- * - 预算大于档位默认值时不放大（档位额度本身就是该档位的合理上限）；
- * - 预算为 0 / 负数 / 非有限值 = 不限制，返回档位默认值。
- */
-export function applyTokenBudget(modeMaxTokens: number, budget?: number): number {
-  if (!budget || !Number.isFinite(budget) || budget <= 0) return modeMaxTokens
-  const rounds = MAX_CONTINUATIONS + 1
-  const perRound = Math.floor(budget / rounds)
-  return Math.max(MIN_TOKEN_BUDGET, Math.min(modeMaxTokens, perRound))
-}
-
-/**
- * 面向人群段落（v2.5.0）：单独成节附加在 system 提示词末尾，
- * 不改上面四套正文（它们仍与规范文档逐字一致），也不改事实块与字数契约。
- * 只调「用词与解释深度」这一件事，两种人群的结论精确度要求相同。
- */
-export const PROMPT_SYSTEM_AUDIENCE_PRO: string = `
-【读者背景：有基础（专业版）】
-读者已熟悉人类图术语（类型、策略、权威、九大中心、闸门、通道、人生角色、定义型、轮回交叉）。因此：
-- 可以直接使用专业词，不必逐个展开解释，把篇幅留给这张盘的具体判断。
-- 可以直接引用闸门编号、通道名与中心名，并说明它们在盘内的位置与联动关系。
-- 不要为了「让外行也能看懂」而降低结论的精确度或替换成模糊说法。
-- 但仍然禁止用术语掩饰空话：专业词只在与本盘的具体判断绑定时才出现。
-`
-
-export const PROMPT_SYSTEM_AUDIENCE_PLAIN: string = `
-【读者背景：零基础（简明版）】
-读者完全没接触过人类图，也不打算先学术语。因此：
-- 凡是专业词第一次出现，先用一句大白话说清它对应的是什么生活现象，再把原词放进括号，例如「你的身体会先有反应、头脑随后才跟上（这叫『荐骨权威』）」。
-- 解释一个术语时不许用另一个术语当垫背；优先用日常场景、具体例子和身体感受来描述。
-- 不删减结论和判断，只把说法换成一般人能听懂的话。例如把「三分人，多重定义」写成「你身上同时跑着好几套彼此独立的节奏」。
-- 句子要短，少用括号堆砌与并列名词长串；每一节结尾要能让人用一句话复述。
-`
-
-/** 按面向人群取附加段落；不传时返回空串，保持 v2.4.0 的提示词逐字一致 */
-export function audiencePromptOf(audience?: AiAudience): string {
-  if (audience === 'plain') return PROMPT_SYSTEM_AUDIENCE_PLAIN
-  if (audience === 'pro') return PROMPT_SYSTEM_AUDIENCE_PRO
-  return ''
-}
-
-/** 生效的面向人群：未指定时按「专业版」，与 v2.4.0 及之前的历史风格一致 */
-export function resolveAudience(audience?: AiAudience): AiAudience {
-  return audience === 'plain' ? 'plain' : 'pro'
-}
-
-/**
- * system 提示词按生效档位 / scope 选（与缓存键里的 mode 严格一致）。
- * 第三参显式给 `pro` / `plain` 时追加【读者背景】段落；不传则只返回四套正文，
- * 让未接入受众设置的旧调用点与既有测试保持原样。
- */
-export function systemPromptOf(
-  mode: AiDetailMode,
-  scope?: string,
-  audience?: AiAudience,
-): string {
-  const base =
-    scope === 'full-fusion'
-      ? PROMPT_SYSTEM_FUSION
-      : mode === 'full'
-        ? PROMPT_SYSTEM_FULL
-        : mode === 'detailed'
-          ? PROMPT_SYSTEM_DETAILED
-          : PROMPT_SYSTEM_CONCISE
-  return base + audiencePromptOf(audience)
-}
-
-const MODE_LABEL: Record<AiDetailMode, string> = {
-  concise: '精简',
-  detailed: '详细',
-  full: '完整',
-}
-
-/**
- * user 提示词：固定四段顺序（规范 §4.1）——
- * 【盘面事实】 → 【用户选择】 → 【离线释义】 → 【本次任务】。
- */
-export function buildUserPrompt(args: AiExplainArgs): string {
-  const mode = resolveDetailMode(args.scope, args.detailMode)
-  const parts: string[] = []
-
-  if (args.chartSummary?.trim()) {
-    parts.push(`【盘面事实】\n${args.chartSummary.trim()}`)
-  }
-  const scopeLabel = args.ref ? `${args.scope} · ${args.ref}` : args.scope
-  parts.push(
-    `【用户选择】范围：${scopeLabel}｜角度：${args.angle?.trim() || '综合解读'}｜详细度：${MODE_LABEL[mode]}`,
-  )
-  if (args.offline.trim()) parts.push(`【离线释义】\n${args.offline.trim()}`)
-  let task = '请按 system 的输出契约写一篇整体解读。'
-  if (args.scope === 'full-fusion') {
-    task = '请按 system 的输出契约，基于全部分项要点写一篇全盘融合分析与最终总结论。'
-  } else if (args.scope.startsWith('full-')) {
-    task = `请按 system 的输出契约，只写【用户选择】指定的这一项专项解读（${args.ref ?? ''}），不要写整盘总论。`
-  }
-  parts.push(`【本次任务】${task}`)
-  return parts.join('\n\n')
-}
 
 /* ── 盘面事实块 ─────────────────────────────────────── */
 
@@ -618,17 +358,22 @@ export class AiError extends Error {
   }
 }
 
-const CACHE_PREFIX = 'hdt.ai.cache.v1'
+/** 当前代缓存前缀（v4.0.0 起升代：提示词整体重写，旧键永不再命中） */
+export const CACHE_PREFIX = 'hdt.ai.cache.v2'
+
+/** v3.5.0 及更早的缓存前缀：仅用于清理，不再写入 */
+export const LEGACY_CACHE_PREFIX = 'hdt.ai.cache.v1'
 
 /**
  * 缓存键：提示词版本 + 内核版本 + 接口地址 + 模型 + 配置指纹（Key 的短哈希，不落明文）
- * + scope + 详细度 + 面向人群 + ref + 内容哈希。
+ * + **入口** + scope + 详细度 + **风格** + ref + 内容哈希（ARCH §6.1）。
  *
- * 详细度必须进键：否则「先看精简、再切详细」会直接命中精简缓存，
- * 用户会以为详细版没生效（规范 §4.5）。
- * v2.5.0 面向人群同理：`plain` 与 `pro` 的正文不同，必须分开缓存。
- * token 预算**不进键**：它只影响输出长度上限，同一份解读的不同预算应共享缓存，
- * 否则用户把预算调小一次就要重新付费生成（实为省钱的设定，不该增加成本）。
+ * 为什么 `entry` 必须进键：入口 B 与入口 C 可能产出相同的 `scope / ref / dims`
+ * （例如都选了同一条通道），但两者的提示词契约完全不同（白名单 vs 逐条+汇总），
+ * 不进键就会串档：用户先做了勾选解读，再做综合解读会拿到勾选版的正文。
+ *
+ * 为什么 `style` 取代 `audience`：值相同但语义反转（§2.5），正文不同，必须分开缓存。
+ * token 上限已从设置项删除，**不**进键（旧口径「预算不进键」自然作废）。
  */
 export function cacheKey(cfg: AiConfig, args: AiExplainArgs): string {
   const configTag = hash(cfg.apiKey.trim()).slice(0, 8)
@@ -640,9 +385,10 @@ export function cacheKey(cfg: AiConfig, args: AiExplainArgs): string {
     cfg.baseUrl.trim(),
     cfg.model.trim(),
     configTag,
+    args.entry,
     args.scope,
     mode,
-    resolveAudience(args.audience),
+    resolveStyle(args.style ?? args.audience),
     args.ref ?? '',
     hash(args.offline + (args.chartSummary ?? '')),
   ].join(':')
@@ -670,17 +416,40 @@ function writeCache(key: string, value: string) {
   }
 }
 
-export function clearAiCache() {
+/** 删除所有 key 以 `prefix` 开头的 localStorage 项，返回删除条数（存储不可用时返回 0） */
+function removeCacheByPrefix(prefix: string): number {
   try {
     const keys: string[] = []
     for (let i = 0; i < localStorage.length; i += 1) {
       const k = localStorage.key(i)
-      if (k && k.startsWith(CACHE_PREFIX)) keys.push(k)
+      if (k && k.startsWith(prefix)) keys.push(k)
     }
     keys.forEach((k) => localStorage.removeItem(k))
+    return keys.length
   } catch {
-    /* ignore */
+    return 0
   }
+}
+
+/** 清空当前代（v2）与祖传（v1*）的解读缓存；设置页「清空缓存」与升代迁移共用 */
+export function clearAiCache(): void {
+  removeCacheByPrefix(CACHE_PREFIX)
+  removeCacheByPrefix(LEGACY_CACHE_PREFIX)
+}
+
+/**
+ * 清理 v1 代缓存（幂等，ARCH §6.2-3）。
+ *
+ * 为什么必须清：v1 键在 v4.0.0 里永远不会命中（前缀已升代），
+ * 留着只会白占 localStorage 配额，配额写满后连设置都存不下。
+ *
+ * 调用点：`stores/settings.init()` 里执行一次（T03 接线）。
+ * 幂等性由「按前缀扫描 + 删除」天然保证：第二次调用删到 0 条，不抛错。
+ *
+ * @returns 被删除的键数量，供日志与调试断言
+ */
+export function migrateAiCacheV1(): number {
+  return removeCacheByPrefix(LEGACY_CACHE_PREFIX)
 }
 
 export function validateAiConfig(cfg: AiConfig): string | null {
@@ -713,10 +482,44 @@ export function resolveEndpoint(baseUrl: string): string {
   return `${url}/v1/chat/completions`
 }
 
+/** 内部信号：接口以 400/422 拒绝了 max_tokens（只在本文件内流转，绝不外泄给调用方） */
+class MaxTokensOverflowError extends Error {
+  constructor(
+    readonly status: number,
+    readonly bodyText: string,
+  ) {
+    super(`max_tokens 被拒（HTTP ${status}）`)
+    this.name = 'MaxTokensOverflowError'
+  }
+}
+
+/** 把传输层失败翻译成既有 6 类 AiError（不改任何既有文案与分类） */
+function httpErrorOf(result: AiHttpResult, cfg: AiConfig): AiError {
+  if (result.errorKind === 'cancelled' || result.errorKind === 'timeout') {
+    return new AiError(
+      `请求超时（${Math.round(cfg.timeoutMs / 1000)} 秒），请重试或调大超时`,
+      'timeout',
+    )
+  }
+  if (result.status) {
+    return new AiError(
+      `接口返回 ${result.status}${result.bodyText ? `：${result.bodyText.slice(0, 200)}` : ''}`,
+      'http',
+    )
+  }
+  // P3（v3.0.0）：按实际传输通道给可执行的提示，而不是一律甩锅给 CORS。
+  // 桌面 / 安卓走原生出网，不受同源策略限制，那里失败就是真实网络或配置问题。
+  const hint =
+    aiTransportKind() === 'web'
+      ? '当前是网页端，带鉴权头的请求可能被浏览器跨域策略拦截；请改用桌面版或安卓版，或确认接口允许 CORS。'
+      : '已走原生网络通道，不受浏览器跨域限制；请检查网络连通、接口地址与密钥。'
+  return new AiError(`网络请求失败：${result.error || '未知错误'}。${hint}`, 'network')
+}
+
 export async function explain(args: AiExplainArgs): Promise<string> {
   const { cfg } = args
-  /** 受众缺省按专业版；提示词与缓存键必须读同一个值，否则会串档 */
-  const audience = resolveAudience(args.audience)
+  /** 风格缺省按专业版；提示词与缓存键必须读同一个值，否则会串档 */
+  const style = resolveStyle(args.style ?? args.audience)
   const startedAt = Date.now()
   /** 6 个客户端观测点统一出口；回调抛错不得影响请求结果 */
   const emit = (stage: AiStage, extra?: Partial<AiStageEvent>) => {
@@ -744,7 +547,7 @@ export async function explain(args: AiExplainArgs): Promise<string> {
   }
   emit('config-validated')
 
-  const key = cacheKey(cfg, { ...args, audience })
+  const key = cacheKey(cfg, { ...args, style })
   if (cfg.cacheEnabled) {
     const hit = readCache(key)
     // ★ 命中缓存时确实没有发请求，不能谎报 request-sent
@@ -754,121 +557,153 @@ export async function explain(args: AiExplainArgs): Promise<string> {
     }
   }
 
-  const params = resolveRequestParams(args.scope, args.detailMode, args.tokenBudget)
+  const params = resolveRequestParams(args.scope, args.detailMode)
+  // system / user 提示词只拼一次：降级只换 max_tokens，不改正文
+  const systemPrompt = systemPromptOf({
+    entry: args.entry,
+    detail: params.mode,
+    style,
+    scope: args.scope,
+    dims: args.dims,
+  })
+  const userPrompt = buildUserPrompt(args)
+
   const controller = new AbortController()
-  // ★ 整体超时语义与 v2.4.0 一致：`cfg.timeoutMs` 覆盖**整次解读**（含全部续写轮），
-  //   而不是每轮各给一份，否则完整版多轮会把等待时间放大到 3 倍。
+  // ★ 整体超时语义与 v2.4.0 一致：`cfg.timeoutMs` 覆盖**整次解读**（含全部续写轮
+  //   与全部降级重试），而不是每档各给一份，否则「越界 + 续写」会把等待时间放大数倍。
   const deadline = Date.now() + Math.max(3000, cfg.timeoutMs)
   const timer = setTimeout(() => controller.abort(), Math.max(3000, cfg.timeoutMs))
   const onAbort = () => controller.abort()
   args.signal?.addEventListener('abort', onAbort)
 
+  /**
+   * 降级进度：**只活在本函数栈内**（ARCH §7.3）。
+   * 绝不写模块级变量——完整档会并发 6 条以上请求，一条被拒就降级会把
+   * 「128000 能用」的其他请求也一起压到 64000，属于静默降质。
+   */
+  let step: MaxTokensStep = FIRST_MAX_TOKENS_STEP
+  const trace: FallbackTrace = startFallbackTrace()
+
   try {
     type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
-    const messages: ChatMessage[] = [
-      { role: 'system', content: systemPromptOf(params.mode, args.scope, audience) },
-      { role: 'user', content: buildUserPrompt(args) },
-    ]
-
     let content = ''
     let truncated = false
-    for (let round = 0; round <= MAX_CONTINUATIONS; round += 1) {
-      // 仅第一轮发 request-sent；续写轮不再重复
-      if (round === 0) emit('request-sent')
-      const remaining = Math.max(1000, deadline - Date.now())
-      const httpInit: AiHttpInit = {
-        url: resolveEndpoint(cfg.baseUrl),
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${cfg.apiKey}`,
-        },
-        // 只有显式要求流式时才带 stream:true；默认请求体与 v2.5.0 逐字一致
-        body: JSON.stringify(
-          args.onStream
-            ? {
-                model: cfg.model,
-                temperature: params.temperature,
-                max_tokens: params.maxTokens,
-                messages,
-                stream: true,
-              }
-            : {
-                model: cfg.model,
-                temperature: params.temperature,
-                max_tokens: params.maxTokens,
-                messages,
-              },
-        ),
-        timeoutMs: remaining,
-        signal: controller.signal,
-      }
-      const result = args.onStream
-        ? await aiHttpStream(httpInit, args.onStream)
-        : await aiHttpRequest(httpInit)
+    let requestSentEmitted = false
 
-      if (!result.ok) {
-        // 传输层只回传事实，这里翻译成既有 6 类 AiError，不改任何既有文案与分类
-        if (result.errorKind === 'cancelled') {
-          if (args.signal?.aborted) throw new AiError('已取消', 'cancelled')
-          throw new AiError(
-            `请求超时（${Math.round(cfg.timeoutMs / 1000)} 秒），请重试或调大超时`,
-            'timeout',
+    // ── 阶梯循环：每一档都是一次完整请求（含全部续写轮）──
+    for (;;) {
+      // 每档都从干净的对话前缀开始：上一档失败可能是半句话，不能带进下一次
+      const messages: ChatMessage[] = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ]
+      content = ''
+      truncated = false
+      try {
+        for (let round = 0; round <= MAX_CONTINUATIONS; round += 1) {
+          // 仅全局第一次发 request-sent；续写轮与降级重试都不重复
+          if (!requestSentEmitted) {
+            emit('request-sent')
+            requestSentEmitted = true
+          }
+          const remaining = Math.max(1000, deadline - Date.now())
+          const body: Record<string, unknown> = {
+            model: cfg.model,
+            temperature: params.temperature,
+            // 末位档为 undefined → 请求体不带 max_tokens（交给服务端默认值）
+            ...maxTokensBodyOf(step),
+            messages,
+          }
+          if (args.onStream) body.stream = true
+          const httpInit: AiHttpInit = {
+            url: resolveEndpoint(cfg.baseUrl),
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${cfg.apiKey}`,
+            },
+            body: JSON.stringify(body),
+            timeoutMs: remaining,
+            signal: controller.signal,
+          }
+          const result = args.onStream
+            ? await aiHttpStream(httpInit, args.onStream)
+            : await aiHttpRequest(httpInit)
+
+          if (!result.ok) {
+            if (result.errorKind === 'cancelled' && args.signal?.aborted) {
+              throw new AiError('已取消', 'cancelled')
+            }
+            // 越界类拒绝 → 抛内部信号，由外层阶梯决定是否降级；其余原样翻译成 AiError
+            if (result.status && isMaxTokensRejection(result.status, result.bodyText ?? '')) {
+              throw new MaxTokensOverflowError(result.status, result.bodyText ?? '')
+            }
+            throw httpErrorOf(result, cfg)
+          }
+
+          let data: {
+            choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
+          }
+          try {
+            data = JSON.parse(result.bodyText) as typeof data
+          } catch (err) {
+            // 接口返回了非 JSON（例如网关错误页），属于格式问题而非网络问题。
+            throw new AiError(`接口返回的不是合法 JSON：${(err as Error).message}`, 'format')
+          }
+          const choice = data.choices?.[0]
+          const piece = choice?.message?.content?.trim()
+          if (!piece) throw new AiError('接口未返回可用的解读内容', 'format')
+          content = content ? `${content}\n\n${piece}` : piece
+          emit('response-received', { round })
+
+          // finish_reason='length'：输出被 max_tokens 截断，继续向模型要剩余部分，
+          // 而不是把半句话当成完整解读返回（完整版融合最容易触发）。
+          if (choice?.finish_reason !== 'length') break
+          if (round === MAX_CONTINUATIONS) {
+            // 续写配额用完仍未收尾：内容照常返回，但必须标记「已触顶」，
+            // 否则批量生成会把半截解读当成完整结果存进档案（v2.5.0）。
+            truncated = true
+            console.warn(
+              `[AI] 已续写 ${MAX_CONTINUATIONS} 次仍触顶（scope=${args.scope} / ${params.mode}），输出可能不完整`,
+            )
+            break
+          }
+          console.warn(
+            `[AI] 输出达到 max_tokens，自动续写第 ${round + 1} 段（scope=${args.scope} / ${params.mode}）`,
           )
+          messages.push({ role: 'assistant', content })
+          messages.push({ role: 'user', content: CONTINUE_PROMPT })
         }
-        if (result.errorKind === 'timeout') {
+        // 这一档跑完（无异常）→ 结束降级
+        break
+      } catch (err) {
+        if (err instanceof MaxTokensOverflowError && !args.signal?.aborted) {
+          const next = nextMaxTokensStep(step)
+          if (next !== null) {
+            pushFallbackStep(trace, next)
+            console.warn(
+              `[AI] max_tokens=${step ?? '（未带该字段）'} 被拒（HTTP ${err.status}），` +
+                `降级到 ${next ?? '（不带该字段）'}（scope=${args.scope} / ${params.mode}）`,
+            )
+            step = next
+            continue
+          }
+          // 阶梯到底：把原始 http 错误抛给用户，不伪造内容
           throw new AiError(
-            `请求超时（${Math.round(cfg.timeoutMs / 1000)} 秒），请重试或调大超时`,
-            'timeout',
-          )
-        }
-        if (result.status) {
-          throw new AiError(
-            `接口返回 ${result.status}${result.bodyText ? `：${result.bodyText.slice(0, 200)}` : ''}`,
+            `接口返回 ${err.status}${err.bodyText ? `：${err.bodyText.slice(0, 200)}` : ''}`,
             'http',
           )
         }
-        // P3（v3.0.0）：按实际传输通道给可执行的提示，而不是一律甩锅给 CORS。
-        // 桌面 / 安卓走原生出网，不受同源策略限制，那里失败就是真实网络或配置问题。
-        const hint =
-          aiTransportKind() === 'web'
-            ? '当前是网页端，带鉴权头的请求可能被浏览器跨域策略拦截；请改用桌面版或安卓版，或确认接口允许 CORS。'
-            : '已走原生网络通道，不受浏览器跨域限制；请检查网络连通、接口地址与密钥。'
-        throw new AiError(`网络请求失败：${result.error || '未知错误'}。${hint}`, 'network')
+        throw err
       }
+    }
 
-      let data: {
-        choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
-      }
-      try {
-        data = JSON.parse(result.bodyText) as typeof data
-      } catch (err) {
-        // 接口返回了非 JSON（例如网关错误页），属于格式问题而非网络问题。
-        throw new AiError(`接口返回的不是合法 JSON：${(err as Error).message}`, 'format')
-      }
-      const choice = data.choices?.[0]
-      const piece = choice?.message?.content?.trim()
-      if (!piece) throw new AiError('接口未返回可用的解读内容', 'format')
-      content = content ? `${content}\n\n${piece}` : piece
-      emit('response-received', { round })
-
-      // finish_reason='length'：输出被 max_tokens 截断，继续向模型要剩余部分，
-      // 而不是把半句话当成完整解读返回（完整版融合最容易触发）。
-      if (choice?.finish_reason !== 'length') break
-      if (round === MAX_CONTINUATIONS) {
-        // 续写配额用完仍未收尾：内容照常返回，但必须标记「已触顶」，
-        // 否则批量生成会把半截解读当成完整结果存进档案（v2.5.0）。
-        truncated = true
-        console.warn(
-          `[AI] 已续写 ${MAX_CONTINUATIONS} 次仍触顶（scope=${args.scope} / ${params.mode}），输出可能不完整`,
-        )
-        break
-      }
+    if (trace.degraded) {
       console.warn(
-        `[AI] 输出达到 max_tokens，自动续写第 ${round + 1} 段（scope=${args.scope} / ${params.mode}）`,
+        `[AI] 本条请求发生 max_tokens 降级：${trace.tried
+          .map((t) => (t === undefined ? '省略' : String(t)))
+          .join(' → ')}（scope=${args.scope} / ${params.mode}）`,
       )
-      messages.push({ role: 'assistant', content })
-      messages.push({ role: 'user', content: CONTINUE_PROMPT })
     }
 
     // 防幻觉：只告警不阻断——内容仍原样展示，便于用户自行核对
@@ -882,8 +717,8 @@ export async function explain(args: AiExplainArgs): Promise<string> {
       )
     }
 
-    // ★ 截断的内容不进缓存：否则「调小预算试一次」会把半截结果写进缓存，
-    //   之后即使调大预算也永远命中这份残缺内容（用户以为接口坏了）。
+    // ★ 截断的内容不进缓存：否则一次触顶会把半截结果写进缓存，
+    //   之后即使模型恢复正常也永远命中这份残缺内容（用户以为接口坏了）。
     if (cfg.cacheEnabled && !truncated) writeCache(key, content)
     // 截断标记走本次请求的 onStage 回调，不用模块级变量：
     // 批量并发时多份解读会同时完成，模块级「上一次」会串台。

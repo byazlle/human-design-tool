@@ -10,7 +10,8 @@
  */
 import { useUiStore } from '../stores/ui'
 import { makeReading, useReadingsStore } from '../stores/readings'
-import type { AiAudience, AiDetailMode } from '../types/hd'
+import type { AiDetailMode, AiStyle } from '../types/hd'
+import type { AiEntry } from '../types/aiReading'
 
 const HISTORY_KEY = 'hdt.ai.history.v1'
 const HISTORY_LIMIT = 50
@@ -29,8 +30,12 @@ export interface AiResultSnapshot {
    * v3.0.0 之前无条件缺省 detailed，导致其余 4 个视图存进档案的档位是错的。
    */
   mode?: AiDetailMode
-  /** 面向人群；缺省回落到生成时锁定的受众（不是设置页当前值） */
-  audience?: AiAudience
+  /** 表达风格；缺省回落到生成时锁定的风格（不是设置页当前值） */
+  style?: AiStyle
+  /** @deprecated 用 `style`（两者都传时 `style` 优先） */
+  audience?: AiStyle
+  /** 解读入口；缺省回落到本次请求锁定的入口 */
+  entry?: AiEntry
   /** 输出是否因 token 上限触顶；缺省回落到生成时记录的标记 */
   truncated?: boolean
 }
@@ -73,7 +78,8 @@ export function saveAiResult(snapshot: AiResultSnapshot): void {
         scope,
         ref,
         mode: snapshot.mode ?? meta.resultMode ?? 'detailed',
-        audience: snapshot.audience ?? meta.resultAudience ?? 'pro',
+        style: snapshot.style ?? snapshot.audience ?? meta.resultStyle ?? meta.resultAudience ?? 'pro',
+        entry: snapshot.entry ?? meta.resultEntry,
         truncated: snapshot.truncated ?? meta.resultTruncated ?? false,
         title: snapshot.title,
         content: snapshot.content,

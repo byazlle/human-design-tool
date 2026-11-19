@@ -52,12 +52,14 @@ const DISCLAIMER =
   '本报告由用户自行配置的 AI 接口生成，内容仅基于本盘结构与离线释义，不构成医疗、命运、吉凶或投资建议；如与事实不符，请以盘面数据与离线释义为准。'
 
 const SECTION_TITLES: Record<FullSectionKind, string> = {
+  module: '全盘模块专项解读',
   dimension: '八大维度专项解读',
   gate: '逐闸门专项解读',
   channel: '逐通道专项解读',
 }
 
-const SECTION_ORDER: readonly FullSectionKind[] = ['dimension', 'gate', 'channel'] as const
+// v4.0.0：入口 A 的六个模块 kind 为 'module'，排在维度之前（它本身已按 ①–⑥ 排序）
+const SECTION_ORDER: readonly FullSectionKind[] = ['module', 'dimension', 'gate', 'channel'] as const
 const CN_NUM = ['一', '二', '三', '四', '五', '六', '七', '八'] as const
 
 export interface ExportResult {

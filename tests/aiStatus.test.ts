@@ -108,15 +108,22 @@ describe('useAiStatus · 完整档进度与两条数据链互斥', () => {
     expect(status.snapshot.value.phase).toBe('waiting')
   })
 
-  it('终态常驻的并发同义提示：分项阶段 N/Y/K 长文案被记住', () => {
+  it('终态常驻的并发同义提示：分项阶段的「最高并发数」文案被记住', () => {
     status.begin('full', 60000)
-    const degraded =
-      '本次需并发 10 项，超过并发上限 4，已按上限 4 分 3 批执行（全部 10 项都会执行，不会减少）；可在设置页提高并发上限以启用一次性并发'
-    status.applyProgress(progress(1, degraded))
+    // v4.0.0：N/Y/K 降级文案已随双旋钮删除，滑动窗口的并发文案写在 phase 里
+    const banner = '最高并发数 3 · 在跑 3 / 总 11'
+    status.applyProgress({ ...progress(1), phase: banner })
     status.applyProgress(progress(11, '已完成'))
     status.finish('completed')
-    expect(status.snapshot.value.terminalHint).toContain('全部 10 项都会执行，不会减少')
-    expect(status.snapshot.value.terminalHint).toContain('分 3 批执行')
+    expect(status.snapshot.value.terminalHint).toContain('最高并发数 3')
+  })
+
+  it('起速阶段的文案同样被记住（每秒 1 个）', () => {
+    status.begin('full', 60000)
+    status.applyProgress({ ...progress(1), phase: '起速中（每秒 1 个）· 已启动 1 / 3' })
+    status.applyProgress(progress(11, '已完成'))
+    status.finish('completed')
+    expect(status.snapshot.value.terminalHint).toContain('起速中（每秒 1 个）')
   })
 })
 

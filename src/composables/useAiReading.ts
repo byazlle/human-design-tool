@@ -20,11 +20,22 @@ import {
   type FullReadingPlan,
   type FullReadingUpdate,
 } from '../services/aiFullReading'
+import { planReading } from '../services/aiReadingPlan'
+import { runReadingPlan } from '../services/aiReadingRunner'
+import type { ReadingDimKey } from '../services/chartFacts'
 import { serializeFullReport } from '../services/aiExport'
 import { useAiStatus } from './useAiStatus'
 import { PANEL_STREAM_KEY, useAiStreams } from './useAiStreams'
 import type { AiStreamEvents } from '../services/aiTransport'
 import type { AiDetailMode, AiStepMode, BodyGraph } from '../types/hd'
+import type {
+  AiEntry,
+  ReadingDirection,
+  ReadingProgress,
+  ReadingRequest,
+  SelectionPick,
+} from '../types/aiReading'
+import type { AiProgress, FullReport, FullReportSection } from '../types/report'
 
 interface RunOptions {
   scope: string
@@ -44,13 +55,22 @@ interface RunOptions {
    * 单点闸门/通道/中心仍按三档做单次解读（Q3.3）。
    */
   full?: boolean
-  /** 完整版串行 / 并发；不传跟随全局设置 */
+  /** @deprecated 串并行已并入「最高并发数」；字段保留但不再读取。 */
   stepMode?: AiStepMode
   /**
    * 关系场（合盘 / 双盘对比）的完整版编排计划：注入合规任务清单与事实块。
    * 不传时走单人整盘默认编排，行为不变。
    */
   fullPlan?: FullReadingPlan
+  /* ── v4.0.0 三入口（有 `entry` 即走新路径，无则走上面的旧单点路径）── */
+  /** 入口：full 全盘 / composite 综合 / selection 勾选 */
+  entry?: AiEntry
+  /** 入口 B 勾选的维度（按 READING_DIMENSIONS 顺序） */
+  dims?: ReadingDimKey[]
+  /** 入口 C 的勾选对象 */
+  selection?: SelectionPick
+  /** 入口 A/B 的解读方向（自定义优先） */
+  direction?: ReadingDirection
 }
 
 /** 上一次请求参数：仅用于「重试」，不写入 ui 状态 */
@@ -71,6 +91,20 @@ let activeController: AbortController | null = null
 
 function errorKindOf(err: unknown): AiError['kind'] {
   return err instanceof AiError ? err.kind : 'network'
+}
+
+/** `ReadingProgress`（10 字段）→ `AiProgress`（8 字段，旧契约一字不改） */
+function toAiProgress(p: ReadingProgress): AiProgress {
+  return {
+    done: p.done,
+    total: p.total,
+    current: p.current,
+    phase: p.phase,
+    elapsedMs: p.elapsedMs,
+    etaMs: p.etaMs,
+    skipped: p.skipped,
+    failed: p.failed,
+  }
 }
 
 function terminalPhaseOf(kind: AiError['kind']): 'failed' | 'timeout' | 'cancelled' {
@@ -167,17 +201,13 @@ export function useAiReading() {
     const chart = options.chart!
     const title = options.title
     const generatedAt = new Date().toISOString()
-    // 条件 ② 降级 info toast：每次 runFull 重置，保证每次降级恰好一次
-    let degradedNotified = false
     const publish = (update: FullReadingUpdate) => {
       status.applyProgress(update.progress)
-      if (!degradedNotified && update.progress.phase.includes('按上限')) {
-        degradedNotified = true
-        ui.notify(update.progress.current, 'info')
-      }
       ui.setAiProgress(update.progress)
       ui.setAiReport({
         title,
+        // 旧完整档路径固定属于「综合解读」入口（三入口走 runEntry）
+        entry: 'composite',
         sections: update.sections,
         fusion: update.fusion,
         summary: update.summary,
@@ -193,13 +223,11 @@ export function useAiReading() {
         cfg: { ...settings.ai },
         chart,
         title,
-        stepMode: options.stepMode ?? settings.aiStepMode,
+        // v4.0.0 单旋钮：串并行已并入「最高并发数」，旧 stepMode 一律忽略
+        maxConcurrency: settings.aiMaxConcurrency,
+        style: settings.aiStyle,
         signal: own.signal,
         onUpdate: publish,
-        aiConcurrency: settings.aiConcurrency,
-        aiConcurrencyLimit: settings.aiConcurrencyLimit,
-        audience: settings.aiAudience,
-        tokenBudget: settings.aiTokenBudget,
         streams: fullStreamHooks,
         ...(options.fullPlan ?? {}),
       })
@@ -223,6 +251,150 @@ export function useAiReading() {
     }
   }
 
+  /**
+   * 三入口执行（v4.0.0）：
+   * - 精简 / 详细档 → 计划只有 1 个任务，一次 `explain` 写完（流式 hook 与旧路径一致）；
+   * - 完整档 → `runReadingPlan` 走滑动窗口 + 末位融合，进度与「报告随生成增长」都写进 UI。
+   *
+   * 空勾选（B 没勾维度 / C 什么都没勾）由计划器返回 `tasks: []`，这里直接给错误提示，
+   * 不发请求、不伪造内容——按钮禁用是 UI 的职责，服务层不抛异常。
+   */
+  async function runEntry(
+    options: RunOptions,
+    own: AbortController,
+    stream: { events: AiStreamEvents; flush: () => void },
+  ) {
+    const chart = options.chart!
+    const entry = options.entry!
+    const title = options.title
+    const detail: AiDetailMode = options.full
+      ? 'full'
+      : (options.detailMode ?? settings.aiDetailMode)
+    const style = settings.aiStyle
+    const generatedAt = new Date().toISOString()
+
+    const req: ReadingRequest = {
+      entry,
+      detail,
+      style,
+      chart,
+      chartSummary: options.chartSummary,
+      dims: options.dims,
+      selection: options.selection,
+      direction: options.direction,
+      archiveName: title,
+    }
+    const plan = planReading(req)
+    ui.setAiEntryContext({
+      entry,
+      dims: options.dims,
+      selection: options.selection ?? null,
+      direction: options.direction,
+    })
+
+    if (plan.tasks.length === 0) {
+      const message = '请至少选择一个维度或条目'
+      ui.setAiError(message)
+      stream.flush()
+      status.finish('failed', 'config')
+      return
+    }
+
+    try {
+      /* ── 单次档：一次写完 ── */
+      if (plan.singleShot) {
+        const task = plan.tasks[0]
+        const content = await explain({
+          cfg: { ...settings.ai },
+          entry,
+          scope: task.scope,
+          ref: task.ref,
+          offline: task.offline,
+          chartSummary:
+            options.chartSummary ?? (options.chart ? chartSummaryOf(options.chart) : undefined),
+          detailMode: detail,
+          style,
+          dims: entry === 'composite' ? options.dims : undefined,
+          angle: options.direction?.label,
+          signal: own.signal,
+          onStream: stream.events,
+          onStage: (e) => {
+            status.applyStage(e)
+            if (e.stage === 'completed') {
+              ui.setAiResultMeta({ truncated: Boolean(e.truncated) })
+              if (e.truncated) {
+                ui.notify('本次输出已达到模型上限，内容可能不完整；可重新生成', 'info')
+              }
+            }
+          },
+        })
+        if (own.signal.aborted) {
+          ui.setAiLoading(false)
+          stream.flush()
+          streams.finish(PANEL_STREAM_KEY, false, '已取消')
+          return
+        }
+        ui.setAiContent(content)
+        stream.flush()
+        streams.finish(PANEL_STREAM_KEY, true)
+        status.finish('completed')
+        return
+      }
+
+      /* ── 完整档：多请求 + 末位融合 ── */
+      const byKey = new Map<string, FullReportSection>()
+      const order = plan.tasks.map((t) => t.key)
+      const sectionsInOrder = (): FullReportSection[] =>
+        order.flatMap((k) => {
+          const hit = byKey.get(k)
+          return hit ? [hit] : []
+        })
+      const report = await runReadingPlan({
+        req,
+        plan,
+        cfg: { ...settings.ai },
+        chartSummary: options.chartSummary,
+        maxConcurrency: settings.aiMaxConcurrency,
+        signal: own.signal,
+        onUpdate: (p) => {
+          const progress = toAiProgress(p)
+          status.applyProgress(progress)
+          ui.setAiProgress(progress)
+          ui.setAiReport({
+            title,
+            entry,
+            sections: sectionsInOrder(),
+            fusion: '',
+            summary: '',
+            totalChars: sectionsInOrder().reduce((n, s) => n + s.content.length, 0),
+            skipped: p.skipped,
+            generatedAt,
+          })
+        },
+        onSection: (section) => byKey.set(section.key, section),
+      })
+      if (own.signal.aborted) {
+        ui.setAiLoading(false)
+        return
+      }
+      ui.setAiReport(report)
+      ui.setAiContent(serializeFullReport(report))
+      status.finish('completed')
+    } catch (err) {
+      if (own.signal.aborted) {
+        ui.setAiLoading(false)
+        return
+      }
+      const message =
+        err instanceof AiError ? err.message : `调用失败：${(err as Error).message ?? '未知错误'}`
+      ui.setAiError(message)
+      stream.flush()
+      streams.finish(PANEL_STREAM_KEY, false, message)
+      const kind = errorKindOf(err)
+      status.finish(terminalPhaseOf(kind), kind)
+    }
+  }
+
   async function run(options: RunOptions, externalSignal?: AbortSignal) {
     lastOptions = { ...options }
     const mode: AiDetailMode = options.full
@@ -241,8 +413,13 @@ export function useAiReading() {
       ui.openAi(options.scope, options.ref, options.title)
     }
     // v3.0.0：生成元数据在请求发起时锁定，保存进档案时不读「当前设置」——
-    // 用户可能生成后改了受众 / 档位，用当前值会把记录标错，进而挡住批量跳过判定。
-    ui.setAiResultMeta({ audience: settings.aiAudience, mode, truncated: false })
+    // 用户可能生成后改了风格 / 档位，用当前值会把记录标错，进而挡住批量跳过判定。
+    ui.setAiResultMeta({
+      style: settings.aiStyle,
+      mode,
+      entry: options.entry,
+      truncated: false,
+    })
 
     const configError = validateAiConfig(settings.ai)
     if (configError) {
@@ -266,7 +443,19 @@ export function useAiReading() {
     // abort() 可能把 loading 置回 false（取消旧请求），这里统一重新进入 loading
     ui.setAiLoading(true)
 
-    // 完整版：整盘类请求才走多轮编排；单点解读仍按三档做单次请求
+    // v4.0.0 三入口：有 entry 就走计划器（单次 or 滑动窗口 + 融合）
+    if (options.entry && options.chart) {
+      try {
+        await runEntry(options, own, stream)
+      } finally {
+        stream.flush()
+        streams.finish(PANEL_STREAM_KEY, !ui.aiReading.error, ui.aiReading.error ?? '')
+        if (activeController === own) activeController = null
+      }
+      return
+    }
+
+    // 旧路径：整盘类请求走多轮编排；单点解读仍按三档做单次请求
     if (options.full && options.chart) {
       try {
         await runFull(options, own)
@@ -281,6 +470,8 @@ export function useAiReading() {
     try {
       const content = await explain({
         cfg: { ...settings.ai },
+        // 旧单点路径（闸门 / 通道 / 中心 / 凯龙）没有三入口归属，按综合解读记
+        entry: 'composite',
         scope: options.scope,
         ref: options.ref,
         offline: options.offline,
@@ -288,8 +479,7 @@ export function useAiReading() {
           options.chartSummary ?? (options.chart ? chartSummaryOf(options.chart) : undefined),
         detailMode: options.detailMode ?? settings.aiDetailMode,
         angle: options.angle,
-        audience: settings.aiAudience,
-        tokenBudget: settings.aiTokenBudget,
+        style: settings.aiStyle,
         signal: own.signal,
         onStream: stream.events,
         onStage: (e) => {
@@ -297,7 +487,7 @@ export function useAiReading() {
           if (e.stage === 'completed') {
             ui.setAiResultMeta({ truncated: Boolean(e.truncated) })
             if (e.truncated) {
-              ui.notify('本次输出已达到 token 上限，内容可能不完整；可调高上限后重新生成', 'info')
+              ui.notify('本次输出已达到模型上限，内容可能不完整；可重新生成', 'info')
             }
           }
         },

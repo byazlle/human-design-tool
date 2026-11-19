@@ -126,7 +126,7 @@ function saveAi() {
     scope: aiState.value.scope || 'single',
     ref: aiState.value.ref ?? (ui.panel ? String(ui.panel.ref) : '-'),
     mode: aiState.value.resultMode,
-    audience: aiState.value.resultAudience,
+    style: aiState.value.resultStyle,
     truncated: aiState.value.resultTruncated,
   })
 }

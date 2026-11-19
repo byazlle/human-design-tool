@@ -22,7 +22,7 @@ import {
   relationshipFullPlan,
   relationshipSummary,
 } from '../src/services/aiRelationshipReading'
-import { buildFullTasks, runFullReading } from '../src/services/aiFullReading'
+import { runFullReading } from '../src/services/aiFullReading'
 import { CENTER_IDS } from '../src/types/hd'
 import type { AiConfig, BodyGraph, CenterId } from '../src/types/hd'
 import type { AiExplainArgs } from '../src/services/aiClient'
@@ -111,13 +111,13 @@ describe('关系场合规事实', () => {
     expect(f).not.toMatch(/【类型】|【内在权威】|【轮回交叉】|undefined/)
   })
 
-  it('默认单人编排遇到合图时自动切关系场事实块（守卫生效）', () => {
+  it('关系场事实块只保留「本盘为关系场」声明，个体结论一律不出现', () => {
     const r = pair()
-    const tasks = buildFullTasks(mergedAsChart(r))
+    const tasks = buildRelationshipTasks(r, PAIR)
     const all = tasks.map((t) => t.offline).join('\n')
-    expect(all).toContain('【关系场】')
-    expect(all).toContain('个体层面的结论不进入关系场')
-    expect(all).not.toMatch(/【类型】|【内在权威】|定义型：|undefined/)
+    expect(all).toContain('【口径约束】本盘为关系场')
+    expect(all).toContain('这几项一律不得输出')
+    expect(all).not.toMatch(/【类型】|【内在权威】|定义型：|【轮回交叉】|undefined/)
   })
 })
 

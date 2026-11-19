@@ -154,7 +154,6 @@ async function requestCompareAi() {
     detailMode: settings.aiDetailMode,
     angle: '双盘对比',
     full: isFull,
-    stepMode: settings.aiStepMode,
     fullPlan: isFull ? relationshipFullPlan(r, { pairNames: pairNames.value }) : undefined,
   })
 }
@@ -168,7 +167,7 @@ function saveAi() {
     scope: aiState.value.scope || 'compare',
     ref: `${aId.value}:${bId.value}`,
     mode: aiState.value.resultMode,
-    audience: aiState.value.resultAudience,
+    style: aiState.value.resultStyle,
     truncated: aiState.value.resultTruncated,
   })
 }

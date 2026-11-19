@@ -31,6 +31,8 @@ const conciseInput: ReportInput = {
 
 const fullReport: FullReport = {
   title: '张三 / 完整盘',
+  // v4.0.0：FullReport 新增 entry，供导出页眉与「最近解读」筛选
+  entry: 'composite',
   sections: [
     { kind: 'dimension', key: 'dimension:综合解读', title: '综合解读', content: '维度正文 A' },
     { kind: 'gate', key: 'gate:13', title: '闸门 13', content: '闸门正文 B' },

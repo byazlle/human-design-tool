@@ -162,7 +162,7 @@ export function relationshipFactBlock(r: CompositeResult, pairNames?: PairNames)
     '',
     quadrantsBlock(r),
     '',
-    '【口径约束】本盘为两人合图（连接盘），没有独立的类型、内在权威、定义型与轮回交叉；只讨论影响力方向、共鸣区、共同放大区与四类连接通道，个体层面的结论不进入关系场。',
+    '【口径约束】本盘为关系场：合盘没有类型 / 内在权威 / 定义型 / 轮回交叉，这几项一律不得输出；只谈影响力方向、共鸣区、共同放大区与四类连接通道（完整口径见 system 的基础契约第 5 条，此处不再重复）。',
     '',
     relationshipBlock(r),
     '',

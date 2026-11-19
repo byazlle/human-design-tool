@@ -2,6 +2,81 @@
 
 遵循「主版本.功能版本.修订版本」；版本号唯一来源为根 `package.json`。
 
+## v3.6.0（2026-11-19）
+
+> 主题：**AI 解读重构——三入口 / 双配置维度 / 128000 token / 滑动窗口**。
+> 提示词整体重写并分层，并发从「双旋钮」收敛为单参数，token 上限彻底取消。
+> 计算内核（星历、曼陀罗锚点 29.875 / 302.000）与桌面冒烟契约零改动。
+
+### 一、新增
+
+- **三入口**：`views/AiWorkspaceView.vue` 重做为左栏 8 段布局，新增 6 个组件（`components/ai/`）：
+  `AiEntryTabs`（入口标签，键盘可切）/ `AiEntryAPanel`（6 模块说明）/ `AiEntryBPanel`（维度 + 方向）/
+  `AiEntryCPanel`（通道 / 闸门 / 三个可选模块）/ `AiModuleList`（分项列表，边生成边增长）/
+  `AiConcurrencyField`（最高并发数输入）。运行中禁用入口、档案、档位、风格切换。
+- **提示词分层**（`services/aiPrompt.ts`）：12 个段落常量 + `systemPromptOf({entry, detail, style, scope?, dims?})`
+  五段拼装（基础契约 → 入口 → 档位 → 风格 → 范围），正文权威文本为 `docs/spec/AI-PROMPT-v4.0.md`，
+  由 `scripts/sync-prompt-spec.mjs --check` 与 `tests/ai-prompt.test.ts` 逐字守护。
+- **请求 → 计划**（`services/aiReadingPlan.ts`）：纯函数 `planReading(req)` 决定任务清单、
+  末位融合与请求数；精简 / 详细档恒 1 请求，只有完整档拆模块（A 6、B 维度数 + 1、C k+m+r+1）。
+- **滑动窗口调度**（`services/aiScheduler.ts`）：每秒起 1 个直到满载，之后任一落定立即补发；
+  单任务失败在同一并发槽内重试 1 次；取消保留已落定结果；不变量 I1–I10 全部有单测。
+- **执行器**（`services/aiReadingRunner.ts`）：单次档 1 请求 / 多请求档调度 + 末位融合单独执行；
+  融合输入按入口截断（A 800 / B 400 / C 200 字）并列出未完成分项。
+- **依据前置规则**：详细档每条结论必须「依据 → 结论」，依据按 通道 → 闸门 → 中心 取用，取不到即删；
+  完整档同样生效。回复后检测（`services/aiEvidence.ts`）只告警、不改写正文：依据覆盖 /
+  维度白名单 / 条目覆盖。
+- **max_tokens 阶梯降级**（`services/aiTokenFallback.ts`）：128000 → 64000 → 32000 → 16000 → 8192 →
+  不带该字段；只认 400/422 的越界措辞，401 / 无效 Key / 模型不存在 / 余额不足一律不降级。
+- **三入口集成测试**：`tests/aiReadingPlan.test.ts`、`tests/aiScheduler.test.ts`、
+  `tests/aiReadingRunner.test.ts`、`tests/aiPromptLayers.test.ts`、`tests/aiEvidence.test.ts`、
+  `tests/aiTokenFallback.test.ts`。
+
+### 二、变更
+
+- **详细档字数与依据铁律**：从 1800–3000 字 / 8 节改为 **5000–10000 字（硬上限 20000）**，
+  且每条结论必须前置依据与对应通道 / 闸门 / 中心。
+- **精简档口径**：600–900 字，**只描述日常倾向、不做事实性断言**（禁用「你就是 / 你必定 /
+  这说明你 / 根本原因是 / 你的天赋是」）；一次覆盖多个模块或条目时按量放大篇幅。
+- **完整档口径**：无字数上限，每篇只写本次分项，不写全盘总论与「接下来还有……」。
+- **专业风格语义反转**：旧版「读者已熟悉术语，不必逐个展开解释」→ 新版**每个术语第一次出现
+  必须阐释**（先给定义、再给本盘取值与例子）。这是唯一一处「值不变、语义反转」的改名。
+- **并发从双旋钮收敛为单参数**：`aiConcurrency` + `aiConcurrencyLimit` → `aiMaxConcurrency`（1–99，
+  默认 3）。语义统一为「每秒起 1 个，达到上限后完成一个补一个」；设为 1 即串行。
+- **缓存键**：`PROMPT_VERSION` → `'4.0'`，缓存前缀 → `hdt.ai.cache.v2`，键内新增**入口**与**风格**两段
+  （入口 B 与 C 可能 scope/ref 相同但提示词契约不同，不进键会串档）。
+- **续写次数**：`MAX_CONTINUATIONS` 2 → **3**（详细档上限 2 万字，2 轮拿不满）。
+- **解读记录**：`audience` → `style`，新增 `entry`；键格式不变，旧记录加载时归一，
+  旧记录 `entry` 缺省按 `composite`。
+- **角度表**：新增「发展轨迹」，姻缘方向整章改写为「本世的关系模式」；共 9 项。
+
+### 三、移除
+
+- **token 上限**：设置项 `aiTokenBudget`、`MIN_TOKEN_BUDGET` / `MAX_TOKEN_BUDGET`、请求级 token 预算
+  与按档位分配额度全部删除；请求恒 `max_tokens: 128000`。批量对话框与设置页对应整块 UI 删除。
+- **双并发参数**：`aiConcurrency`、`aiConcurrencyLimit`、`resolveSchedule`、`ConcurrencySchedule`、
+  `MIN` / `MAX` / `CONCURRENCY_MIN` / `CONCURRENCY_MAX` 与「分批执行」概念。
+- **`aiStepMode`**（串行 / 并发开关）：等价语义改由 `aiMaxConcurrency === 1` 表达，不再持久化。
+- **`aiAudience`**：改名 `aiStyle`（旧名保留为只读别名一版）。
+- **四套整篇 system prompt**：`PROMPT_SYSTEM_CONCISE/DETAILED/FULL/FUSION` 与「面向人群附加段落」，
+  改由 12 个段落常量拼装；`audiencePromptOf` / `applyTokenBudget` / `resolveAudience` 随之删除。
+- **前世姻缘**：角度与离线章节改写为「姻缘情况 / 本世的关系模式」，全库不再出现该词。
+- **完整版旧编排**：`buildFullTasks`、分批循环、失败项串行重跑；事实块的第二份实现
+  （`aiFullReading.baseFacts/gateFacts/channelFacts`）删除，事实块只留 `chartFacts` 一份。
+
+### 四、迁移
+
+- `aiConcurrency`（默认 3）→ `aiMaxConcurrency`：合法整数直接夹到 1–99；**旧 `aiConcurrencyLimit`
+  不参与迁移**（它是技术闸门，默认 64，迁过来会变成真实的 64 并发）。新字段存在时优先。
+- `aiAudience` → `aiStyle`：值相同（`pro` / `plain`），语义反转见上。
+- `aiTokenBudget` / `aiStepMode` / `aiConcurrencyLimit`：读取时被忽略，下次 persist 不再写入。
+- 多条件同时命中时合并成**一条多行提示**（`takeConcurrencyMigrationNotice()`，消费即清）：
+  并发被夹紧 / 并发上限不再生效 / token 上限已取消 / 串行改为把最高并发数设为 1。
+- 旧缓存：`hdt.ai.cache.v1*` 键在启动时由 `migrateAiCacheV1()` 清理（幂等，不弹 toast）。
+- 旧解读记录：加载时 `style = r.style ?? r.audience ?? 'pro'`、`entry = r.entry ?? 'composite'`，
+  一条不丢；`readingKey` 键格式不变，旧记录仍能按原键命中。
+- 设置存档键 `hdt.settings.v1` 名称不变，只做字段级兼容（新增两字段、不再写四个已删字段）。
+
 ## v3.5.0（2026-11-18）
 
 > 主题：**UI / 页面逻辑全链路重构，AI 从侧栏附属升级为一级工作区**。

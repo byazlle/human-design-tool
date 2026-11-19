@@ -32,7 +32,14 @@ function reply(content: string, finishReason: string): Response {
   )
 }
 
-const args = { cfg: CFG, scope: 'full-fusion', ref: 'fusion', offline: '盘面事实', detailMode: 'full' as const }
+const args = {
+  cfg: CFG,
+  entry: 'full' as const,
+  scope: 'full-fusion',
+  ref: 'fusion',
+  offline: '盘面事实',
+  detailMode: 'full' as const,
+}
 
 let fetchMock: ReturnType<typeof vi.fn>
 
@@ -94,14 +101,16 @@ describe('AI 输出截断续写', () => {
 })
 
 describe('完整版采样额度覆盖字数契约', () => {
-  it('融合与分项的 maxTokens 足以覆盖契约字数', () => {
-    // 融合契约约 2900–4500 字，分项契约 900–1400 字（中文按 ≥1 token/字 估）
-    expect(resolveRequestParams('full-fusion', 'full').maxTokens).toBeGreaterThanOrEqual(8000)
-    expect(resolveRequestParams('full-gate', 'full').maxTokens).toBeGreaterThanOrEqual(4000)
-    expect(resolveRequestParams('full-channel', 'full').maxTokens).toBeGreaterThanOrEqual(4000)
+  it('v4.0.0：token 上限整体移除，任何 scope / 档位都恒为 128000', () => {
+    // 旧口径是「融合 8000 / 分项 4000 / 精简 1500」按档位分配额度；v4.0.0 改为统一上限，
+    // 越界由 explain() 内部的降级阶梯兜底（见 tests/aiTokenFallback.test.ts）。
+    expect(resolveRequestParams('full-fusion', 'full').maxTokens).toBe(128000)
+    expect(resolveRequestParams('full-gate', 'full').maxTokens).toBe(128000)
+    expect(resolveRequestParams('full-channel', 'full').maxTokens).toBe(128000)
+    expect(resolveRequestParams('single', 'concise').maxTokens).toBe(128000)
   })
 
   it('提示词版本已升，避免命中旧的截断缓存', () => {
-    expect(PROMPT_VERSION).toBe('3.4')
+    expect(PROMPT_VERSION).toBe('4.0')
   })
 })

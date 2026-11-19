@@ -30,8 +30,6 @@ export interface BatchRunOptions {
   customDirection: string
   /** 缺省用设置里的当前档位 */
   detailMode?: AiDetailMode
-  /** 本次每份解读的 token 总预算；缺省用设置里的全局值（0 = 不限制） */
-  tokenBudget?: number
   /** 已有解读的处理：skip 跳过（默认）/ overwrite 覆盖 */
   onExisting?: 'skip' | 'overwrite'
 }
@@ -81,7 +79,7 @@ export function useAiBatch() {
     const ref = `${dims.join('+')}:${options.angleKey}:${options.customDirection || '-'}`
 
     const existing = ids.filter(
-      (id) => readings.find(id, 'unified', ref, mode, settings.aiAudience) !== null,
+      (id) => readings.find(id, 'unified', ref, mode, settings.aiStyle) !== null,
     )
     const onExisting = options.onExisting ?? 'skip'
     const toRun = onExisting === 'overwrite' ? ids : ids.filter((id) => !existing.includes(id))
@@ -138,7 +136,7 @@ export function useAiBatch() {
     // 先筛掉已有解读的档案（除非明确要求覆盖），否则会白白重复消耗额度
     const existingIds = new Set(
       options.archiveIds.filter(
-        (id) => readings.find(id, 'unified', scopeRef, mode, settings.aiAudience) !== null,
+        (id) => readings.find(id, 'unified', scopeRef, mode, settings.aiStyle) !== null,
       ),
     )
     const targetIds =
@@ -188,10 +186,9 @@ export function useAiBatch() {
         cfg: settings.ai,
         tasks,
         skipped: skippedLabels,
-        stepMode: settings.aiStepMode,
-        concurrencyLimit: settings.aiConcurrencyLimit,
-        audience: settings.aiAudience,
-        tokenBudget: options.tokenBudget ?? settings.aiTokenBudget,
+        // v4.0.0 单旋钮：多份档案之间按「最高并发数」滑动窗口执行
+        maxConcurrency: settings.aiMaxConcurrency,
+        style: settings.aiStyle,
         signal: ctrl.signal,
         streams: streamHooks,
         onUpdate: ({ progress, outcomes }) => {
@@ -245,7 +242,8 @@ export function useAiBatch() {
           mode,
           title: o.title,
           content: o.content,
-          audience: settings.aiAudience,
+          style: settings.aiStyle,
+          entry: 'composite',
           truncated: o.truncated,
         }),
       )

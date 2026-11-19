@@ -115,6 +115,7 @@ const reportGroups = computed<ReportGroup[]>(() =>
 
 /** 通道默认收起，每条通道可独立展开/收起；维度默认展开，闸门默认收起 */
 const DEFAULT_OPEN: Record<FullSectionKind, boolean> = {
+  module: false,
   dimension: true,
   gate: false,
   channel: false,

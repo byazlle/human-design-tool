@@ -1,25 +1,27 @@
 /**
- * 跨档案批量生成解读（v2.4.0 主功能）。
+ * 跨档案批量生成解读（v2.4.0 主功能，v4.0.0 换调度器）。
  *
- * 与 v2.3.0 的「单盘内批量勾选」不同：这里对**档案库中的多份档案**各生成一份完整解读。
- * 复用既有并发调度 `resolveSchedule()`（唯一闸门 `N ≤ aiConcurrencyLimit`），
- * 不新增第二套并发概念、不新增设置项。
+ * 与 v2.3.0 的「单盘内批量勾选」不同：这里对**档案库中的多份档案**各生成一份解读。
+ * v4.0.0 起不再有 `resolveSchedule` 分批，也不再区分串行/并行开关：
+ * 一律走 `aiScheduler.runSlidingWindow`，并发数就是 `maxConcurrency`（1–99），
+ * 起速每秒 1 个、满载后落定即补（ARCH §4）。
  *
  * ★ 关键：任务的 scope / ref / offline 拼装与手动解读**完全相同**
  *   （共用 `chartFacts.ts`），因此 `aiClient.cacheKey()` 一致 ——
  *   先手动生成过的档案在批量时直接命中缓存，不重复消耗额度；反之亦然。
  *
- * 失败语义与 `aiFullReading.ts` 对齐：单项失败重试 1 次，仍失败则记入 `failed`
- * 并继续后续项；取消则整体上抛 `AiError('已取消','cancelled')`，但**已完成的项会保留**
+ * 失败语义：单份失败由调度器在同一个并发槽内重试 1 次，仍失败则记入 `failed`
+ * 并继续其他份；取消整体上抛 `AiError('已取消','cancelled')`，但**已完成的项会保留**
  * （通过 onUpdate 已逐项发布，调用方据 outcome 落库）。
  *
  * 本模块不碰 store、不写 localStorage —— 持久化由调用方（composable）负责。
  */
-import type { AiAudience, AiConfig, AiDetailMode, AiStepMode, BodyGraph } from '../types/hd'
-import { chartSummaryOf, explain, resolveAudience } from './aiClient'
-import { resolveSchedule } from './aiConcurrency'
+import type { AiAudience, AiConfig, AiDetailMode, AiStepMode, AiStyle, BodyGraph } from '../types/hd'
+import { chartSummaryOf, explain, resolveStyle } from './aiClient'
+import { DEFAULT_AI_MAX_CONCURRENCY, clampMaxConcurrency } from './aiConcurrency'
+import { runSlidingWindow, type SlideTask } from './aiScheduler'
+import { errText } from './aiAttempt'
 import type { AiStreamEvents } from './aiTransport'
-import { cancelledError, errText, isCancelled, withRetry } from './aiAttempt'
 import {
   buildUnifiedFacts,
   directionPrompt,
@@ -168,8 +170,12 @@ export interface BatchReport {
   generatedAt: string
   /** 触顶（内容可能不完整）的档案名，供 UI 明确提示而不是当成正常完成 */
   truncatedNames: string[]
-  /** 实际使用的调度（含是否降级），供 UI 提示 N/Y/K */
-  scheduleInfo: { required: number; limit: number; batchWidth: number; batchCount: number; degraded: boolean }
+  /**
+   * 实际使用的调度（v4.0.0 单旋钮）。
+   * 旧结构是 `{ required, limit, batchWidth, batchCount, degraded }`——
+   * 「分几批」这个概念已经不存在了，现在只有「最高并发数」。
+   */
+  scheduleInfo: { total: number; maxConcurrency: number; startedAt: string }
 }
 
 export interface BatchOptions {
@@ -177,17 +183,16 @@ export interface BatchOptions {
   tasks: BatchTask[]
   /** 预检跳过的档案（由 buildBatchTasks 产出），原样带进报告 */
   skipped?: string[]
-  stepMode: AiStepMode
-  /** 并发上限 Y */
-  concurrencyLimit: number
-  /** v2.5.0 面向人群；不传按专业版，与缓存键一致 */
+  /** 最高并发数 N（1–99）：多份档案之间并发，单份档案内部仍是 1 次 `explain` */
+  maxConcurrency: number
+  /** 表达风格；不传按 `audience` 回落，再缺省专业版 */
+  style?: AiStyle
+  /** @deprecated 用 `style`（值相同、语义反转）。 */
   audience?: AiAudience
-  /** v2.5.0 每份解读的 token 总预算；0 或不传 = 不限制 */
-  tokenBudget?: number
   signal?: AbortSignal
   /**
    * v3.0.0 逐路流式钩子：每份档案独立一行状态。
-   * 不传时所有 explain() 仍走 v2.5.0 的一次性请求路径，行为逐字不变。
+   * 不传时所有 explain() 仍走一次性请求路径，行为逐字不变。
    */
   streams?: BatchStreamHooks
   onUpdate?: (payload: {
@@ -195,6 +200,12 @@ export interface BatchOptions {
     /** 已完成项的结果（含失败），便于调用方增量落库 */
     outcomes: BatchOutcome[]
   }) => void
+  /** @deprecated 串并行已并入 `maxConcurrency`（1 即串行）；字段保留但**不生效**。 */
+  stepMode?: AiStepMode
+  /** @deprecated 旧「并发上限」已删除；字段保留但**不生效**。 */
+  concurrencyLimit?: number
+  /** @deprecated token 上限已整体取消（请求恒 128000）；字段保留但**不生效**。 */
+  tokenBudget?: number
 }
 
 /** v3.0.0：批量逐路状态钩子。eventsFor 每次重试都会重新调用，负责重新 begin 那一行 */
@@ -206,136 +217,56 @@ export interface BatchStreamHooks {
 /**
  * 执行批量生成。
  *
- * 调度：`resolveSchedule(tasks.length, limit, stepMode)` ——
- * 未超限时一个 `Promise.all` 一次性发起全部 N 项；超限时按 `batchWidth = Y` 分 K 批。
- * 串行模式 `batchWidth = 1`。
+ * 调度：`runSlidingWindow(tasks, { maxConcurrency, retry: 1 })`——
+ * 起速每秒 1 份、满载后任一落定立即补发；失败在同一并发槽内重试 1 次。
  */
 export async function runBatchReading(options: BatchOptions): Promise<BatchReport> {
   const { cfg, tasks, signal } = options
-  const audience = resolveAudience(options.audience)
-  const tokenBudget = options.tokenBudget
-  const schedule = resolveSchedule(tasks.length, options.concurrencyLimit, options.stepMode)
+  const style = resolveStyle(options.style ?? options.audience)
+  const maxConcurrency = clampMaxConcurrency(options.maxConcurrency, DEFAULT_AI_MAX_CONCURRENCY)
   const total = tasks.length
   const startedAt = Date.now()
   const generatedAt = new Date().toISOString()
+  const scheduleInfo = { total, maxConcurrency, startedAt: generatedAt }
 
+  /** index → 结果；用 Map 保证并行完成后仍按任务原序输出 */
   const outcomes = new Map<number, BatchOutcome>()
-  const durations: number[] = []
+  /** index → 是否触顶；必须按「本次 explain 调用」收集，不能用模块级变量（并发会串台） */
+  const truncatedFlags = new Map<number, boolean>()
   const failed: string[] = []
+  const skipped = [...(options.skipped ?? [])]
   let ok = 0
   let done = 0
-  const skipped = [...(options.skipped ?? [])]
-  const degradedNote = `超出并发上限 ${schedule.limit}，已分批执行（共 ${schedule.batchCount} 批）`
+  let inFlight = 0
+  let current = total ? `准备生成 ${total} 份解读` : '没有可生成的档案'
+  const durations: number[] = []
 
-  const publish = (current: string, phase: string) => {
+  const publish = (phase: string): void => {
     const elapsedMs = Date.now() - startedAt
     const remaining = Math.max(0, total - done)
     const avg = durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : null
-    // 与 aiFullReading 同口径：按批宽归一，避免一次性并发下 ETA 失真
-    const divisor = Math.max(1, schedule.batchWidth)
-    options.onUpdate?.({
-      progress: {
-        done,
-        total,
-        current,
-        phase,
-        elapsedMs,
-        etaMs: avg !== null && remaining > 0 ? Math.round((avg * remaining) / divisor) : null,
-        ok,
-        okIds: [...outcomes.values()].filter((o) => o.content).map((o) => o.archiveId),
-        failed: [...failed],
-        skipped: [...skipped],
-      },
-      outcomes: [...outcomes.values()],
-    })
-  }
-
-  const attempt = async (
-    index: number,
-  ): Promise<{ index: number; outcome: BatchOutcome; cancelled: boolean }> => {
-    // 取消不抛：并批时 Promise.all 会放大成多个 rejection（易变未处理拒绝），
-    // 统一用 cancelled 标记返回，由调用方在批边界上抛一次。
-    if (signal?.aborted) {
-      return {
-        index,
-        cancelled: true,
-        outcome: {
-          archiveId: tasks[index].archiveId,
-          name: tasks[index].name,
-          scope: tasks[index].scope,
-          ref: tasks[index].ref,
-          mode: tasks[index].mode,
-          title: tasks[index].title,
-          content: '',
-          error: '',
-        },
-      }
+    const progress: BatchProgress = {
+      done,
+      total,
+      current,
+      phase,
+      elapsedMs,
+      // ETA 按「最高并发数」归一：N 个同时在跑，剩余量要除以 N 才是墙钟时间
+      etaMs: avg !== null && remaining > 0 ? Math.round((avg * remaining) / Math.max(1, maxConcurrency)) : null,
+      ok,
+      okIds: [...outcomes.values()].filter((o) => o.content).map((o) => o.archiveId),
+      failed: [...failed],
+      skipped: [...skipped],
     }
-    const task = tasks[index]
-    const base = {
-      archiveId: task.archiveId,
-      name: task.name,
-      scope: task.scope,
-      ref: task.ref,
-      mode: task.mode,
-      title: task.title,
-    }
-    // 截断标记必须按「本次 explain 调用」收集：批量并发时多份解读同时完成，
-    // 任何模块级「上一次」变量都会串台，把 A 的截断误记到 B 头上。
-    let truncated = false
     try {
-      const content = await withRetry(
-        () => {
-          truncated = false
-          return explain({
-            cfg,
-            scope: task.scope,
-            ref: task.ref,
-            offline: task.offline,
-            chartSummary: task.chartSummary,
-            detailMode: task.mode,
-            angle: task.angle,
-            audience,
-            tokenBudget,
-            signal,
-            onStream: options.streams?.eventsFor(task),
-            onStage: (e) => {
-              if (e.stage === 'completed') truncated = Boolean(e.truncated)
-            },
-          })
-        },
-        signal,
-      )
-      options.streams?.finish(task, true)
-      return { index, cancelled: false, outcome: { ...base, content, error: '', truncated } }
-    } catch (err) {
-      // 取消：不记为失败，交给调用方上抛（已发布的结果不丢）
-      if (isCancelled(err, signal)) {
-        options.streams?.finish(task, false, '已取消')
-        return { index, cancelled: true, outcome: { ...base, content: '', error: '' } }
-      }
-      const message = errText(err)
-      options.streams?.finish(task, false, message)
-      return { index, cancelled: false, outcome: { ...base, content: '', error: message } }
+      options.onUpdate?.({ progress, outcomes: [...outcomes.values()] })
+    } catch {
+      /* UI 回调异常不得中断执行 */
     }
   }
 
-  const settle = (index: number, outcome: BatchOutcome) => {
-    outcomes.set(index, outcome)
-    if (outcome.error) failed.push(`${outcome.name}：${outcome.error}`)
-    else ok += 1
-    done += 1
-    publish(
-      schedule.degraded ? degradedNote : outcome.name,
-      schedule.degraded ? degradedNote : '批量生成',
-    )
-  }
-
-  // 首帧即发布（≤300ms 可见），N/Y/K 提示从这一帧起就存在
-  publish(
-    total ? `准备生成 ${total} 份解读` : '没有可生成的档案',
-    schedule.degraded ? degradedNote : '批量生成',
-  )
+  const basePhase = total > 1 ? `批量生成（最高并发数 ${maxConcurrency}）` : '批量生成'
+  publish(total ? basePhase : '已完成')
   if (!total) {
     return {
       outcomes: [],
@@ -345,49 +276,81 @@ export async function runBatchReading(options: BatchOptions): Promise<BatchRepor
       totalChars: 0,
       generatedAt,
       truncatedNames: [],
-      scheduleInfo: schedule,
+      scheduleInfo,
     }
   }
 
-  if (options.stepMode === 'serial') {
-    for (let i = 0; i < total; i += 1) {
-      if (signal?.aborted) throw cancelledError(signal)
-      publish(tasks[i].name, '批量生成（串行）')
+  const slideTasks: SlideTask<string>[] = tasks.map((task, index) => ({
+    key: `${index}:${task.archiveId}`,
+    label: task.name,
+    run: async (runSignal: AbortSignal): Promise<string> => {
+      // 截断标记按本次调用重置：重试会重新走一遍 run
+      truncatedFlags.set(index, false)
       const t0 = Date.now()
-      const r = await attempt(i)
-      durations.push(Date.now() - t0)
-      if (r.cancelled) throw cancelledError(signal)
-      settle(r.index, r.outcome)
-    }
-  } else {
-    const width = Math.max(1, schedule.batchWidth)
-    for (let start = 0; start < total; start += width) {
-      if (signal?.aborted) throw cancelledError(signal)
-      const batch = tasks.slice(start, start + width).map((_, k) => start + k)
-      publish(
-        schedule.degraded
-          ? `${degradedNote}｜本批 ${batch.length} 份`
-          : `一次性并发 ${total} 份（上限 ${schedule.limit}）`,
-        '批量生成',
-      )
-      const t0 = Date.now()
-      const settled = await Promise.all(batch.map((i) => attempt(i)))
-      durations.push((Date.now() - t0) / Math.max(1, batch.length))
-      // 先落盘本批已完成的项（不丢结果），再在批边界统一上抛取消
-      let hitCancel = false
-      for (const s of settled) {
-        if (s.cancelled) {
-          hitCancel = true
-          continue
-        }
-        settle(s.index, s.outcome)
+      try {
+        const content = await explain({
+          cfg,
+          entry: 'composite',
+          scope: task.scope,
+          ref: task.ref,
+          offline: task.offline,
+          chartSummary: task.chartSummary,
+          detailMode: task.mode,
+          style,
+          angle: task.angle,
+          signal: runSignal,
+          onStream: options.streams?.eventsFor(task),
+          onStage: (e) => {
+            if (e.stage === 'completed') truncatedFlags.set(index, Boolean(e.truncated))
+          },
+        })
+        durations.push(Date.now() - t0)
+        options.streams?.finish(task, true)
+        return content
+      } catch (err) {
+        durations.push(Date.now() - t0)
+        options.streams?.finish(task, false, errText(err))
+        throw err
       }
-      if (hitCancel || signal?.aborted) throw cancelledError(signal)
-    }
-  }
+    },
+  }))
+
+  await runSlidingWindow(slideTasks, {
+    maxConcurrency,
+    retry: 1,
+    signal,
+    onProgress: (p) => {
+      done = p.done
+      inFlight = p.inFlight
+      if (p.current) current = p.current
+      publish(basePhase)
+    },
+    onSettled: (result) => {
+      const index = Number(result.key.split(':')[0])
+      const task = tasks[index]
+      const outcome: BatchOutcome = {
+        archiveId: task.archiveId,
+        name: task.name,
+        scope: task.scope,
+        ref: task.ref,
+        mode: task.mode,
+        title: task.title,
+        content: result.ok ? (result.value ?? '') : '',
+        error: result.ok ? '' : (result.error ?? '未知错误'),
+        truncated: result.ok ? Boolean(truncatedFlags.get(index)) : false,
+      }
+      outcomes.set(index, outcome)
+      if (outcome.error) failed.push(`${task.name}：${outcome.error}`)
+      else ok += 1
+    },
+  })
 
   const ordered = [...outcomes.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v)
-  publish('已完成', '已完成')
+  current = '已完成'
+  done = total
+  inFlight = 0
+  publish('已完成')
+
   return {
     outcomes: ordered,
     ok,
@@ -396,6 +359,6 @@ export async function runBatchReading(options: BatchOptions): Promise<BatchRepor
     totalChars: ordered.reduce((sum, o) => sum + o.content.length, 0),
     generatedAt,
     truncatedNames: ordered.filter((o) => o.truncated && o.content).map((o) => o.name),
-    scheduleInfo: schedule,
+    scheduleInfo,
   }
 }

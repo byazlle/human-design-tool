@@ -54,3 +54,6 @@ npm-debug.log*
 # 测试与缓存
 coverage/
 .vite/
+
+# 本地临时克隆 / 分析产物（不进仓库）
+.workbuddy/tmp/
