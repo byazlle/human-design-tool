@@ -707,21 +707,37 @@ describe('QA-B｜进度文案与终态常驻提示', () => {
       expect(runtimeText).not.toContain(banned)
     }
 
-    // ⑪ ★ v4.0.0 新增守卫：该文件相对 HEAD 只允许新增 `module: false` 一行
+    // ⑪ ★ 守卫：该文件除 `DEFAULT_OPEN` 的 module 键外，其余契约一字未动。
+    // 本地未提交时再收紧为「工作区 diff 仅 1 行」；CI 检出的是干净提交，
+    // `git diff` 必然为空，因此改用文件内容直接校验同一份契约（两种环境都成立）。
+    const panelSrc = readFileSync(
+      resolve(process.cwd(), 'src/components/panel/AiReadingPanel.vue'),
+      'utf8',
+    )
+    const openBlock = panelSrc.match(
+      /const DEFAULT_OPEN:\s*Record<FullSectionKind,\s*boolean>\s*=\s*\{([^}]*)\}/,
+    )?.[1]
+    expect(openBlock).toBeDefined()
+    expect((openBlock ?? '').replace(/\s+/g, '')).toBe(
+      'module:false,dimension:true,gate:false,channel:false,',
+    )
     const numstat = execFileSync(
       'git',
       ['diff', '--numstat', '--', 'src/components/panel/AiReadingPanel.vue'],
       { cwd: process.cwd(), encoding: 'utf8' },
     ).trim()
-    expect(numstat).toBe('1\t0\tsrc/components/panel/AiReadingPanel.vue')
-    const diff = execFileSync('git', ['diff', '--', 'src/components/panel/AiReadingPanel.vue'], {
-      cwd: process.cwd(),
-      encoding: 'utf8',
-    })
-    const added = diff.split('\n').filter((l) => l.startsWith('+') && !l.startsWith('+++'))
-    const removed = diff.split('\n').filter((l) => l.startsWith('-') && !l.startsWith('---'))
-    expect(added).toEqual(['+  module: false,'])
-    expect(removed).toEqual([])
+    if (numstat) {
+      expect(numstat).toBe('1\t0\tsrc/components/panel/AiReadingPanel.vue')
+      const diff = execFileSync(
+        'git',
+        ['diff', '--', 'src/components/panel/AiReadingPanel.vue'],
+        { cwd: process.cwd(), encoding: 'utf8' },
+      )
+      const added = diff.split('\n').filter((l) => l.startsWith('+') && !l.startsWith('+++'))
+      const removed = diff.split('\n').filter((l) => l.startsWith('-') && !l.startsWith('---'))
+      expect(added).toEqual(['+  module: false,'])
+      expect(removed).toEqual([])
+    }
   })
 })
 
