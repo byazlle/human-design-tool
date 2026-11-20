@@ -3,7 +3,7 @@
  *
  * 覆盖 ARCH v4.0.0 §11.1 ①–⑦：
  * ① 12 个段落常量与 `docs/spec/AI-PROMPT-v4.0.md` 的编号代码块逐字一致；
- * ② `PROMPT_VERSION === '4.0'`；
+ * ② `PROMPT_VERSION === '4.2'`（v4.2 按可懂性基线修订风格段示例）；
  * ③ `systemPromptOf` 已改为对象入参；
  * ④ 采样参数全部 `128000`；
  * ⑤ 合盘 / 凯龙 temperature 保持既有口径（0.60 / 0.55）；
@@ -108,9 +108,9 @@ describe('① 提示词正文与规范文档逐字一致', () => {
   })
 })
 
-describe('② 提示词版本已升到 4.0', () => {
-  it('PROMPT_VERSION 为 4.0（旧缓存不得串档）', () => {
-    expect(PROMPT_VERSION).toBe('4.0')
+describe('② 提示词版本已升到 4.1', () => {
+  it('PROMPT_VERSION 为 4.2（风格段示例按可懂性基线补画面，旧缓存不得串档）', () => {
+    expect(PROMPT_VERSION).toBe('4.2')
   })
 })
 

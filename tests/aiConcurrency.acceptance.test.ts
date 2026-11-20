@@ -10,7 +10,7 @@
  * ★ v2.3.0 的双旋钮验收（`resolveSchedule` / 批宽 batchWidth / N-Y-K 降级文案 /
  *   「一次性并发」/ 失败项串行重跑）所断言的对象已被 v4.0.0 整体删除，本文件按新口径重写；
  *   但 QA-B4（`AiReadingPanel.vue` 五区静态契约）、QA-B3b（`useAiStatus.terminalHint` 常驻）、
- *   QA-F2（`AiProgress` 8 字段 + 提示词版本 + 两个计算锚点）、QA-E2/E3/E4（取消语义）
+ *   QA-F2（`AiProgress` 8 字段 + 提示词版本 + 两个计算锚点 + 现行文档 29.875 静态锁定）、QA-E2/E3/E4（取消语义）
  *   全部**原样保留、一条不放宽**。
  *
  * 约束：environment = node；vi.mock / vi.stubGlobal / fake 定时器；
@@ -1134,8 +1134,26 @@ describe('QA-F｜禁止词与冻结清单静态契约', () => {
     expect(match![1]).not.toContain('inFlight')
     expect(match![1]).not.toContain('maxConcurrency')
 
-    expect(read('src/services/aiClient.ts')).toContain("PROMPT_VERSION = '4.0'")
+    expect(read('src/services/aiClient.ts')).toContain("PROMPT_VERSION = '4.2'")
     expect(read('src/engine/mandala.ts')).toContain('29.875')
     expect(read('src/engine/mandala.ts')).toContain('302.000')
+
+    // DEV-103（v3.7.0）口径一致性静态防线：现行文档必须锁 29.875°，
+    // 防止旧值 29.8333 通过复制粘贴回流。docs/review/ 的历史值属审计语境，不在检查范围。
+    const arch = read('docs/ARCHITECTURE.md')
+    const readme = read('README.md')
+    expect(arch).toContain('29.875')
+    expect(arch).not.toContain('29.8333')
+    expect(readme).toContain('29.875')
+    // README 的「v1.2.0 修正旧值」与「与沿用旧值的实现比对」说明允许出现 29.8333，
+    // 但这些行必须带历史语境关键词；新复制粘贴进来的裸旧值会被拦下。
+    const staleLines = readme
+      .split('\n')
+      .filter(
+        (line) =>
+          line.includes('29.8333') &&
+          !/修正|旧版本|旧值|沿用|free-human-design|v1\.2\.0/.test(line),
+      )
+    expect(staleLines).toEqual([])
   })
 })

@@ -1,0 +1,1987 @@
+{
+  "generatedAt": "2026-11-20",
+  "productVersion": "3.7.0",
+  "rules": {
+    "bannedWords": [
+      "能量",
+      "频率",
+      "磁场",
+      "共振",
+      "天命",
+      "业力",
+      "高维",
+      "模式",
+      "制约",
+      "放大",
+      "整合",
+      "课题"
+    ],
+    "maxSentence": 45,
+    "sceneAnchors": [
+      "开会",
+      "被问",
+      "被邀请",
+      "被改约",
+      "临时",
+      "下次",
+      "早上",
+      "晚上",
+      "睡前",
+      "半夜",
+      "周末",
+      "每天",
+      "每周",
+      "每年",
+      "每季度",
+      "争执",
+      "争吵",
+      "道歉",
+      "吃饭",
+      "做饭",
+      "走路",
+      "通勤",
+      "排队",
+      "加班",
+      "深夜",
+      "独处",
+      "休息",
+      "腹部",
+      "肚子",
+      "呼吸",
+      "心跳",
+      "肩膀",
+      "胃",
+      "手心",
+      "身体",
+      "第一反应",
+      "本能",
+      "放松",
+      "收紧",
+      "开口",
+      "沉默",
+      "停下",
+      "记下来",
+      "写下来",
+      "记录",
+      "试一次",
+      "三秒",
+      "10 秒",
+      "28 天",
+      "问自己",
+      "观察",
+      "练习"
+    ]
+  },
+  "total": 524,
+  "failingCount": 449,
+  "allIds": [
+    "gate-1-defined",
+    "gate-1-open",
+    "gate-2-defined",
+    "gate-2-open",
+    "gate-3-defined",
+    "gate-3-open",
+    "gate-4-defined",
+    "gate-4-open",
+    "gate-5-defined",
+    "gate-5-open",
+    "gate-6-defined",
+    "gate-6-open",
+    "gate-7-defined",
+    "gate-7-open",
+    "gate-8-defined",
+    "gate-8-open",
+    "gate-9-defined",
+    "gate-9-open",
+    "gate-10-defined",
+    "gate-10-open",
+    "gate-11-defined",
+    "gate-11-open",
+    "gate-12-defined",
+    "gate-12-open",
+    "gate-13-defined",
+    "gate-13-open",
+    "gate-14-defined",
+    "gate-14-open",
+    "gate-15-defined",
+    "gate-15-open",
+    "gate-16-defined",
+    "gate-16-open",
+    "gate-17-defined",
+    "gate-17-open",
+    "gate-18-defined",
+    "gate-18-open",
+    "gate-19-defined",
+    "gate-19-open",
+    "gate-20-defined",
+    "gate-20-open",
+    "gate-21-defined",
+    "gate-21-open",
+    "gate-22-defined",
+    "gate-22-open",
+    "gate-23-defined",
+    "gate-23-open",
+    "gate-24-defined",
+    "gate-24-open",
+    "gate-25-defined",
+    "gate-25-open",
+    "gate-26-defined",
+    "gate-26-open",
+    "gate-27-defined",
+    "gate-27-open",
+    "gate-28-defined",
+    "gate-28-open",
+    "gate-29-defined",
+    "gate-29-open",
+    "gate-30-defined",
+    "gate-30-open",
+    "gate-31-defined",
+    "gate-31-open",
+    "gate-32-defined",
+    "gate-32-open",
+    "gate-33-defined",
+    "gate-33-open",
+    "gate-34-defined",
+    "gate-34-open",
+    "gate-35-defined",
+    "gate-35-open",
+    "gate-36-defined",
+    "gate-36-open",
+    "gate-37-defined",
+    "gate-37-open",
+    "gate-38-defined",
+    "gate-38-open",
+    "gate-39-defined",
+    "gate-39-open",
+    "gate-40-defined",
+    "gate-40-open",
+    "gate-41-defined",
+    "gate-41-open",
+    "gate-42-defined",
+    "gate-42-open",
+    "gate-43-defined",
+    "gate-43-open",
+    "gate-44-defined",
+    "gate-44-open",
+    "gate-45-defined",
+    "gate-45-open",
+    "gate-46-defined",
+    "gate-46-open",
+    "gate-47-defined",
+    "gate-47-open",
+    "gate-48-defined",
+    "gate-48-open",
+    "gate-49-defined",
+    "gate-49-open",
+    "gate-50-defined",
+    "gate-50-open",
+    "gate-51-defined",
+    "gate-51-open",
+    "gate-52-defined",
+    "gate-52-open",
+    "gate-53-defined",
+    "gate-53-open",
+    "gate-54-defined",
+    "gate-54-open",
+    "gate-55-defined",
+    "gate-55-open",
+    "gate-56-defined",
+    "gate-56-open",
+    "gate-57-defined",
+    "gate-57-open",
+    "gate-58-defined",
+    "gate-58-open",
+    "gate-59-defined",
+    "gate-59-open",
+    "gate-60-defined",
+    "gate-60-open",
+    "gate-61-defined",
+    "gate-61-open",
+    "gate-62-defined",
+    "gate-62-open",
+    "gate-63-defined",
+    "gate-63-open",
+    "gate-64-defined",
+    "gate-64-open",
+    "channel-1-8",
+    "channel-2-14",
+    "channel-3-60",
+    "channel-4-63",
+    "channel-5-15",
+    "channel-6-59",
+    "channel-7-31",
+    "channel-9-52",
+    "channel-10-20",
+    "channel-10-34",
+    "channel-10-57",
+    "channel-11-56",
+    "channel-12-22",
+    "channel-13-33",
+    "channel-16-48",
+    "channel-17-62",
+    "channel-18-58",
+    "channel-19-49",
+    "channel-20-34",
+    "channel-20-57",
+    "channel-21-45",
+    "channel-23-43",
+    "channel-24-61",
+    "channel-25-51",
+    "channel-26-44",
+    "channel-27-50",
+    "channel-28-38",
+    "channel-29-46",
+    "channel-30-41",
+    "channel-32-54",
+    "channel-34-57",
+    "channel-35-36",
+    "channel-37-40",
+    "channel-39-55",
+    "channel-42-53",
+    "channel-47-64",
+    "center-head-defined",
+    "center-head-open",
+    "center-ajna-defined",
+    "center-ajna-open",
+    "center-throat-defined",
+    "center-throat-open",
+    "center-g-defined",
+    "center-g-open",
+    "center-heart-defined",
+    "center-heart-open",
+    "center-spleen-defined",
+    "center-spleen-open",
+    "center-sacral-defined",
+    "center-sacral-open",
+    "center-solar-defined",
+    "center-solar-open",
+    "center-root-defined",
+    "center-root-open",
+    "type-Generator-desc",
+    "type-ManifestingGenerator-desc",
+    "type-Manifestor-desc",
+    "type-Projector-desc",
+    "type-Reflector-desc",
+    "authority-Emotional-desc",
+    "authority-Sacral-desc",
+    "authority-Splenic-desc",
+    "authority-Ego-desc",
+    "authority-SelfProjected-desc",
+    "authority-Mental-desc",
+    "authority-Lunar-desc",
+    "insight-1-trait",
+    "insight-1-growth",
+    "insight-1-grounding",
+    "insight-1-drive",
+    "insight-2-trait",
+    "insight-2-growth",
+    "insight-2-grounding",
+    "insight-2-drive",
+    "insight-3-trait",
+    "insight-3-growth",
+    "insight-3-grounding",
+    "insight-3-drive",
+    "insight-4-trait",
+    "insight-4-growth",
+    "insight-4-grounding",
+    "insight-4-drive",
+    "insight-5-trait",
+    "insight-5-growth",
+    "insight-5-grounding",
+    "insight-5-drive",
+    "insight-6-trait",
+    "insight-6-growth",
+    "insight-6-grounding",
+    "insight-6-drive",
+    "insight-7-trait",
+    "insight-7-growth",
+    "insight-7-grounding",
+    "insight-7-drive",
+    "insight-8-trait",
+    "insight-8-growth",
+    "insight-8-grounding",
+    "insight-8-drive",
+    "insight-9-trait",
+    "insight-9-growth",
+    "insight-9-grounding",
+    "insight-9-drive",
+    "insight-10-trait",
+    "insight-10-growth",
+    "insight-10-grounding",
+    "insight-10-drive",
+    "insight-11-trait",
+    "insight-11-growth",
+    "insight-11-grounding",
+    "insight-11-drive",
+    "insight-12-trait",
+    "insight-12-growth",
+    "insight-12-grounding",
+    "insight-12-drive",
+    "insight-13-trait",
+    "insight-13-growth",
+    "insight-13-grounding",
+    "insight-13-drive",
+    "insight-14-trait",
+    "insight-14-growth",
+    "insight-14-grounding",
+    "insight-14-drive",
+    "insight-15-trait",
+    "insight-15-growth",
+    "insight-15-grounding",
+    "insight-15-drive",
+    "insight-16-trait",
+    "insight-16-growth",
+    "insight-16-grounding",
+    "insight-16-drive",
+    "insight-17-trait",
+    "insight-17-growth",
+    "insight-17-grounding",
+    "insight-17-drive",
+    "insight-18-trait",
+    "insight-18-growth",
+    "insight-18-grounding",
+    "insight-18-drive",
+    "insight-19-trait",
+    "insight-19-growth",
+    "insight-19-grounding",
+    "insight-19-drive",
+    "insight-20-trait",
+    "insight-20-growth",
+    "insight-20-grounding",
+    "insight-20-drive",
+    "insight-21-trait",
+    "insight-21-growth",
+    "insight-21-grounding",
+    "insight-21-drive",
+    "insight-22-trait",
+    "insight-22-growth",
+    "insight-22-grounding",
+    "insight-22-drive",
+    "insight-23-trait",
+    "insight-23-growth",
+    "insight-23-grounding",
+    "insight-23-drive",
+    "insight-24-trait",
+    "insight-24-growth",
+    "insight-24-grounding",
+    "insight-24-drive",
+    "insight-25-trait",
+    "insight-25-growth",
+    "insight-25-grounding",
+    "insight-25-drive",
+    "insight-26-trait",
+    "insight-26-growth",
+    "insight-26-grounding",
+    "insight-26-drive",
+    "insight-27-trait",
+    "insight-27-growth",
+    "insight-27-grounding",
+    "insight-27-drive",
+    "insight-28-trait",
+    "insight-28-growth",
+    "insight-28-grounding",
+    "insight-28-drive",
+    "insight-29-trait",
+    "insight-29-growth",
+    "insight-29-grounding",
+    "insight-29-drive",
+    "insight-30-trait",
+    "insight-30-growth",
+    "insight-30-grounding",
+    "insight-30-drive",
+    "insight-31-trait",
+    "insight-31-growth",
+    "insight-31-grounding",
+    "insight-31-drive",
+    "insight-32-trait",
+    "insight-32-growth",
+    "insight-32-grounding",
+    "insight-32-drive",
+    "insight-33-trait",
+    "insight-33-growth",
+    "insight-33-grounding",
+    "insight-33-drive",
+    "insight-34-trait",
+    "insight-34-growth",
+    "insight-34-grounding",
+    "insight-34-drive",
+    "insight-35-trait",
+    "insight-35-growth",
+    "insight-35-grounding",
+    "insight-35-drive",
+    "insight-36-trait",
+    "insight-36-growth",
+    "insight-36-grounding",
+    "insight-36-drive",
+    "insight-37-trait",
+    "insight-37-growth",
+    "insight-37-grounding",
+    "insight-37-drive",
+    "insight-38-trait",
+    "insight-38-growth",
+    "insight-38-grounding",
+    "insight-38-drive",
+    "insight-39-trait",
+    "insight-39-growth",
+    "insight-39-grounding",
+    "insight-39-drive",
+    "insight-40-trait",
+    "insight-40-growth",
+    "insight-40-grounding",
+    "insight-40-drive",
+    "insight-41-trait",
+    "insight-41-growth",
+    "insight-41-grounding",
+    "insight-41-drive",
+    "insight-42-trait",
+    "insight-42-growth",
+    "insight-42-grounding",
+    "insight-42-drive",
+    "insight-43-trait",
+    "insight-43-growth",
+    "insight-43-grounding",
+    "insight-43-drive",
+    "insight-44-trait",
+    "insight-44-growth",
+    "insight-44-grounding",
+    "insight-44-drive",
+    "insight-45-trait",
+    "insight-45-growth",
+    "insight-45-grounding",
+    "insight-45-drive",
+    "insight-46-trait",
+    "insight-46-growth",
+    "insight-46-grounding",
+    "insight-46-drive",
+    "insight-47-trait",
+    "insight-47-growth",
+    "insight-47-grounding",
+    "insight-47-drive",
+    "insight-48-trait",
+    "insight-48-growth",
+    "insight-48-grounding",
+    "insight-48-drive",
+    "insight-49-trait",
+    "insight-49-growth",
+    "insight-49-grounding",
+    "insight-49-drive",
+    "insight-50-trait",
+    "insight-50-growth",
+    "insight-50-grounding",
+    "insight-50-drive",
+    "insight-51-trait",
+    "insight-51-growth",
+    "insight-51-grounding",
+    "insight-51-drive",
+    "insight-52-trait",
+    "insight-52-growth",
+    "insight-52-grounding",
+    "insight-52-drive",
+    "insight-53-trait",
+    "insight-53-growth",
+    "insight-53-grounding",
+    "insight-53-drive",
+    "insight-54-trait",
+    "insight-54-growth",
+    "insight-54-grounding",
+    "insight-54-drive",
+    "insight-55-trait",
+    "insight-55-growth",
+    "insight-55-grounding",
+    "insight-55-drive",
+    "insight-56-trait",
+    "insight-56-growth",
+    "insight-56-grounding",
+    "insight-56-drive",
+    "insight-57-trait",
+    "insight-57-growth",
+    "insight-57-grounding",
+    "insight-57-drive",
+    "insight-58-trait",
+    "insight-58-growth",
+    "insight-58-grounding",
+    "insight-58-drive",
+    "insight-59-trait",
+    "insight-59-growth",
+    "insight-59-grounding",
+    "insight-59-drive",
+    "insight-60-trait",
+    "insight-60-growth",
+    "insight-60-grounding",
+    "insight-60-drive",
+    "insight-61-trait",
+    "insight-61-growth",
+    "insight-61-grounding",
+    "insight-61-drive",
+    "insight-62-trait",
+    "insight-62-growth",
+    "insight-62-grounding",
+    "insight-62-drive",
+    "insight-63-trait",
+    "insight-63-growth",
+    "insight-63-grounding",
+    "insight-63-drive",
+    "insight-64-trait",
+    "insight-64-growth",
+    "insight-64-grounding",
+    "insight-64-drive",
+    "detail-Generator-mechanism",
+    "detail-Generator-strategyDetail",
+    "detail-Generator-signatureDetail",
+    "detail-Generator-notSelfDetail",
+    "detail-Generator-authorityNote",
+    "detail-Generator-misconceptions-0",
+    "detail-Generator-misconceptions-1",
+    "detail-Generator-misconceptions-2",
+    "detail-Generator-practice-0",
+    "detail-Generator-practice-1",
+    "detail-Generator-practice-2",
+    "detail-ManifestingGenerator-mechanism",
+    "detail-ManifestingGenerator-strategyDetail",
+    "detail-ManifestingGenerator-signatureDetail",
+    "detail-ManifestingGenerator-notSelfDetail",
+    "detail-ManifestingGenerator-authorityNote",
+    "detail-ManifestingGenerator-misconceptions-0",
+    "detail-ManifestingGenerator-misconceptions-1",
+    "detail-ManifestingGenerator-misconceptions-2",
+    "detail-ManifestingGenerator-practice-0",
+    "detail-ManifestingGenerator-practice-1",
+    "detail-ManifestingGenerator-practice-2",
+    "detail-Manifestor-mechanism",
+    "detail-Manifestor-strategyDetail",
+    "detail-Manifestor-signatureDetail",
+    "detail-Manifestor-notSelfDetail",
+    "detail-Manifestor-authorityNote",
+    "detail-Manifestor-misconceptions-0",
+    "detail-Manifestor-misconceptions-1",
+    "detail-Manifestor-misconceptions-2",
+    "detail-Manifestor-practice-0",
+    "detail-Manifestor-practice-1",
+    "detail-Manifestor-practice-2",
+    "detail-Projector-mechanism",
+    "detail-Projector-strategyDetail",
+    "detail-Projector-signatureDetail",
+    "detail-Projector-notSelfDetail",
+    "detail-Projector-authorityNote",
+    "detail-Projector-misconceptions-0",
+    "detail-Projector-misconceptions-1",
+    "detail-Projector-misconceptions-2",
+    "detail-Projector-practice-0",
+    "detail-Projector-practice-1",
+    "detail-Projector-practice-2",
+    "detail-Reflector-mechanism",
+    "detail-Reflector-strategyDetail",
+    "detail-Reflector-signatureDetail",
+    "detail-Reflector-notSelfDetail",
+    "detail-Reflector-authorityNote",
+    "detail-Reflector-misconceptions-0",
+    "detail-Reflector-misconceptions-1",
+    "detail-Reflector-misconceptions-2",
+    "detail-Reflector-practice-0",
+    "detail-Reflector-practice-1",
+    "detail-Reflector-practice-2",
+    "destiny-lifePath-0",
+    "destiny-lifePath-1",
+    "destiny-lifePath-2",
+    "destiny-lifePath-3",
+    "destiny-lifePath-4",
+    "destiny-lifePath-5",
+    "destiny-lifePath-6",
+    "destiny-trajectory-0",
+    "destiny-trajectory-1",
+    "destiny-trajectory-2",
+    "destiny-trajectory-3",
+    "destiny-forecast-0",
+    "destiny-forecast-1",
+    "destiny-forecast-2",
+    "destiny-forecast-3",
+    "destiny-marriage-0",
+    "destiny-marriage-1",
+    "destiny-marriage-2",
+    "destiny-marriage-3"
+  ],
+  "failing": {
+    "gate-1-defined": [
+      "无场景锚点"
+    ],
+    "gate-1-open": [
+      "无场景锚点"
+    ],
+    "gate-2-open": [
+      "无场景锚点"
+    ],
+    "gate-3-defined": [
+      "无场景锚点"
+    ],
+    "gate-3-open": [
+      "无场景锚点"
+    ],
+    "gate-4-defined": [
+      "无场景锚点"
+    ],
+    "gate-4-open": [
+      "无场景锚点"
+    ],
+    "gate-5-defined": [
+      "无场景锚点"
+    ],
+    "gate-5-open": [
+      "无场景锚点"
+    ],
+    "gate-6-defined": [
+      "无场景锚点"
+    ],
+    "gate-6-open": [
+      "无场景锚点"
+    ],
+    "gate-7-defined": [
+      "无场景锚点"
+    ],
+    "gate-7-open": [
+      "无场景锚点"
+    ],
+    "gate-8-defined": [
+      "无场景锚点"
+    ],
+    "gate-8-open": [
+      "无场景锚点"
+    ],
+    "gate-9-defined": [
+      "无场景锚点"
+    ],
+    "gate-9-open": [
+      "无场景锚点"
+    ],
+    "gate-10-defined": [
+      "无场景锚点"
+    ],
+    "gate-10-open": [
+      "无场景锚点"
+    ],
+    "gate-11-defined": [
+      "无场景锚点"
+    ],
+    "gate-11-open": [
+      "无场景锚点"
+    ],
+    "gate-12-defined": [
+      "无场景锚点"
+    ],
+    "gate-13-defined": [
+      "无场景锚点"
+    ],
+    "gate-13-open": [
+      "无场景锚点"
+    ],
+    "gate-14-defined": [
+      "无场景锚点"
+    ],
+    "gate-14-open": [
+      "无场景锚点"
+    ],
+    "gate-15-defined": [
+      "无场景锚点"
+    ],
+    "gate-15-open": [
+      "无场景锚点"
+    ],
+    "gate-16-open": [
+      "无场景锚点"
+    ],
+    "gate-17-defined": [
+      "无场景锚点"
+    ],
+    "gate-17-open": [
+      "无场景锚点"
+    ],
+    "gate-18-defined": [
+      "无场景锚点"
+    ],
+    "gate-18-open": [
+      "无场景锚点"
+    ],
+    "gate-19-defined": [
+      "无场景锚点"
+    ],
+    "gate-19-open": [
+      "无场景锚点"
+    ],
+    "gate-20-defined": [
+      "无场景锚点"
+    ],
+    "gate-20-open": [
+      "无场景锚点"
+    ],
+    "gate-21-defined": [
+      "无场景锚点"
+    ],
+    "gate-21-open": [
+      "无场景锚点"
+    ],
+    "gate-22-defined": [
+      "无场景锚点"
+    ],
+    "gate-22-open": [
+      "无场景锚点"
+    ],
+    "gate-23-defined": [
+      "无场景锚点"
+    ],
+    "gate-23-open": [
+      "无场景锚点"
+    ],
+    "gate-24-defined": [
+      "无场景锚点"
+    ],
+    "gate-24-open": [
+      "无场景锚点"
+    ],
+    "gate-25-defined": [
+      "无场景锚点"
+    ],
+    "gate-25-open": [
+      "无场景锚点"
+    ],
+    "gate-26-defined": [
+      "无场景锚点"
+    ],
+    "gate-26-open": [
+      "无场景锚点"
+    ],
+    "gate-27-defined": [
+      "无场景锚点"
+    ],
+    "gate-27-open": [
+      "无场景锚点"
+    ],
+    "gate-28-defined": [
+      "无场景锚点"
+    ],
+    "gate-28-open": [
+      "无场景锚点"
+    ],
+    "gate-29-defined": [
+      "禁用词(能量)",
+      "无场景锚点"
+    ],
+    "gate-30-defined": [
+      "无场景锚点"
+    ],
+    "gate-30-open": [
+      "无场景锚点"
+    ],
+    "gate-31-defined": [
+      "无场景锚点"
+    ],
+    "gate-31-open": [
+      "无场景锚点"
+    ],
+    "gate-32-defined": [
+      "无场景锚点"
+    ],
+    "gate-32-open": [
+      "无场景锚点"
+    ],
+    "gate-33-open": [
+      "无场景锚点"
+    ],
+    "gate-34-defined": [
+      "无场景锚点"
+    ],
+    "gate-35-defined": [
+      "无场景锚点"
+    ],
+    "gate-35-open": [
+      "无场景锚点"
+    ],
+    "gate-36-defined": [
+      "无场景锚点"
+    ],
+    "gate-36-open": [
+      "无场景锚点"
+    ],
+    "gate-37-defined": [
+      "无场景锚点"
+    ],
+    "gate-37-open": [
+      "无场景锚点"
+    ],
+    "gate-38-defined": [
+      "无场景锚点"
+    ],
+    "gate-38-open": [
+      "无场景锚点"
+    ],
+    "gate-39-defined": [
+      "无场景锚点"
+    ],
+    "gate-40-defined": [
+      "禁用词(能量)"
+    ],
+    "gate-41-defined": [
+      "无场景锚点"
+    ],
+    "gate-41-open": [
+      "无场景锚点"
+    ],
+    "gate-42-defined": [
+      "无场景锚点"
+    ],
+    "gate-42-open": [
+      "无场景锚点"
+    ],
+    "gate-43-defined": [
+      "无场景锚点"
+    ],
+    "gate-43-open": [
+      "无场景锚点"
+    ],
+    "gate-44-defined": [
+      "禁用词(模式)",
+      "无场景锚点"
+    ],
+    "gate-44-open": [
+      "无场景锚点"
+    ],
+    "gate-45-defined": [
+      "无场景锚点"
+    ],
+    "gate-47-defined": [
+      "无场景锚点"
+    ],
+    "gate-48-defined": [
+      "无场景锚点"
+    ],
+    "gate-48-open": [
+      "无场景锚点"
+    ],
+    "gate-49-defined": [
+      "无场景锚点"
+    ],
+    "gate-50-defined": [
+      "无场景锚点"
+    ],
+    "gate-50-open": [
+      "无场景锚点"
+    ],
+    "gate-51-defined": [
+      "无场景锚点"
+    ],
+    "gate-51-open": [
+      "无场景锚点"
+    ],
+    "gate-52-open": [
+      "无场景锚点"
+    ],
+    "gate-53-defined": [
+      "无场景锚点"
+    ],
+    "gate-54-defined": [
+      "无场景锚点"
+    ],
+    "gate-54-open": [
+      "无场景锚点"
+    ],
+    "gate-55-defined": [
+      "无场景锚点"
+    ],
+    "gate-55-open": [
+      "无场景锚点"
+    ],
+    "gate-56-defined": [
+      "无场景锚点"
+    ],
+    "gate-56-open": [
+      "无场景锚点"
+    ],
+    "gate-57-defined": [
+      "无场景锚点"
+    ],
+    "gate-58-defined": [
+      "无场景锚点"
+    ],
+    "gate-58-open": [
+      "无场景锚点"
+    ],
+    "gate-59-defined": [
+      "无场景锚点"
+    ],
+    "gate-59-open": [
+      "无场景锚点"
+    ],
+    "gate-60-defined": [
+      "无场景锚点"
+    ],
+    "gate-60-open": [
+      "无场景锚点"
+    ],
+    "gate-61-defined": [
+      "无场景锚点"
+    ],
+    "gate-61-open": [
+      "无场景锚点"
+    ],
+    "gate-62-defined": [
+      "无场景锚点"
+    ],
+    "gate-62-open": [
+      "无场景锚点"
+    ],
+    "gate-63-defined": [
+      "无场景锚点"
+    ],
+    "gate-63-open": [
+      "无场景锚点"
+    ],
+    "gate-64-defined": [
+      "无场景锚点"
+    ],
+    "gate-64-open": [
+      "无场景锚点"
+    ],
+    "channel-1-8": [
+      "无场景锚点"
+    ],
+    "channel-2-14": [
+      "无场景锚点"
+    ],
+    "channel-3-60": [
+      "无场景锚点"
+    ],
+    "channel-4-63": [
+      "无场景锚点"
+    ],
+    "channel-5-15": [
+      "无场景锚点"
+    ],
+    "channel-6-59": [
+      "无场景锚点"
+    ],
+    "channel-7-31": [
+      "无场景锚点"
+    ],
+    "channel-9-52": [
+      "无场景锚点"
+    ],
+    "channel-10-20": [
+      "无场景锚点"
+    ],
+    "channel-10-34": [
+      "无场景锚点"
+    ],
+    "channel-10-57": [
+      "无场景锚点"
+    ],
+    "channel-11-56": [
+      "无场景锚点"
+    ],
+    "channel-13-33": [
+      "无场景锚点"
+    ],
+    "channel-17-62": [
+      "无场景锚点"
+    ],
+    "channel-18-58": [
+      "无场景锚点"
+    ],
+    "channel-19-49": [
+      "无场景锚点"
+    ],
+    "channel-20-34": [
+      "无场景锚点"
+    ],
+    "channel-21-45": [
+      "无场景锚点"
+    ],
+    "channel-23-43": [
+      "无场景锚点"
+    ],
+    "channel-24-61": [
+      "无场景锚点"
+    ],
+    "channel-25-51": [
+      "无场景锚点"
+    ],
+    "channel-26-44": [
+      "禁用词(模式)",
+      "无场景锚点"
+    ],
+    "channel-27-50": [
+      "无场景锚点"
+    ],
+    "channel-28-38": [
+      "无场景锚点"
+    ],
+    "channel-30-41": [
+      "无场景锚点"
+    ],
+    "channel-32-54": [
+      "无场景锚点"
+    ],
+    "channel-35-36": [
+      "无场景锚点"
+    ],
+    "channel-39-55": [
+      "无场景锚点"
+    ],
+    "channel-42-53": [
+      "无场景锚点"
+    ],
+    "channel-47-64": [
+      "无场景锚点"
+    ],
+    "center-head-defined": [
+      "无场景锚点"
+    ],
+    "center-head-open": [
+      "无场景锚点"
+    ],
+    "center-ajna-defined": [
+      "无场景锚点"
+    ],
+    "center-ajna-open": [
+      "无场景锚点"
+    ],
+    "center-throat-defined": [
+      "无场景锚点"
+    ],
+    "center-g-defined": [
+      "无场景锚点"
+    ],
+    "center-g-open": [
+      "无场景锚点"
+    ],
+    "center-heart-defined": [
+      "无场景锚点"
+    ],
+    "center-heart-open": [
+      "无场景锚点"
+    ],
+    "center-spleen-open": [
+      "无场景锚点"
+    ],
+    "center-sacral-defined": [
+      "无场景锚点"
+    ],
+    "center-sacral-open": [
+      "无场景锚点"
+    ],
+    "center-solar-defined": [
+      "无场景锚点"
+    ],
+    "center-solar-open": [
+      "禁用词(放大)",
+      "无场景锚点"
+    ],
+    "center-root-defined": [
+      "无场景锚点"
+    ],
+    "center-root-open": [
+      "无场景锚点"
+    ],
+    "type-Generator-desc": [
+      "无场景锚点"
+    ],
+    "type-ManifestingGenerator-desc": [
+      "无场景锚点"
+    ],
+    "type-Manifestor-desc": [
+      "无场景锚点"
+    ],
+    "type-Projector-desc": [
+      "禁用词(能量)"
+    ],
+    "authority-Emotional-desc": [
+      "无场景锚点"
+    ],
+    "authority-Ego-desc": [
+      "无场景锚点"
+    ],
+    "authority-SelfProjected-desc": [
+      "无场景锚点"
+    ],
+    "authority-Mental-desc": [
+      "无场景锚点"
+    ],
+    "authority-Lunar-desc": [
+      "无场景锚点"
+    ],
+    "insight-1-trait": [
+      "无场景锚点"
+    ],
+    "insight-1-growth": [
+      "无场景锚点"
+    ],
+    "insight-1-grounding": [
+      "无场景锚点"
+    ],
+    "insight-1-drive": [
+      "无场景锚点"
+    ],
+    "insight-2-trait": [
+      "无场景锚点"
+    ],
+    "insight-2-growth": [
+      "无场景锚点"
+    ],
+    "insight-2-grounding": [
+      "无场景锚点"
+    ],
+    "insight-2-drive": [
+      "无场景锚点"
+    ],
+    "insight-3-trait": [
+      "无场景锚点"
+    ],
+    "insight-3-growth": [
+      "无场景锚点"
+    ],
+    "insight-3-grounding": [
+      "无场景锚点"
+    ],
+    "insight-3-drive": [
+      "无场景锚点"
+    ],
+    "insight-4-trait": [
+      "无场景锚点"
+    ],
+    "insight-4-growth": [
+      "无场景锚点"
+    ],
+    "insight-4-drive": [
+      "无场景锚点"
+    ],
+    "insight-5-trait": [
+      "禁用词(模式)",
+      "无场景锚点"
+    ],
+    "insight-5-growth": [
+      "无场景锚点"
+    ],
+    "insight-5-grounding": [
+      "禁用词(能量)",
+      "无场景锚点"
+    ],
+    "insight-5-drive": [
+      "无场景锚点"
+    ],
+    "insight-6-drive": [
+      "无场景锚点"
+    ],
+    "insight-7-trait": [
+      "无场景锚点"
+    ],
+    "insight-7-growth": [
+      "无场景锚点"
+    ],
+    "insight-7-grounding": [
+      "无场景锚点"
+    ],
+    "insight-7-drive": [
+      "无场景锚点"
+    ],
+    "insight-8-trait": [
+      "无场景锚点"
+    ],
+    "insight-8-growth": [
+      "无场景锚点"
+    ],
+    "insight-8-grounding": [
+      "无场景锚点"
+    ],
+    "insight-8-drive": [
+      "无场景锚点"
+    ],
+    "insight-9-trait": [
+      "禁用词(能量)",
+      "无场景锚点"
+    ],
+    "insight-9-growth": [
+      "无场景锚点"
+    ],
+    "insight-9-grounding": [
+      "无场景锚点"
+    ],
+    "insight-9-drive": [
+      "无场景锚点"
+    ],
+    "insight-10-trait": [
+      "无场景锚点"
+    ],
+    "insight-10-growth": [
+      "无场景锚点"
+    ],
+    "insight-10-drive": [
+      "无场景锚点"
+    ],
+    "insight-11-trait": [
+      "无场景锚点"
+    ],
+    "insight-11-growth": [
+      "无场景锚点"
+    ],
+    "insight-11-drive": [
+      "无场景锚点"
+    ],
+    "insight-12-trait": [
+      "无场景锚点"
+    ],
+    "insight-12-grounding": [
+      "无场景锚点"
+    ],
+    "insight-12-drive": [
+      "无场景锚点"
+    ],
+    "insight-13-trait": [
+      "无场景锚点"
+    ],
+    "insight-13-growth": [
+      "无场景锚点"
+    ],
+    "insight-13-grounding": [
+      "无场景锚点"
+    ],
+    "insight-13-drive": [
+      "无场景锚点"
+    ],
+    "insight-14-trait": [
+      "无场景锚点"
+    ],
+    "insight-14-growth": [
+      "禁用词(能量)",
+      "无场景锚点"
+    ],
+    "insight-14-grounding": [
+      "无场景锚点"
+    ],
+    "insight-14-drive": [
+      "无场景锚点"
+    ],
+    "insight-15-trait": [
+      "无场景锚点"
+    ],
+    "insight-15-growth": [
+      "无场景锚点"
+    ],
+    "insight-15-drive": [
+      "无场景锚点"
+    ],
+    "insight-16-trait": [
+      "无场景锚点"
+    ],
+    "insight-16-growth": [
+      "无场景锚点"
+    ],
+    "insight-16-drive": [
+      "无场景锚点"
+    ],
+    "insight-17-trait": [
+      "无场景锚点"
+    ],
+    "insight-17-growth": [
+      "无场景锚点"
+    ],
+    "insight-17-grounding": [
+      "无场景锚点"
+    ],
+    "insight-17-drive": [
+      "无场景锚点"
+    ],
+    "insight-18-trait": [
+      "无场景锚点"
+    ],
+    "insight-18-growth": [
+      "禁用词(模式)",
+      "无场景锚点"
+    ],
+    "insight-18-grounding": [
+      "无场景锚点"
+    ],
+    "insight-18-drive": [
+      "无场景锚点"
+    ],
+    "insight-19-trait": [
+      "无场景锚点"
+    ],
+    "insight-19-growth": [
+      "无场景锚点"
+    ],
+    "insight-19-drive": [
+      "无场景锚点"
+    ],
+    "insight-20-trait": [
+      "无场景锚点"
+    ],
+    "insight-20-growth": [
+      "无场景锚点"
+    ],
+    "insight-20-drive": [
+      "无场景锚点"
+    ],
+    "insight-21-trait": [
+      "无场景锚点"
+    ],
+    "insight-21-growth": [
+      "无场景锚点"
+    ],
+    "insight-21-grounding": [
+      "无场景锚点"
+    ],
+    "insight-21-drive": [
+      "无场景锚点"
+    ],
+    "insight-22-trait": [
+      "无场景锚点"
+    ],
+    "insight-22-growth": [
+      "无场景锚点"
+    ],
+    "insight-22-grounding": [
+      "无场景锚点"
+    ],
+    "insight-22-drive": [
+      "无场景锚点"
+    ],
+    "insight-23-trait": [
+      "无场景锚点"
+    ],
+    "insight-23-growth": [
+      "无场景锚点"
+    ],
+    "insight-23-drive": [
+      "无场景锚点"
+    ],
+    "insight-24-trait": [
+      "无场景锚点"
+    ],
+    "insight-24-growth": [
+      "无场景锚点"
+    ],
+    "insight-24-grounding": [
+      "无场景锚点"
+    ],
+    "insight-24-drive": [
+      "无场景锚点"
+    ],
+    "insight-25-trait": [
+      "无场景锚点"
+    ],
+    "insight-25-growth": [
+      "无场景锚点"
+    ],
+    "insight-25-grounding": [
+      "无场景锚点"
+    ],
+    "insight-25-drive": [
+      "无场景锚点"
+    ],
+    "insight-26-trait": [
+      "无场景锚点"
+    ],
+    "insight-26-growth": [
+      "无场景锚点"
+    ],
+    "insight-26-grounding": [
+      "无场景锚点"
+    ],
+    "insight-26-drive": [
+      "无场景锚点"
+    ],
+    "insight-27-trait": [
+      "无场景锚点"
+    ],
+    "insight-27-growth": [
+      "无场景锚点"
+    ],
+    "insight-27-drive": [
+      "无场景锚点"
+    ],
+    "insight-28-trait": [
+      "无场景锚点"
+    ],
+    "insight-28-growth": [
+      "无场景锚点"
+    ],
+    "insight-28-drive": [
+      "无场景锚点"
+    ],
+    "insight-29-trait": [
+      "无场景锚点"
+    ],
+    "insight-29-growth": [
+      "无场景锚点"
+    ],
+    "insight-29-grounding": [
+      "无场景锚点"
+    ],
+    "insight-29-drive": [
+      "无场景锚点"
+    ],
+    "insight-30-trait": [
+      "无场景锚点"
+    ],
+    "insight-30-growth": [
+      "无场景锚点"
+    ],
+    "insight-30-grounding": [
+      "无场景锚点"
+    ],
+    "insight-30-drive": [
+      "无场景锚点"
+    ],
+    "insight-31-trait": [
+      "无场景锚点"
+    ],
+    "insight-31-growth": [
+      "无场景锚点"
+    ],
+    "insight-31-drive": [
+      "无场景锚点"
+    ],
+    "insight-32-trait": [
+      "无场景锚点"
+    ],
+    "insight-32-growth": [
+      "无场景锚点"
+    ],
+    "insight-32-grounding": [
+      "无场景锚点"
+    ],
+    "insight-32-drive": [
+      "无场景锚点"
+    ],
+    "insight-33-trait": [
+      "无场景锚点"
+    ],
+    "insight-33-growth": [
+      "无场景锚点"
+    ],
+    "insight-33-drive": [
+      "无场景锚点"
+    ],
+    "insight-34-trait": [
+      "禁用词(能量)",
+      "无场景锚点"
+    ],
+    "insight-34-growth": [
+      "无场景锚点"
+    ],
+    "insight-34-grounding": [
+      "禁用词(能量)",
+      "无场景锚点"
+    ],
+    "insight-34-drive": [
+      "无场景锚点"
+    ],
+    "insight-35-trait": [
+      "无场景锚点"
+    ],
+    "insight-35-growth": [
+      "无场景锚点"
+    ],
+    "insight-35-grounding": [
+      "无场景锚点"
+    ],
+    "insight-35-drive": [
+      "无场景锚点"
+    ],
+    "insight-36-trait": [
+      "无场景锚点"
+    ],
+    "insight-36-growth": [
+      "无场景锚点"
+    ],
+    "insight-36-grounding": [
+      "无场景锚点"
+    ],
+    "insight-36-drive": [
+      "无场景锚点"
+    ],
+    "insight-37-trait": [
+      "无场景锚点"
+    ],
+    "insight-37-growth": [
+      "无场景锚点"
+    ],
+    "insight-37-grounding": [
+      "无场景锚点"
+    ],
+    "insight-37-drive": [
+      "无场景锚点"
+    ],
+    "insight-38-trait": [
+      "无场景锚点"
+    ],
+    "insight-38-growth": [
+      "无场景锚点"
+    ],
+    "insight-38-grounding": [
+      "无场景锚点"
+    ],
+    "insight-38-drive": [
+      "无场景锚点"
+    ],
+    "insight-39-trait": [
+      "无场景锚点"
+    ],
+    "insight-39-growth": [
+      "无场景锚点"
+    ],
+    "insight-39-grounding": [
+      "无场景锚点"
+    ],
+    "insight-39-drive": [
+      "无场景锚点"
+    ],
+    "insight-40-drive": [
+      "无场景锚点"
+    ],
+    "insight-41-trait": [
+      "无场景锚点"
+    ],
+    "insight-41-growth": [
+      "无场景锚点"
+    ],
+    "insight-41-drive": [
+      "无场景锚点"
+    ],
+    "insight-42-trait": [
+      "无场景锚点"
+    ],
+    "insight-42-growth": [
+      "无场景锚点"
+    ],
+    "insight-42-grounding": [
+      "无场景锚点"
+    ],
+    "insight-42-drive": [
+      "无场景锚点"
+    ],
+    "insight-43-trait": [
+      "无场景锚点"
+    ],
+    "insight-43-growth": [
+      "无场景锚点"
+    ],
+    "insight-43-grounding": [
+      "无场景锚点"
+    ],
+    "insight-43-drive": [
+      "无场景锚点"
+    ],
+    "insight-44-trait": [
+      "禁用词(模式)",
+      "无场景锚点"
+    ],
+    "insight-44-growth": [
+      "无场景锚点"
+    ],
+    "insight-44-grounding": [
+      "无场景锚点"
+    ],
+    "insight-44-drive": [
+      "禁用词(模式)",
+      "无场景锚点"
+    ],
+    "insight-45-trait": [
+      "无场景锚点"
+    ],
+    "insight-45-growth": [
+      "无场景锚点"
+    ],
+    "insight-45-grounding": [
+      "无场景锚点"
+    ],
+    "insight-45-drive": [
+      "无场景锚点"
+    ],
+    "insight-46-drive": [
+      "无场景锚点"
+    ],
+    "insight-47-trait": [
+      "无场景锚点"
+    ],
+    "insight-47-growth": [
+      "无场景锚点"
+    ],
+    "insight-47-grounding": [
+      "无场景锚点"
+    ],
+    "insight-47-drive": [
+      "无场景锚点"
+    ],
+    "insight-48-trait": [
+      "无场景锚点"
+    ],
+    "insight-48-growth": [
+      "无场景锚点"
+    ],
+    "insight-48-grounding": [
+      "无场景锚点"
+    ],
+    "insight-48-drive": [
+      "无场景锚点"
+    ],
+    "insight-49-trait": [
+      "无场景锚点"
+    ],
+    "insight-49-growth": [
+      "无场景锚点"
+    ],
+    "insight-49-grounding": [
+      "无场景锚点"
+    ],
+    "insight-49-drive": [
+      "无场景锚点"
+    ],
+    "insight-50-trait": [
+      "无场景锚点"
+    ],
+    "insight-50-growth": [
+      "无场景锚点"
+    ],
+    "insight-50-grounding": [
+      "无场景锚点"
+    ],
+    "insight-50-drive": [
+      "无场景锚点"
+    ],
+    "insight-51-trait": [
+      "无场景锚点"
+    ],
+    "insight-51-growth": [
+      "无场景锚点"
+    ],
+    "insight-51-grounding": [
+      "无场景锚点"
+    ],
+    "insight-51-drive": [
+      "无场景锚点"
+    ],
+    "insight-52-trait": [
+      "无场景锚点"
+    ],
+    "insight-52-growth": [
+      "无场景锚点"
+    ],
+    "insight-52-grounding": [
+      "无场景锚点"
+    ],
+    "insight-52-drive": [
+      "无场景锚点"
+    ],
+    "insight-53-trait": [
+      "无场景锚点"
+    ],
+    "insight-53-growth": [
+      "无场景锚点"
+    ],
+    "insight-53-grounding": [
+      "无场景锚点"
+    ],
+    "insight-53-drive": [
+      "无场景锚点"
+    ],
+    "insight-54-trait": [
+      "无场景锚点"
+    ],
+    "insight-54-growth": [
+      "无场景锚点"
+    ],
+    "insight-54-grounding": [
+      "无场景锚点"
+    ],
+    "insight-54-drive": [
+      "无场景锚点"
+    ],
+    "insight-55-trait": [
+      "无场景锚点"
+    ],
+    "insight-55-growth": [
+      "无场景锚点"
+    ],
+    "insight-55-grounding": [
+      "无场景锚点"
+    ],
+    "insight-55-drive": [
+      "无场景锚点"
+    ],
+    "insight-56-trait": [
+      "无场景锚点"
+    ],
+    "insight-56-growth": [
+      "无场景锚点"
+    ],
+    "insight-56-grounding": [
+      "无场景锚点"
+    ],
+    "insight-56-drive": [
+      "无场景锚点"
+    ],
+    "insight-57-trait": [
+      "无场景锚点"
+    ],
+    "insight-57-drive": [
+      "无场景锚点"
+    ],
+    "insight-58-trait": [
+      "无场景锚点"
+    ],
+    "insight-58-growth": [
+      "无场景锚点"
+    ],
+    "insight-58-drive": [
+      "无场景锚点"
+    ],
+    "insight-59-trait": [
+      "无场景锚点"
+    ],
+    "insight-59-growth": [
+      "无场景锚点"
+    ],
+    "insight-59-drive": [
+      "无场景锚点"
+    ],
+    "insight-60-trait": [
+      "无场景锚点"
+    ],
+    "insight-60-growth": [
+      "无场景锚点"
+    ],
+    "insight-60-grounding": [
+      "无场景锚点"
+    ],
+    "insight-60-drive": [
+      "无场景锚点"
+    ],
+    "insight-61-trait": [
+      "无场景锚点"
+    ],
+    "insight-61-growth": [
+      "无场景锚点"
+    ],
+    "insight-61-grounding": [
+      "无场景锚点"
+    ],
+    "insight-61-drive": [
+      "无场景锚点"
+    ],
+    "insight-62-trait": [
+      "无场景锚点"
+    ],
+    "insight-62-growth": [
+      "无场景锚点"
+    ],
+    "insight-62-grounding": [
+      "无场景锚点"
+    ],
+    "insight-62-drive": [
+      "无场景锚点"
+    ],
+    "insight-63-trait": [
+      "无场景锚点"
+    ],
+    "insight-63-growth": [
+      "无场景锚点"
+    ],
+    "insight-63-grounding": [
+      "无场景锚点"
+    ],
+    "insight-63-drive": [
+      "禁用词(模式)",
+      "无场景锚点"
+    ],
+    "insight-64-trait": [
+      "无场景锚点"
+    ],
+    "insight-64-growth": [
+      "无场景锚点"
+    ],
+    "insight-64-drive": [
+      "无场景锚点"
+    ],
+    "detail-Generator-mechanism": [
+      "禁用词(能量)"
+    ],
+    "detail-Generator-strategyDetail": [
+      "长句x1"
+    ],
+    "detail-Generator-signatureDetail": [
+      "禁用词(能量)",
+      "无场景锚点"
+    ],
+    "detail-Generator-misconceptions-0": [
+      "无场景锚点"
+    ],
+    "detail-Generator-misconceptions-2": [
+      "禁用词(能量)",
+      "无场景锚点"
+    ],
+    "detail-ManifestingGenerator-mechanism": [
+      "无场景锚点"
+    ],
+    "detail-ManifestingGenerator-signatureDetail": [
+      "无场景锚点"
+    ],
+    "detail-ManifestingGenerator-notSelfDetail": [
+      "无场景锚点"
+    ],
+    "detail-ManifestingGenerator-authorityNote": [
+      "无场景锚点"
+    ],
+    "detail-ManifestingGenerator-misconceptions-0": [
+      "无场景锚点"
+    ],
+    "detail-ManifestingGenerator-misconceptions-1": [
+      "无场景锚点"
+    ],
+    "detail-ManifestingGenerator-misconceptions-2": [
+      "无场景锚点"
+    ],
+    "detail-ManifestingGenerator-practice-0": [
+      "无场景锚点"
+    ],
+    "detail-Manifestor-mechanism": [
+      "禁用词(能量)"
+    ],
+    "detail-Manifestor-strategyDetail": [
+      "无场景锚点"
+    ],
+    "detail-Manifestor-signatureDetail": [
+      "无场景锚点"
+    ],
+    "detail-Manifestor-notSelfDetail": [
+      "禁用词(能量)",
+      "无场景锚点"
+    ],
+    "detail-Manifestor-authorityNote": [
+      "长句x1",
+      "无场景锚点"
+    ],
+    "detail-Manifestor-misconceptions-0": [
+      "无场景锚点"
+    ],
+    "detail-Manifestor-misconceptions-1": [
+      "无场景锚点"
+    ],
+    "detail-Manifestor-misconceptions-2": [
+      "禁用词(能量)",
+      "无场景锚点"
+    ],
+    "detail-Manifestor-practice-2": [
+      "无场景锚点"
+    ],
+    "detail-Projector-mechanism": [
+      "禁用词(能量/放大)",
+      "长句x1"
+    ],
+    "detail-Projector-signatureDetail": [
+      "无场景锚点"
+    ],
+    "detail-Projector-authorityNote": [
+      "无场景锚点"
+    ],
+    "detail-Projector-misconceptions-0": [
+      "禁用词(能量)",
+      "无场景锚点"
+    ],
+    "detail-Projector-misconceptions-2": [
+      "无场景锚点"
+    ],
+    "detail-Projector-practice-0": [
+      "无场景锚点"
+    ],
+    "detail-Projector-practice-1": [
+      "无场景锚点"
+    ],
+    "detail-Reflector-mechanism": [
+      "禁用词(能量/模式/放大)",
+      "长句x1",
+      "无场景锚点"
+    ],
+    "detail-Reflector-strategyDetail": [
+      "禁用词(能量)",
+      "长句x1"
+    ],
+    "detail-Reflector-signatureDetail": [
+      "无场景锚点"
+    ],
+    "detail-Reflector-notSelfDetail": [
+      "无场景锚点"
+    ],
+    "detail-Reflector-misconceptions-0": [
+      "无场景锚点"
+    ],
+    "detail-Reflector-misconceptions-2": [
+      "无场景锚点"
+    ],
+    "detail-Reflector-practice-1": [
+      "无场景锚点"
+    ],
+    "destiny-lifePath-0": [
+      "禁用词(模式)",
+      "无场景锚点"
+    ],
+    "destiny-lifePath-1": [
+      "无场景锚点"
+    ],
+    "destiny-lifePath-2": [
+      "禁用词(模式)",
+      "长句x1"
+    ],
+    "destiny-lifePath-3": [
+      "禁用词(模式)",
+      "无场景锚点"
+    ],
+    "destiny-lifePath-4": [
+      "禁用词(能量)",
+      "长句x1"
+    ],
+    "destiny-lifePath-5": [
+      "无场景锚点"
+    ],
+    "destiny-lifePath-6": [
+      "禁用词(模式)"
+    ],
+    "destiny-trajectory-1": [
+      "禁用词(能量)",
+      "无场景锚点"
+    ],
+    "destiny-trajectory-2": [
+      "长句x1"
+    ],
+    "destiny-trajectory-3": [
+      "无场景锚点"
+    ],
+    "destiny-forecast-0": [
+      "禁用词(能量)",
+      "长句x1",
+      "无场景锚点"
+    ],
+    "destiny-forecast-1": [
+      "无场景锚点"
+    ],
+    "destiny-forecast-2": [
+      "无场景锚点"
+    ],
+    "destiny-forecast-3": [
+      "无场景锚点"
+    ],
+    "destiny-marriage-0": [
+      "禁用词(课题)",
+      "长句x1",
+      "无场景锚点"
+    ],
+    "destiny-marriage-1": [
+      "长句x1"
+    ],
+    "destiny-marriage-2": [
+      "禁用词(模式)",
+      "无场景锚点"
+    ],
+    "destiny-marriage-3": [
+      "禁用词(模式)",
+      "长句x1"
+    ]
+  }
+}

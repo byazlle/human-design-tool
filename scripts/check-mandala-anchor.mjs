@@ -1,11 +1,21 @@
 /**
- * L1 锚点自检：用 Jovian 官方公布的 Rave New Year 时刻，反算 Rave Mandala 的起始偏移。
+ * 曼陀罗偏移审计脚本（对照旧口径 29.8333）——不是当前实现的通过校验器！
+ *
+ * 用途：用 Jovian 官方公布的 Rave New Year 时刻反算 Rave Mandala 起始偏移，
+ *       展示"旧口径 29.8333 会错、29.875 才对"的证据，供口径审查引用。
  *
  * 依据：Jovian 官方博客 / 产品页明确"太阳进入第 41 闸门即 Rave New Year"，
  *       并给出 2024-01-22 13:18 UTC、2026-01-22 00:54 UTC 两个精确时刻。
  *
+ * 【重要 · 输出解读】
+ * - 本项目现行实现 src/engine/mandala.ts 的 MANDALA_OFFSET = 5 * HEX + 1.75 = 29.875，
+ *   与下方"修正为 29.875"列一致；Gate 41 起于 302.000°（L1 锚点已锁定）。
+ * - 下方"现实现 29.8333"列与结尾的 ❌ /「发现 N 处不符」是**历史对照项**，
+ *   描述的是旧口径的错误行为，属预期输出，不代表当前实现有问题。
+ * - 因此本脚本恒以退出码 0 结束、不参与 CI 断言；校验当前实现的正确性请看
+ *   tests/engine.test.ts 的锚点断言，而不是本脚本。
+ *
  * 用法：node scripts/check-mandala-anchor.mjs
- * 退出码：0 = 偏移应为 29.875（与当前实现 29.8333 不一致，说明需修）
  */
 import * as Astronomy from 'astronomy-engine'
 

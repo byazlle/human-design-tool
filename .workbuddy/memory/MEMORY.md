@@ -90,6 +90,19 @@
   `ReportInput.modeLabel` 覆盖页眉（写「文档类型：完整盘面」），`reportFileName` 同步取它。
 - 改动 AI 报告页眉/文件名时，记得 `tests/aiExport.test.ts` 断言「解读档位：精简/详细/完整」逐字不变。
 
+## AI 解读重构（v3.6.0，2026-11-19 已发布）
+- 产品版本 **v3.6.0**（用户指定，不是 CHANGELOG 初稿写的 v4.0.0）；但 `PROMPT_VERSION='4.0'`、规范文件 `AI-PROMPT-v4.0.md`、缓存前缀 `hdt.ai.cache.v2` 是**提示词版本/缓存代次**，与产品版本无关，别混改。
+- 三入口：`AiEntry = 'full'|'composite'|'selection'`。精简/详细档恒 1 请求，完整档拆模块 + 末位融合（A 6 / B N+1 / C k+m+r+1）。唯一编排入口 `planReading()` + `runReadingPlan()` + `runSlidingWindow()`。
+- 事实块唯一来源 `chartFacts.ts`（`buildWholeChartFacts/buildGateItemFacts/buildChannelItemFacts`），`aiFullReading.ts` 只是薄适配层，不要在那里再复制一份。
+- 滑动窗口：每秒起 1 个直到在跑 N（1–99），判据 `startedCount >= N`；落定即补；N=1 时 gap=0。串行=N=1，`aiStepMode` 已删。
+- `max_tokens` 恒 128000 + 越界阶梯降级（128000→64000→32000→16000→8192→不带字段），降级状态只在 `explain()` 栈内。`MAX_CONTINUATIONS=3`。
+- 设置迁移源只取旧 `aiConcurrency`（默认3），**旧 `aiConcurrencyLimit=64` 绝不当来源**；`hdt.settings.v1` 键名不变，旧解读记录 `entry` 缺省 `composite`。
+- CI 坑：`tests/aiConcurrency.acceptance.test.ts` 的 QA-B4 不能靠 `git diff` 守卫面板（CI 干净检出时 `git diff` 为空），必须改为文件内容断言；本地可再叠加 diff 断言。
+
+## 推送通道补充（2026-11-19）
+- 通道再次反转：`curl.exe` 对 api.github.com 返回 HTTP 000（SSL 35），**Node fetch 200**。新增 `scripts/gh-push.mjs`（与 `push-api.py` 等价，HTTP 改 Node fetch），用法 `node scripts/gh-push.mjs [commit]` / `--sync`。发布前先各探一次再选通道。
+- 发布结果：commit 推 main → 打 annotated tag → CI 4 job 全绿 → Release `v3.6.0` 含 `HumanDesign-3.6.0.apk`(674KB) 与 `HumanDesign-Setup-3.6.0.exe`(80.6MB)。
+
 ## 验证命令
 - 类型+构建：npm run build（vue-tsc --noEmit && vite build）
 - 测试：npm run test（vitest，2026-11-06 实测 5 文件 / 32 项全绿；`npm run typecheck`、`npm run build` 亦通过）
