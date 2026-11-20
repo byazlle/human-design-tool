@@ -1,15 +1,17 @@
 /**
- * DEV-701 · 表达可懂性机械检查（v3.7.0 / I-1 基线）
+ * DEV-701 → v3.8.0 · 表达可懂性机械检查
  *
  * 背景：用户反复反馈"看不懂"，根因不在提示词，而在离线释义素材本身抽象。
  * 本测试把 ITERATION-PLAN.md 第 5 节「可懂性检查表」的**机械可判定项**固化为规则：
  *   ① 禁用解释词表  ② 单句 ≤45 字  ③ 每条释义含一个可观察场景锚点。
  *
- * 设计要点（重要，勿改成"全库必须达标"）：
- * - I-1 只做基线，I-2 才白话化改写。当前 524 条离线释义中仅 75 条达标（14.3%），
- *   若在这里断言"全部达标"会立刻全红、且无法区分"退化"与"已知欠账"。
- * - 因此基线快照 `tests/fixtures/readability-baseline.json` 记录 I-1 时刻的不达标条目，
- *   测试守护两条：**新条目必须登记**、**不达标集合只减不增**（改写后可删基线条目）。
+ * 演进：
+ * - v3.7.0 / I-1：只做基线。524 条中仅 75 条达标（14.3%），基线快照记录 449 条不达标，
+ *   测试守护"新条目登记 + 不达标集合只减不增"。
+ * - v3.8.0 / I-2：完成白话化改写，524/524 全部达标、基线快照清零。测试升级为
+ *   **全量达标守护**：任何一条退化（禁用词 / 长句 / 无锚点 / 条目数变化）都会立刻变红。
+ * - 规则表（BANNED_WORDS / SCENE_ANCHORS / MAX_SENTENCE）与基线快照 rules 字段
+ *   一字未改——达标率提升靠改写素材，不靠放宽规则。
  * - AI 输出不在此自动断言（动态生成、无持久化样本），走抽检报告 docs/VERIFY-可懂性-基线.md。
  */
 import { describe, expect, it } from 'vitest'
@@ -140,7 +142,7 @@ describe('可懂性检查表 · 规则自检（故意塞入抽象话必须变红
   })
 })
 
-describe('可懂性基线 · 离线释义（I-1 基线只减不增）', () => {
+describe('可懂性 · 离线释义全量达标（v3.8.0 / I-2）', () => {
   it('规则未被偷偷放宽（禁用词 / 锚点 / 句长与基线快照一致）', () => {
     expect(baseline.rules.bannedWords).toEqual(BANNED_WORDS)
     expect(baseline.rules.sceneAnchors).toEqual(SCENE_ANCHORS)
@@ -153,20 +155,22 @@ describe('可懂性基线 · 离线释义（I-1 基线只减不增）', () => {
     expect(unknown).toEqual([])
   })
 
-  it('不达标集合只减不增：新退化的条目必须显式登记进基线', () => {
-    const knownFailing = new Set(Object.keys(baseline.failing))
-    const currentFailing = collectOfflineEntries()
-      .filter((e) => audit(e.text).length > 0)
-      .map((e) => e.id)
-    const regressed = currentFailing.filter((id) => !knownFailing.has(id))
-    expect(regressed).toEqual([])
+  it('条目数不减少（不允许靠删条目凑达标）', () => {
+    const entries = collectOfflineEntries()
+    expect(entries).toHaveLength(baseline.allIds.length)
+    expect(entries).toHaveLength(baseline.total)
   })
 
-  it('基线快照确实覆盖真实数据（防止快照与实现对不上而空跑）', () => {
-    const entries = collectOfflineEntries()
-    expect(entries).toHaveLength(baseline.total)
-    expect(Object.keys(baseline.failing)).toHaveLength(baseline.failingCount)
-    // I-1 基线仅 14% 达标；I-2 改写后本测试仍通过，达标率提升体现在 VERIFY 报告里
-    expect(baseline.failingCount).toBeGreaterThan(0)
+  it('524 条离线释义全部达标：无禁用词 / 无长句 / 均有场景锚点', () => {
+    const failing = collectOfflineEntries()
+      .map((e) => ({ id: e.id, reasons: audit(e.text) }))
+      .filter((e) => e.reasons.length > 0)
+    expect(failing).toEqual([])
+  })
+
+  it('基线快照已清零，且与真实数据一致（防止空跑）', () => {
+    expect(baseline.failingCount).toBe(0)
+    expect(Object.keys(baseline.failing)).toHaveLength(0)
+    expect(collectOfflineEntries()).toHaveLength(baseline.total)
   })
 })

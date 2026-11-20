@@ -163,7 +163,7 @@ describe('buildChartDocument：维度覆盖', () => {
   it('通道逐条带名称、两端中心与释义', () => {
     expect(md).toContain('**20-57 脑波（The Brainwave）**')
     expect(md).toContain('喉咙 ↔ 脾')
-    expect(md).toContain('你的直觉在当下闪现')
+    expect(md).toContain('直觉在当下闪现')
   })
 
   it('闸门表含状态与激活星体；悬挂闸门单独点名', () => {
